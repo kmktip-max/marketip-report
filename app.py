@@ -1023,94 +1023,209 @@ def show_results(adf, api_key, model):
             css = "alert-danger" if kind == "danger" else "alert-warn"
             st.markdown(f'<div class="{css}">{msg}</div>', unsafe_allow_html=True)
 
-    # ── 차트 공통 레이아웃 ──
-    chart_layout = dict(
-        paper_bgcolor="#ffffff",
-        plot_bgcolor="#f8f9fa",
+    # ── 차트 공통 설정 ──
+    CL = dict(
+        paper_bgcolor="#ffffff", plot_bgcolor="#f8f9fa",
         font=dict(family="Pretendard, sans-serif", color="#111111", size=12),
         title_font=dict(size=14, color="#0D47A1", family="Pretendard, sans-serif"),
-        margin=dict(l=0, r=0, t=44, b=0),
-        height=360,
-        showlegend=True,
-        legend=dict(font=dict(size=11, color="#333333")),
+        margin=dict(l=0, r=0, t=44, b=0), height=360,
+        showlegend=False,
     )
-
-    # 등급 색상 (마케팁 브랜드 기반 고급 팔레트)
     color_map = {
-        "상위 (증액 검토)": "#28B463",   # 마케팁 그린
-        "중위 (유지)":       "#1498D7",   # 마케팁 AI블루
-        "낭비 의심":         "#C0392B",   # 진한 레드
-        "고비용 (감액)":     "#E67E22",   # 진한 오렌지
-        "저효율 (감액)":     "#8E44AD",   # 딥 퍼플
-        "클릭 저조":         "#7F8C8D",   # 차분한 그레이
-        "하위 (검토 필요)":  "#566573",   # 다크 그레이
+        "상위 (증액 검토)": "#28B463", "중위 (유지)": "#1498D7",
+        "낭비 의심": "#C0392B",        "고비용 (감액)": "#E67E22",
+        "저효율 (감액)": "#8E44AD",    "클릭 저조": "#7F8C8D",
+        "하위 (검토 필요)": "#566573",
     }
 
-    st.markdown('<div class="section-title">📈 시각화 분석</div>', unsafe_allow_html=True)
-    col_l, col_r = st.columns(2)
+    def hbar(df, x, y, title, scale):
+        fig = px.bar(df, x=x, y=y, orientation="h", title=title,
+                     color=x, color_continuous_scale=scale)
+        fig.update_layout(**CL, yaxis={"categoryorder": "total ascending"})
+        fig.update_coloraxes(showscale=False)
+        fig.update_traces(marker_line_width=0)
+        return fig
 
-    with col_l:
-        top_spend = adf.nlargest(10, "광고비")
-        fig1 = px.bar(
-            top_spend, x="광고비", y="키워드", orientation="h",
-            title="💰 광고비 TOP 10",
-            color="광고비",
-            color_continuous_scale=[[0, "#1498D7"], [0.5, "#0D47A1"], [1, "#051F5E"]],
-        )
-        fig1.update_layout(**chart_layout, yaxis={"categoryorder": "total ascending"})
-        fig1.update_coloraxes(showscale=False)
-        fig1.update_traces(marker_line_width=0)
-        st.plotly_chart(fig1, use_container_width=True)
+    # ── [1] 키워드 분석 차트 ──────────────────────
+    st.markdown('<div class="section-title">📈 키워드 시각화 분석</div>', unsafe_allow_html=True)
 
-    with col_r:
-        roas_df = adf[adf["ROAS"].notna()].nlargest(10, "ROAS")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(hbar(adf.nlargest(10,"광고비"), "광고비", "키워드",
+            "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]]),
+            use_container_width=True)
+    with c2:
+        roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
         if not roas_df.empty:
-            fig2 = px.bar(
-                roas_df, x="ROAS", y="키워드", orientation="h",
-                title="📊 ROAS TOP 10",
-                color="ROAS",
-                color_continuous_scale=[[0, "#6CC24A"], [0.5, "#28B463"], [1, "#1A7A3C"]],
-            )
-            fig2.update_layout(**chart_layout, yaxis={"categoryorder": "total ascending"})
-            fig2.update_coloraxes(showscale=False)
-            fig2.update_traces(marker_line_width=0)
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
+                [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]]), use_container_width=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        cvr_df = adf[adf["전환율"].notna() & (adf["전환수"] > 0)].nlargest(10,"전환율")
+        if not cvr_df.empty:
+            st.plotly_chart(hbar(cvr_df,"전환율","키워드","🎯 전환율 TOP 10",
+                [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]]), use_container_width=True)
+    with c4:
+        waste_df = adf[(adf["전환수"] == 0) & (adf["클릭수"] > 0)].nlargest(10,"광고비")
+        if not waste_df.empty:
+            st.plotly_chart(hbar(waste_df,"광고비","키워드","🚨 낭비 키워드 TOP 10 (전환 0)",
+                [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]]), use_container_width=True)
         else:
-            st.info("전환매출 데이터가 없어 ROAS 차트를 표시할 수 없습니다.")
+            st.success("낭비 키워드가 없습니다.")
 
-    col_l2, col_r2 = st.columns(2)
-
-    with col_l2:
+    c5, c6 = st.columns(2)
+    with c5:
         grade_counts = adf["등급"].value_counts()
-        colors = [color_map.get(g, "#95A5A6") for g in grade_counts.index]
-        fig3 = go.Figure(go.Pie(
-            labels=grade_counts.index,
-            values=grade_counts.values,
-            hole=0.52,
+        colors = [color_map.get(g,"#95A5A6") for g in grade_counts.index]
+        fig_pie = go.Figure(go.Pie(
+            labels=grade_counts.index, values=grade_counts.values, hole=0.52,
             marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-            textfont=dict(size=12, family="Pretendard, sans-serif"),
+            textfont=dict(size=12),
         ))
-        fig3.update_layout(
-            **{k: v for k, v in chart_layout.items() if k not in ("showlegend", "legend")},
-            title="🏷️ 키워드 등급 분포",
-            showlegend=True,
-            legend=dict(font=dict(size=10), orientation="v"),
-        )
-        st.plotly_chart(fig3, use_container_width=True)
-
-    with col_r2:
+        fig_pie.update_layout(**{k:v for k,v in CL.items() if k not in ("showlegend",)},
+            title="🏷️ 키워드 등급 분포", showlegend=True,
+            legend=dict(font=dict(size=10), orientation="v"))
+        st.plotly_chart(fig_pie, use_container_width=True)
+    with c6:
         sc = adf[adf["CTR"].notna() & adf["전환율"].notna()]
         if not sc.empty:
-            fig4 = px.scatter(
-                sc, x="CTR", y="전환율",
-                size="광고비", size_max=44,
-                hover_name="키워드", color="등급",
-                title="📉 CTR vs 전환율",
-                color_discrete_map=color_map,
-            )
-            fig4.update_layout(**chart_layout)
-            fig4.update_traces(marker=dict(line=dict(width=1, color="#ffffff"), opacity=0.88))
-            st.plotly_chart(fig4, use_container_width=True)
+            fig_sc = px.scatter(sc, x="CTR", y="전환율", size="광고비", size_max=44,
+                hover_name="키워드", color="등급", title="📉 CTR vs 전환율",
+                color_discrete_map=color_map)
+            fig_sc.update_layout(**{**CL, "showlegend":True,
+                "legend":dict(font=dict(size=10))})
+            fig_sc.update_traces(marker=dict(line=dict(width=1,color="#ffffff"), opacity=0.88))
+            st.plotly_chart(fig_sc, use_container_width=True)
+
+    # ── [2] 세그먼트 차트 (원본 데이터에서 자동 감지) ──
+    raw_df = st.session_state.get("raw_df", None)
+    if raw_df is not None and not raw_df.empty:
+        cols = {c: c.replace(" ","").lower() for c in raw_df.columns}
+
+        def find_col(keywords):
+            for orig, norm in cols.items():
+                if any(k in norm for k in keywords):
+                    return orig
+            return None
+
+        def find_metric(keywords):
+            for orig, norm in cols.items():
+                if any(k in norm for k in keywords):
+                    if pd.to_numeric(raw_df[orig], errors="coerce").notna().sum() > 0:
+                        return orig
+            return None
+
+        seg_col   = find_col(["요일"])
+        time_col  = find_col(["시간대","시간"])
+        age_col   = find_col(["연령","나이"])
+        dev_col   = find_col(["기기","디바이스"])
+        conv_col  = find_metric(["전환수","전환"])
+        spend_col = find_metric(["총비용","광고비","비용"])
+        roas_col  = find_metric(["광고수익률","roas"])
+        ctr_col   = find_metric(["클릭률","ctr"])
+
+        DAY_ORDER = ["월요일","화요일","수요일","목요일","금요일","토요일","일요일",
+                     "월","화","수","목","금","토","일"]
+
+        has_segment = any([seg_col, time_col, age_col, dev_col])
+        if has_segment:
+            st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
+
+        # 요일별
+        if seg_col:
+            sdf = raw_df.copy()
+            sdf[seg_col] = sdf[seg_col].astype(str).str.strip()
+            day_order_present = [d for d in DAY_ORDER if d in sdf[seg_col].values]
+            sdf = sdf[sdf[seg_col].isin(DAY_ORDER)]
+            if not sdf.empty:
+                st.markdown("**📅 요일별 분석**")
+                day_metrics = [m for m in [conv_col, spend_col, roas_col, ctr_col] if m]
+                if day_metrics:
+                    dc1, dc2 = st.columns(2)
+                    pairs = [(day_metrics[i], day_metrics[i+1]) if i+1 < len(day_metrics) else (day_metrics[i], None)
+                             for i in range(0, len(day_metrics), 2)]
+                    for idx, (ma, mb) in enumerate(pairs):
+                        col_a, col_b = st.columns(2)
+                        for col_obj, m in [(col_a, ma), (col_b, mb)]:
+                            if m:
+                                tmp = sdf[[seg_col, m]].copy()
+                                tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
+                                tmp = tmp.dropna()
+                                if day_order_present:
+                                    cat_order = [d for d in DAY_ORDER if d in tmp[seg_col].values]
+                                    tmp[seg_col] = pd.Categorical(tmp[seg_col], categories=cat_order, ordered=True)
+                                    tmp = tmp.sort_values(seg_col)
+                                with col_obj:
+                                    fig = px.bar(tmp, x=seg_col, y=m, title=f"📅 요일별 {m}",
+                                        color=m, color_continuous_scale=[[0,"#1498D7"],[1,"#0D47A1"]])
+                                    fig.update_layout(**CL)
+                                    fig.update_coloraxes(showscale=False)
+                                    st.plotly_chart(fig, use_container_width=True)
+
+        # 시간대별
+        if time_col:
+            tdf = raw_df.copy()
+            tdf[time_col] = pd.to_numeric(tdf[time_col].astype(str).str.replace("[^0-9]","",regex=True), errors="coerce")
+            tdf = tdf.dropna(subset=[time_col]).sort_values(time_col)
+            tdf[time_col] = tdf[time_col].astype(int).astype(str) + "시"
+            if not tdf.empty:
+                st.markdown("**⏰ 시간대별 분석**")
+                time_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
+                if time_metrics:
+                    for m in time_metrics:
+                        tmp = tdf[[time_col, m]].copy()
+                        tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
+                        tmp = tmp.dropna()
+                        fig = px.bar(tmp, x=time_col, y=m, title=f"⏰ 시간대별 {m}",
+                            color=m, color_continuous_scale=[[0,"#6CC24A"],[1,"#1A7A3C"]])
+                        fig.update_layout(**{**CL, "height":300})
+                        fig.update_coloraxes(showscale=False)
+                        st.plotly_chart(fig, use_container_width=True)
+
+        # 연령별
+        if age_col:
+            adf_seg = raw_df.copy()
+            adf_seg[age_col] = adf_seg[age_col].astype(str).str.strip()
+            age_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
+            if age_metrics and not adf_seg.empty:
+                st.markdown("**👤 연령별 분석**")
+                ac1, ac2 = st.columns(2)
+                for idx, m in enumerate(age_metrics[:4]):
+                    col_obj = ac1 if idx % 2 == 0 else ac2
+                    tmp = adf_seg[[age_col, m]].copy()
+                    tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
+                    tmp = tmp.dropna().sort_values(m, ascending=False)
+                    with col_obj:
+                        fig = px.bar(tmp, x=age_col, y=m, title=f"👤 연령별 {m}",
+                            color=m, color_continuous_scale=[[0,"#F39C12"],[1,"#CA6F1E"]])
+                        fig.update_layout(**CL)
+                        fig.update_coloraxes(showscale=False)
+                        st.plotly_chart(fig, use_container_width=True)
+
+        # 기기별
+        if dev_col:
+            ddf = raw_df.copy()
+            ddf[dev_col] = ddf[dev_col].astype(str).str.strip()
+            dev_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
+            if dev_metrics and not ddf.empty:
+                st.markdown("**📱 기기별 분석**")
+                dc1, dc2 = st.columns(2)
+                for idx, m in enumerate(dev_metrics[:4]):
+                    col_obj = dc1 if idx % 2 == 0 else dc2
+                    tmp = ddf[[dev_col, m]].copy()
+                    tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
+                    tmp = tmp.dropna()
+                    with col_obj:
+                        fig = go.Figure(go.Pie(
+                            labels=tmp[dev_col], values=tmp[m], hole=0.45,
+                            marker=dict(colors=["#0D47A1","#28B463","#E67E22","#8E44AD"],
+                                        line=dict(color="#fff",width=2)),
+                        ))
+                        fig.update_layout(**{k:v for k,v in CL.items() if k!="showlegend"},
+                            title=f"📱 기기별 {m}", showlegend=True,
+                            legend=dict(font=dict(size=11)))
+                        st.plotly_chart(fig, use_container_width=True)
 
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
