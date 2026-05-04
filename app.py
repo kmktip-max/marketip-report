@@ -1484,11 +1484,24 @@ def main():
         HINTS = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스","전환"]
         name  = f.name.lower()
 
+        def promote_header(df):
+            """첫 번째 데이터 행이 실제 컬럼명인 경우 승격"""
+            if df.empty:
+                return df
+            first = " ".join(df.iloc[0].astype(str).str.lower())
+            if any(h in first for h in HINTS):
+                df.columns = df.iloc[0].astype(str).str.strip()
+                df = df.iloc[1:].reset_index(drop=True)
+            return df
+
         def valid(df):
             cols = " ".join(df.columns.astype(str).str.lower())
-            return any(h in cols for h in HINTS)
+            # 컬럼명 OR 첫 행에 힌트 키워드 포함 여부
+            first = " ".join(df.iloc[0].astype(str).str.lower()) if not df.empty else ""
+            return any(h in cols or h in first for h in HINTS)
 
         def clean(df):
+            df = promote_header(df)
             df.columns = [str(c).strip() for c in df.columns]
             return df.dropna(how="all").reset_index(drop=True)
 
@@ -1515,7 +1528,6 @@ def main():
                         return clean(df)
                 except Exception:
                     pass
-        # 최후 시도
         f.seek(0)
         return clean(pd.read_csv(f, on_bad_lines="skip", encoding_errors="replace"))
 
@@ -1669,17 +1681,9 @@ def main():
                 for k in missing:
                     st.caption(f"• {k}")
 
-    # 필수 컬럼 없으면 경고
+    # 필수 컬럼 없으면 경고만 표시하고 계속 진행
     if cols_map.get("클릭수") == none or cols_map.get("광고비") == none:
-        st.error("클릭수 또는 광고비 컬럼을 찾지 못했습니다. 아래에서 직접 선택해주세요.")
-        opts = [none] + df.columns.tolist()
-        col1, col2 = st.columns(2)
-        with col1:
-            cols_map["클릭수"] = st.selectbox("클릭수 컬럼 선택 *", opts)
-        with col2:
-            cols_map["광고비"] = st.selectbox("광고비 컬럼 선택 *", opts)
-        if cols_map["클릭수"] == none or cols_map["광고비"] == none:
-            return
+        st.warning("일부 컬럼을 자동 감지하지 못했습니다. 가능한 항목만으로 분석을 진행합니다.")
 
     # 데이터가 새로 들어오면 자동 분석 실행
     df_hash = str(len(df)) + str(df.columns.tolist())
