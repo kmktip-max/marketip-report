@@ -1223,10 +1223,22 @@ def show_results(adf, api_key, model):
                     st.markdown("**📱 기기별 분석**")
                     cols_pair = st.columns(2)
                     for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
-                        fig = seg_pie(sdf, dev_col, mc, f"📱 기기별 {mk}")
-                        if fig:
-                            with cols_pair[idx % 2]:
-                                st.plotly_chart(fig, use_container_width=True)
+                        tmp = sdf[[dev_col, mc]].copy()
+                        tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
+                        tmp = tmp.dropna().sort_values(mc, ascending=False)
+                        if tmp.empty: continue
+                        text = tmp[mc].apply(lambda v: f"{v:,.0f}")
+                        fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
+                                     color=dev_col,
+                                     color_discrete_map={"PC":"#0D47A1","모바일":"#28B463"},
+                                     text=text)
+                        fig.update_layout(**{**CL, "showlegend": False,
+                                             "margin": dict(l=0, r=0, t=44, b=0)})
+                        fig.update_traces(textposition="outside",
+                                          textfont=dict(size=13, color="#111111"),
+                                          marker_line_width=0, width=0.5)
+                        with cols_pair[idx % 2]:
+                            st.plotly_chart(fig, use_container_width=True)
 
             # ── 지역별 ──
             elif "지역" in seg_type:
