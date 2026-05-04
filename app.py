@@ -707,11 +707,11 @@ def check_auth():
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([1.2, 1, 1.2])
     with col2:
         st.markdown('<div class="login-box"><h2>🔐 로그인</h2>', unsafe_allow_html=True)
-        user_id  = st.text_input("아이디", placeholder="아이디를 입력하세요", label_visibility="collapsed")
-        password = st.text_input("패스워드", type="password", placeholder="패스워드를 입력하세요", label_visibility="collapsed")
+        user_id  = st.text_input("아이디", placeholder="아이디", label_visibility="collapsed")
+        password = st.text_input("패스워드", type="password", placeholder="패스워드", label_visibility="collapsed")
         if st.button("접속하기", use_container_width=True):
             advertisers = load_advertisers()
             matched = None
