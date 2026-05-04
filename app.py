@@ -686,6 +686,16 @@ CPA / CPC → 소수점 2자리
 # 광고주 계정 로드
 # ────────────────────────────────────────────
 def load_advertisers():
+    # Streamlit Cloud secrets 우선 사용
+    try:
+        if "advertisers" in st.secrets:
+            result = {}
+            for uid, info in st.secrets["advertisers"].items():
+                result[uid] = {"name": info["name"], "password": info["password"]}
+            return result
+    except Exception:
+        pass
+    # 로컬 JSON 파일 fallback
     path = os.path.join(os.path.dirname(__file__), "advertisers.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
