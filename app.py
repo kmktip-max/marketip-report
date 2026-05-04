@@ -1475,26 +1475,110 @@ def main():
         st.divider()
         st.caption("© 마케팁 광고 구조 분석 시스템")
 
+    # ── 네이버 보고서 CSV/Excel 헤더 자동 감지 파서 ──
+    def parse_naver_file(f):
+        """네이버 보고서 특유의 1행 메타데이터를 건너뛰고 실제 데이터 헤더를 찾아 파싱"""
+        MAX_MB = 3
+        if f.size > MAX_MB * 1024 * 1024:
+            raise ValueError(f"파일 크기가 {MAX_MB}MB를 초과합니다. 30일 기준 데이터만 등록해주세요.")
+
+        if f.name.endswith(".csv"):
+            raw = pd.read_csv(f, header=None, encoding_errors="replace")
+        else:
+            raw = pd.read_excel(f, header=None)
+
+        # 실제 헤더 행 탐색: "키워드", "노출수", "클릭수" 등이 포함된 행
+        header_row = 0
+        kw_hints = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스"]
+        for i, row in raw.iterrows():
+            row_str = " ".join(row.astype(str).str.lower())
+            if any(h in row_str for h in kw_hints):
+                header_row = i
+                break
+
+        df_out = pd.read_csv(
+            io.StringIO(raw.to_csv(index=False, header=False)),
+            skiprows=header_row, header=0
+        ) if f.name.endswith(".csv") else raw.iloc[header_row:].reset_index(drop=True)
+
+        if not f.name.endswith(".csv"):
+            df_out.columns = df_out.iloc[0]
+            df_out = df_out.iloc[1:].reset_index(drop=True)
+
+        df_out.columns = [str(c).strip() for c in df_out.columns]
+        df_out = df_out.dropna(how="all")
+        return df_out
+
+    def detect_file_type(df):
+        cols = " ".join(df.columns.astype(str).str.lower())
+        if any(k in cols for k in ["요일"]): return "📅 요일별"
+        if any(k in cols for k in ["시간대","시간"]): return "⏰ 시간대별"
+        if any(k in cols for k in ["연령","나이"]): return "👤 연령별"
+        if any(k in cols for k in ["기기","디바이스","pc","모바일"]): return "📱 기기별"
+        if any(k in cols for k in ["지역","시도"]): return "📍 지역별"
+        if any(k in cols for k in ["키워드"]): return "🔑 키워드"
+        return "📄 기타"
+
     # 데이터 입력
     st.markdown('<div class="section-title">📥 데이터 입력</div>', unsafe_allow_html=True)
     tab1, tab2 = st.tabs(["📁 파일 업로드", "📋 복사·붙여넣기"])
 
     df = None
     with tab1:
-        f = st.file_uploader("엑셀(.xlsx / .xls) 또는 CSV 파일", type=["xlsx","xls","csv"])
-        if f:
-            try:
-                df_file = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
-                st.success(f"✅ {len(df_file):,}행 · {len(df_file.columns)}열 로드됨")
+        st.info("여러 보고서를 한 번에 업로드하세요. 키워드·기기·연령·시간대·지역 등 각 보고서를 동시 등록 가능합니다. (파일당 최대 3MB · 30일 기준 데이터)")
+        files = st.file_uploader(
+            "엑셀(.xlsx / .xls) 또는 CSV 파일 (복수 선택 가능)",
+            type=["xlsx","xls","csv"],
+            accept_multiple_files=True,
+            key="multi_upload"
+        )
+
+        if files:
+            loaded = {}
+            errors = []
+            for f_item in files:
+                try:
+                    df_item = parse_naver_file(f_item)
+                    ftype = detect_file_type(df_item)
+                    loaded[f_item.name] = {"df": df_item, "type": ftype}
+                except Exception as e:
+                    errors.append(f"❌ {f_item.name}: {e}")
+
+            if errors:
+                for e in errors:
+                    st.error(e)
+
+            if loaded:
+                st.markdown("**등록된 파일**")
+                for fname, info in loaded.items():
+                    d = info["df"]
+                    st.success(f"{info['type']} · **{fname}** — {len(d):,}행 · {len(d.columns)}컬럼")
+
+                    with st.expander(f"미리보기: {fname}"):
+                        st.dataframe(d.head(5), use_container_width=True)
+
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
-                    st.session_state["confirmed_df"] = df_file
+                    # 키워드 파일을 메인 df로, 나머지는 raw_df에 병합
+                    kw_dfs = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
+                    other_dfs = [v["df"] for v in loaded.values() if "키워드" not in v["type"]]
+
+                    if kw_dfs:
+                        main_df = pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1 else kw_dfs[0]
+                    else:
+                        main_df = list(loaded.values())[0]["df"]
+
+                    # 세그먼트 데이터도 raw_df에 포함 (세로 병합)
+                    all_dfs = [v["df"] for v in loaded.values()]
+                    raw_merged = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]
+
+                    st.session_state["confirmed_df"] = main_df
+                    st.session_state["raw_df_extra"] = raw_merged
                     st.session_state["last_df_hash"] = ""
                     st.rerun()
-            except Exception as e:
-                st.error(f"파일 로드 실패: {e}")
-        if st.session_state.get("confirmed_df") is not None and f is None:
+
+        if st.session_state.get("confirmed_df") is not None and not files:
             df = st.session_state["confirmed_df"]
-        elif f is not None and st.session_state.get("confirmed_df") is not None:
+        elif files and st.session_state.get("confirmed_df") is not None:
             df = st.session_state["confirmed_df"]
 
     with tab2:
@@ -1508,12 +1592,11 @@ def main():
                 st.success(f"✅ {len(df_preview):,}행 · {len(df_preview.columns)}열 인식됨")
                 if st.button("📊 분석 확인", type="primary", use_container_width=True):
                     st.session_state["confirmed_df"] = df_preview
-                    st.session_state["last_df_hash"] = ""   # 강제 재분석
+                    st.session_state["last_df_hash"] = ""
                     st.rerun()
             except Exception as e:
                 st.error(f"데이터 파싱 실패: {e}")
 
-        # 확인 버튼 눌린 이후 df 유지
         if st.session_state.get("confirmed_df") is not None and not pasted.strip():
             df = st.session_state["confirmed_df"]
         elif pasted.strip() and st.session_state.get("confirmed_df") is not None:
