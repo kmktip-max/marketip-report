@@ -1477,9 +1477,9 @@ def main():
 
     # ── 네이버 보고서 파서 (인코딩·헤더 자동 감지) ──
     def parse_naver_file(f):
-        MAX_MB = 3
+        MAX_MB = 50
         if f.size > MAX_MB * 1024 * 1024:
-            raise ValueError(f"파일 크기가 {MAX_MB}MB를 초과합니다. 30일 기준 데이터만 등록해주세요.")
+            raise ValueError(f"파일 크기가 {MAX_MB}MB를 초과합니다.")
 
         HINTS = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스","전환"]
         name  = f.name.lower()
@@ -1535,9 +1535,9 @@ def main():
 
     df = None
     with tab1:
-        st.info("여러 보고서를 한 번에 업로드하세요. 키워드·기기·연령·시간대·지역 등 각 보고서를 동시 등록 가능합니다. (파일당 최대 3MB · 30일 기준 데이터)")
+        st.info("여러 보고서를 한 번에 업로드하세요. 키워드·기기·연령·시간대·지역 등 각 보고서를 동시 등록 가능합니다.")
         files = st.file_uploader(
-            "엑셀(.xlsx / .xls) 또는 CSV 파일 (복수 선택 가능)",
+            "엑셀(.xlsx / .xls) 또는 CSV 파일 (복수 선택 가능, 최대 50MB)",
             type=["xlsx","xls","csv"],
             accept_multiple_files=True,
             key="multi_upload"
