@@ -1247,54 +1247,66 @@ def show_results(adf, api_key, model):
     _avg_conv = adf["전환수"].mean()
     _avg_spend = adf["광고비"].mean()
 
-    # ── 상태 배지 생성 ──
+    # ── 상태 배지 (ROAS 최우선) ──
     def make_badge(row):
         conv  = row.get("전환수", 0)
-        roas  = row.get("ROAS", 0)  if pd.notna(row.get("ROAS")) else 0
-        cpa   = row.get("CPA", 0)   if pd.notna(row.get("CPA"))  else 0
+        roas  = row.get("ROAS",  0) if pd.notna(row.get("ROAS"))  else 0
         spend = row.get("광고비", 0)
         click = row.get("클릭수", 0)
 
-        # 증액 추천: ROAS 평균 1.5배 이상 + 전환 평균 이상
-        if roas >= _avg_roas * 1.5 and conv >= _avg_conv and _avg_roas > 0:
-            return "💰 증액 추천"
-        # 효율 Good: ROAS 평균 이상 or CPA 평균 이하 (전환 있음)
-        if conv > 0 and (roas >= _avg_roas or (cpa > 0 and cpa <= _avg_cpa)):
-            return "✅ 효율"
-        # 즉시 주의: 클릭 50+ 전환 0 + 광고비 평균 이상
-        if conv == 0 and click >= 50 and spend >= _avg_spend:
-            return "🚨 즉시 주의"
-        # 낭비: 클릭 있고 전환 0
+        # 전환 없음
         if conv == 0 and click > 0:
+            if spend >= _avg_spend:
+                return "🚨 즉시 주의"
             return "⚠️ 낭비"
+
+        # ROAS 100% 미만 = 광고비 > 매출 → 무조건 낭비
+        if conv > 0 and roas < 100:
+            return "🚨 즉시 주의" if spend >= _avg_spend else "⚠️ 낭비"
+
+        # ROAS 100~200% = 손익분기 근처 → 주의
+        if conv > 0 and roas < 200:
+            return "⚠️ 관리 필요"
+
+        # ROAS 평균 1.5배 이상 → 증액 추천
+        if _avg_roas > 0 and roas >= _avg_roas * 1.5:
+            return "💰 증액 추천"
+
+        # ROAS 평균 이상 → 효율
+        if _avg_roas > 0 and roas >= _avg_roas:
+            return "✅ 효율"
+
         return ""
 
     tbl = adf.copy()
     tbl["상태"] = tbl.apply(make_badge, axis=1)
     disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl.columns]
 
-    # ── 꿀통 / 낭비 분류 ──
+    # ── 꿀통 기준: ROAS 200% 이상 + 전환 있음 ──
     def is_honey(row):
         roas = row.get("ROAS", 0) if pd.notna(row.get("ROAS")) else 0
-        cpa  = row.get("CPA", 0)  if pd.notna(row.get("CPA"))  else 0
         conv = row.get("전환수", 0)
-        score = 0
-        if _avg_roas > 0 and roas >= _avg_roas: score += 1
-        if _avg_cpa  > 0 and cpa  > 0 and cpa <= _avg_cpa: score += 1
-        if conv >= _avg_conv and conv > 0: score += 1
-        return score >= 1 and conv > 0
+        if conv <= 0 or roas <= 0:
+            return False
+        # ROAS 평균 이상이거나 최소 200% 이상
+        return roas >= max(_avg_roas, 200)
 
+    # ── 낭비 기준: ROAS 100% 미만 or 전환 0 (클릭 있음) ──
     def is_waste(row):
-        roas  = row.get("ROAS", 0) if pd.notna(row.get("ROAS")) else 0
-        cpa   = row.get("CPA", 0)  if pd.notna(row.get("CPA"))  else 0
+        roas  = row.get("ROAS",  0) if pd.notna(row.get("ROAS"))  else 0
         conv  = row.get("전환수", 0)
         click = row.get("클릭수", 0)
-        if conv == 0 and click > 0: return True
-        score = 0
-        if _avg_roas > 0 and roas < _avg_roas * 0.5: score += 1
-        if _avg_cpa  > 0 and cpa  > _avg_cpa  * 1.5: score += 1
-        if conv < _avg_conv: score += 1
-        return score >= 2
+        spend = row.get("광고비", 0)
+        # 전환 없는데 클릭/비용 발생
+        if conv == 0 and click > 0:
+            return True
+        # ROAS 100% 미만 (광고비 > 매출)
+        if conv > 0 and roas < 100 and spend > 0:
+            return True
+        # ROAS 200% 미만이고 광고비 평균 이상 (비용 대비 효율 낮음)
+        if conv > 0 and roas < 200 and spend >= _avg_spend * 1.5:
+            return True
+        return False
 
     honey_df = tbl[tbl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
     waste_df = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
