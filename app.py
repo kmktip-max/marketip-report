@@ -1009,7 +1009,29 @@ def show_results(adf, api_key, model):
             css = "alert-danger" if kind == "danger" else "alert-warn"
             st.markdown(f'<div class="{css}">{msg}</div>', unsafe_allow_html=True)
 
-    # ── 차트 ──
+    # ── 차트 공통 레이아웃 ──
+    chart_layout = dict(
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#f8f9fa",
+        font=dict(family="Pretendard, sans-serif", color="#111111", size=12),
+        title_font=dict(size=14, color="#0D47A1", family="Pretendard, sans-serif"),
+        margin=dict(l=0, r=0, t=44, b=0),
+        height=360,
+        showlegend=True,
+        legend=dict(font=dict(size=11, color="#333333")),
+    )
+
+    # 등급 색상 (마케팁 브랜드 기반 고급 팔레트)
+    color_map = {
+        "상위 (증액 검토)": "#28B463",   # 마케팁 그린
+        "중위 (유지)":       "#1498D7",   # 마케팁 AI블루
+        "낭비 의심":         "#C0392B",   # 진한 레드
+        "고비용 (감액)":     "#E67E22",   # 진한 오렌지
+        "저효율 (감액)":     "#8E44AD",   # 딥 퍼플
+        "클릭 저조":         "#7F8C8D",   # 차분한 그레이
+        "하위 (검토 필요)":  "#566573",   # 다크 그레이
+    }
+
     st.markdown('<div class="section-title">📈 시각화 분석</div>', unsafe_allow_html=True)
     col_l, col_r = st.columns(2)
 
@@ -1018,10 +1040,12 @@ def show_results(adf, api_key, model):
         fig1 = px.bar(
             top_spend, x="광고비", y="키워드", orientation="h",
             title="💰 광고비 TOP 10",
-            color="광고비", color_continuous_scale="Reds",
-            template="plotly_dark",
+            color="광고비",
+            color_continuous_scale=[[0, "#1498D7"], [0.5, "#0D47A1"], [1, "#051F5E"]],
         )
-        fig1.update_layout(yaxis={"categoryorder":"total ascending"}, height=360, margin=dict(l=0,r=0,t=40,b=0))
+        fig1.update_layout(**chart_layout, yaxis={"categoryorder": "total ascending"})
+        fig1.update_coloraxes(showscale=False)
+        fig1.update_traces(marker_line_width=0)
         st.plotly_chart(fig1, use_container_width=True)
 
     with col_r:
@@ -1030,10 +1054,12 @@ def show_results(adf, api_key, model):
             fig2 = px.bar(
                 roas_df, x="ROAS", y="키워드", orientation="h",
                 title="📊 ROAS TOP 10",
-                color="ROAS", color_continuous_scale="Greens",
-                template="plotly_dark",
+                color="ROAS",
+                color_continuous_scale=[[0, "#6CC24A"], [0.5, "#28B463"], [1, "#1A7A3C"]],
             )
-            fig2.update_layout(yaxis={"categoryorder":"total ascending"}, height=360, margin=dict(l=0,r=0,t=40,b=0))
+            fig2.update_layout(**chart_layout, yaxis={"categoryorder": "total ascending"})
+            fig2.update_coloraxes(showscale=False)
+            fig2.update_traces(marker_line_width=0)
             st.plotly_chart(fig2, use_container_width=True)
         else:
             st.info("전환매출 데이터가 없어 ROAS 차트를 표시할 수 없습니다.")
@@ -1042,23 +1068,19 @@ def show_results(adf, api_key, model):
 
     with col_l2:
         grade_counts = adf["등급"].value_counts()
-        color_map = {
-            "상위 (증액 검토)": "#10b981",
-            "중위 (유지)":       "#3b82f6",
-            "낭비 의심":         "#ef4444",
-            "고비용 (감액)":     "#f59e0b",
-            "저효율 (감액)":     "#8b5cf6",
-            "클릭 저조":         "#6b7280",
-            "하위 (검토 필요)":  "#78716c",
-        }
-        colors = [color_map.get(g, "#999") for g in grade_counts.index]
+        colors = [color_map.get(g, "#95A5A6") for g in grade_counts.index]
         fig3 = go.Figure(go.Pie(
-            labels=grade_counts.index, values=grade_counts.values,
-            hole=0.5, marker_colors=colors,
+            labels=grade_counts.index,
+            values=grade_counts.values,
+            hole=0.52,
+            marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
+            textfont=dict(size=12, family="Pretendard, sans-serif"),
         ))
         fig3.update_layout(
-            title="🏷️ 키워드 등급 분포", template="plotly_dark",
-            height=360, margin=dict(l=0,r=0,t=40,b=0)
+            **{k: v for k, v in chart_layout.items() if k != "showlegend"},
+            title="🏷️ 키워드 등급 분포",
+            showlegend=True,
+            legend=dict(font=dict(size=10), orientation="v"),
         )
         st.plotly_chart(fig3, use_container_width=True)
 
@@ -1067,13 +1089,13 @@ def show_results(adf, api_key, model):
         if not sc.empty:
             fig4 = px.scatter(
                 sc, x="CTR", y="전환율",
-                size="광고비", size_max=40,
+                size="광고비", size_max=44,
                 hover_name="키워드", color="등급",
                 title="📉 CTR vs 전환율",
                 color_discrete_map=color_map,
-                template="plotly_dark",
             )
-            fig4.update_layout(height=360, margin=dict(l=0,r=0,t=40,b=0))
+            fig4.update_layout(**chart_layout)
+            fig4.update_traces(marker=dict(line=dict(width=1, color="#ffffff"), opacity=0.88))
             st.plotly_chart(fig4, use_container_width=True)
 
     # ── 키워드 테이블 ──
