@@ -1077,7 +1077,7 @@ def show_results(adf, api_key, model):
             textfont=dict(size=12, family="Pretendard, sans-serif"),
         ))
         fig3.update_layout(
-            **{k: v for k, v in chart_layout.items() if k != "showlegend"},
+            **{k: v for k, v in chart_layout.items() if k not in ("showlegend", "legend")},
             title="🏷️ 키워드 등급 분포",
             showlegend=True,
             legend=dict(font=dict(size=10), orientation="v"),
