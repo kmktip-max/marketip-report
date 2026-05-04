@@ -1240,23 +1240,82 @@ def show_results(adf, api_key, model):
 
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
-    disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","등급"] if c in adf.columns]
 
-    tab_all, tab_prob, tab_good = st.tabs(["전체 키워드", "⚠️ 문제 키워드", "✅ 우수 키워드"])
+    # ── 평균 계산 (합계 기반) ──
+    _avg_roas = (adf["전환매출"].sum() / adf["광고비"].sum() * 100) if adf["광고비"].sum() > 0 else 0
+    _avg_cpa  = (adf["광고비"].sum() / adf["전환수"].sum()) if adf["전환수"].sum() > 0 else 0
+    _avg_conv = adf["전환수"].mean()
+    _avg_spend = adf["광고비"].mean()
+
+    # ── 상태 배지 생성 ──
+    def make_badge(row):
+        conv  = row.get("전환수", 0)
+        roas  = row.get("ROAS", 0)  if pd.notna(row.get("ROAS")) else 0
+        cpa   = row.get("CPA", 0)   if pd.notna(row.get("CPA"))  else 0
+        spend = row.get("광고비", 0)
+        click = row.get("클릭수", 0)
+
+        # 증액 추천: ROAS 평균 1.5배 이상 + 전환 평균 이상
+        if roas >= _avg_roas * 1.5 and conv >= _avg_conv and _avg_roas > 0:
+            return "💰 증액 추천"
+        # 효율 Good: ROAS 평균 이상 or CPA 평균 이하 (전환 있음)
+        if conv > 0 and (roas >= _avg_roas or (cpa > 0 and cpa <= _avg_cpa)):
+            return "✅ 효율"
+        # 즉시 주의: 클릭 50+ 전환 0 + 광고비 평균 이상
+        if conv == 0 and click >= 50 and spend >= _avg_spend:
+            return "🚨 즉시 주의"
+        # 낭비: 클릭 있고 전환 0
+        if conv == 0 and click > 0:
+            return "⚠️ 낭비"
+        return ""
+
+    tbl = adf.copy()
+    tbl["상태"] = tbl.apply(make_badge, axis=1)
+    disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl.columns]
+
+    # ── 꿀통 / 낭비 분류 ──
+    def is_honey(row):
+        roas = row.get("ROAS", 0) if pd.notna(row.get("ROAS")) else 0
+        cpa  = row.get("CPA", 0)  if pd.notna(row.get("CPA"))  else 0
+        conv = row.get("전환수", 0)
+        score = 0
+        if _avg_roas > 0 and roas >= _avg_roas: score += 1
+        if _avg_cpa  > 0 and cpa  > 0 and cpa <= _avg_cpa: score += 1
+        if conv >= _avg_conv and conv > 0: score += 1
+        return score >= 1 and conv > 0
+
+    def is_waste(row):
+        roas  = row.get("ROAS", 0) if pd.notna(row.get("ROAS")) else 0
+        cpa   = row.get("CPA", 0)  if pd.notna(row.get("CPA"))  else 0
+        conv  = row.get("전환수", 0)
+        click = row.get("클릭수", 0)
+        if conv == 0 and click > 0: return True
+        score = 0
+        if _avg_roas > 0 and roas < _avg_roas * 0.5: score += 1
+        if _avg_cpa  > 0 and cpa  > _avg_cpa  * 1.5: score += 1
+        if conv < _avg_conv: score += 1
+        return score >= 2
+
+    honey_df = tbl[tbl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
+    waste_df = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+
+    tab_all, tab_honey, tab_waste = st.tabs([
+        f"📋 전체 키워드 ({len(tbl)}개)",
+        f"🍯 꿀통 키워드 ({len(honey_df)}개)",
+        f"🚨 낭비 키워드 ({len(waste_df)}개)",
+    ])
     with tab_all:
-        st.dataframe(adf[disp].reset_index(drop=True), use_container_width=True, height=320)
-    with tab_prob:
-        prob = adf[~adf["등급"].isin(["상위 (증액 검토)","중위 (유지)"])].sort_values("광고비", ascending=False)
-        if prob.empty:
-            st.success("문제 키워드가 없습니다.")
+        st.dataframe(tbl[disp].reset_index(drop=True), use_container_width=True, height=360)
+    with tab_honey:
+        if honey_df.empty:
+            st.info("꿀통 키워드가 없습니다.")
         else:
-            st.dataframe(prob[disp].reset_index(drop=True), use_container_width=True, height=320)
-    with tab_good:
-        good = adf[adf["등급"] == "상위 (증액 검토)"].sort_values("ROAS", ascending=False, na_position="last")
-        if good.empty:
-            st.info("상위 등급 키워드가 없습니다.")
+            st.dataframe(honey_df[disp].reset_index(drop=True), use_container_width=True, height=360)
+    with tab_waste:
+        if waste_df.empty:
+            st.success("낭비 키워드가 없습니다.")
         else:
-            st.dataframe(good[disp].reset_index(drop=True), use_container_width=True, height=320)
+            st.dataframe(waste_df[disp].reset_index(drop=True), use_container_width=True, height=360)
 
     # ── AI 채팅 (다운로드 바로 위) ──
     st.markdown("""
