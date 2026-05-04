@@ -1475,61 +1475,66 @@ def main():
         st.divider()
         st.caption("© 마케팁 광고 구조 분석 시스템")
 
-    # ── 네이버 보고서 파서 (인코딩·헤더 자동 감지) ──
+    # ── 네이버 보고서 파서 ──
     def parse_naver_file(f):
         MAX_MB = 50
         if f.size > MAX_MB * 1024 * 1024:
             raise ValueError(f"파일 크기가 {MAX_MB}MB를 초과합니다.")
 
-        HINTS = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스","전환"]
-        name  = f.name.lower()
-
-        def promote_header(df):
-            """첫 번째 데이터 행이 실제 컬럼명인 경우 승격"""
-            if df.empty:
-                return df
-            first = " ".join(df.iloc[0].astype(str).str.lower())
-            if any(h in first for h in HINTS):
-                df.columns = df.iloc[0].astype(str).str.strip()
-                df = df.iloc[1:].reset_index(drop=True)
-            return df
-
-        def valid(df):
-            cols = " ".join(df.columns.astype(str).str.lower())
-            # 컬럼명 OR 첫 행에 힌트 키워드 포함 여부
-            first = " ".join(df.iloc[0].astype(str).str.lower()) if not df.empty else ""
-            return any(h in cols or h in first for h in HINTS)
-
-        def clean(df):
-            df = promote_header(df)
-            df.columns = [str(c).strip() for c in df.columns]
-            return df.dropna(how="all").reset_index(drop=True)
+        name = f.name.lower()
 
         # ── Excel ──
         if name.endswith((".xlsx", ".xls")):
-            for h in [0, 1]:
+            for h in [0, 1, 2]:
                 try:
                     f.seek(0)
                     df = pd.read_excel(f, header=h)
-                    if valid(df):
-                        return clean(df)
+                    if len(df.columns) > 1:
+                        df.columns = [str(c).strip() for c in df.columns]
+                        return df.dropna(how="all").reset_index(drop=True)
                 except Exception:
                     pass
             f.seek(0)
-            return clean(pd.read_excel(f))
+            df = pd.read_excel(f)
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
 
-        # ── CSV ──
+        # ── CSV: 원시 바이트로 읽어서 구조 파악 ──
+        raw_bytes = f.read()
+        content = None
         for enc in ["utf-8-sig", "euc-kr", "cp949", "utf-8"]:
-            for h in [0, 1]:
-                try:
-                    f.seek(0)
-                    df = pd.read_csv(f, encoding=enc, header=h, on_bad_lines="skip")
-                    if valid(df):
-                        return clean(df)
-                except Exception:
-                    pass
-        f.seek(0)
-        return clean(pd.read_csv(f, on_bad_lines="skip", encoding_errors="replace"))
+            try:
+                content = raw_bytes.decode(enc)
+                break
+            except Exception:
+                continue
+        if content is None:
+            content = raw_bytes.decode("utf-8", errors="replace")
+
+        lines = [l for l in content.splitlines() if l.strip()]
+
+        # 구분자 감지 (가장 많은 컬럼을 가진 구분자 선택)
+        sep = ","
+        for s in [",", "\t", ";"]:
+            counts = [line.count(s) for line in lines[:5]]
+            if max(counts, default=0) > 1:
+                sep = s
+                break
+
+        # 실제 헤더 행: 구분자 개수가 가장 많은 첫 번째 행
+        col_counts = [line.count(sep) for line in lines]
+        max_cols = max(col_counts, default=0)
+        header_idx = next((i for i, c in enumerate(col_counts) if c == max_cols), 0)
+
+        df = pd.read_csv(
+            io.StringIO(content),
+            sep=sep,
+            skiprows=header_idx,
+            header=0,
+            on_bad_lines="skip",
+        )
+        df.columns = [str(c).strip() for c in df.columns]
+        return df.dropna(how="all").reset_index(drop=True)
 
     def detect_file_type(df):
         cols = " ".join(df.columns.astype(str).str.lower())
