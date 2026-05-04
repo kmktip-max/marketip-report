@@ -1131,14 +1131,28 @@ def show_results(adf, api_key, model):
             "전환매출": fm(["전환매출"]),
         }
 
+    def fmt_val(v, metric_name):
+        n = metric_name.replace(" ","").lower()
+        if "roas" in n or "광고수익률" in n or "ctr" in n or "클릭률" in n:
+            return f"{v:.2f}%"
+        if "광고비" in n or "비용" in n or "매출" in n:
+            return f"₩{v:,.0f}"
+        if "전환수" in n:
+            return f"{v:,.0f}건"
+        return f"{v:,.0f}"
+
     def seg_bar(sdf, x_col, m_col, title, scale, rotate=False):
         tmp = sdf[[x_col, m_col]].copy()
         tmp[m_col] = pd.to_numeric(tmp[m_col].astype(str).str.replace(",","",regex=False), errors="coerce")
         tmp = tmp.dropna()
         if tmp.empty: return None
-        fig = px.bar(tmp, x=x_col, y=m_col, title=title, color=m_col, color_continuous_scale=scale)
-        fig.update_layout(**{**CL, "margin": dict(l=0,r=0,t=44,b=40 if rotate else 0)})
+        text = tmp[m_col].apply(lambda v: fmt_val(v, m_col))
+        fig = px.bar(tmp, x=x_col, y=m_col, title=title, color=m_col,
+                     color_continuous_scale=scale, text=text)
+        fig.update_layout(**{**CL, "margin": dict(l=0, r=0, t=44, b=40 if rotate else 10)})
         fig.update_coloraxes(showscale=False)
+        fig.update_traces(textposition="outside", textfont=dict(size=11, color="#111111"),
+                          marker_line_width=0)
         if rotate:
             fig.update_layout(xaxis_tickangle=-45)
         return fig
@@ -1227,7 +1241,7 @@ def show_results(adf, api_key, model):
                         tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
                         tmp = tmp.dropna().sort_values(mc, ascending=False)
                         if tmp.empty: continue
-                        text = tmp[mc].apply(lambda v: f"{v:,.0f}")
+                        text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                         fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
                                      color=dev_col,
                                      color_discrete_map={"PC":"#0D47A1","모바일":"#28B463"},
