@@ -1109,134 +1109,137 @@ def show_results(adf, api_key, model):
             fig_sc.update_traces(marker=dict(line=dict(width=1,color="#ffffff"), opacity=0.88))
             st.plotly_chart(fig_sc, use_container_width=True)
 
-    # ── [2] 세그먼트 차트 (원본 데이터에서 자동 감지) ──
-    raw_df = st.session_state.get("raw_df", None)
-    if raw_df is not None and not raw_df.empty:
-        cols = {c: c.replace(" ","").lower() for c in raw_df.columns}
+    # ── [2] 세그먼트 차트 ──
+    segment_dfs = st.session_state.get("segment_dfs", {})
+    DAY_ORDER = ["월요일","화요일","수요일","목요일","금요일","토요일","일요일","월","화","수","목","금","토","일"]
 
-        def find_col(keywords):
-            for orig, norm in cols.items():
-                if any(k in norm for k in keywords):
-                    return orig
+    def get_metrics(sdf):
+        """세그먼트 df에서 수치 컬럼 자동 탐지"""
+        def fm(kws):
+            for c in sdf.columns:
+                n = c.replace(" ","").lower()
+                if any(k in n for k in kws):
+                    if pd.to_numeric(sdf[c], errors="coerce").notna().sum() > 0:
+                        return c
             return None
+        return {
+            "전환수":  fm(["전환수"]),
+            "광고비":  fm(["총비용","광고비","비용"]),
+            "ROAS":    fm(["광고수익률","roas"]),
+            "CTR":     fm(["클릭률","ctr"]),
+            "클릭수":  fm(["클릭수"]),
+            "전환매출": fm(["전환매출"]),
+        }
 
-        def find_metric(keywords):
-            for orig, norm in cols.items():
-                if any(k in norm for k in keywords):
-                    if pd.to_numeric(raw_df[orig], errors="coerce").notna().sum() > 0:
-                        return orig
-            return None
+    def seg_bar(sdf, x_col, m_col, title, scale, rotate=False):
+        tmp = sdf[[x_col, m_col]].copy()
+        tmp[m_col] = pd.to_numeric(tmp[m_col].astype(str).str.replace(",","",regex=False), errors="coerce")
+        tmp = tmp.dropna()
+        if tmp.empty: return None
+        fig = px.bar(tmp, x=x_col, y=m_col, title=title, color=m_col, color_continuous_scale=scale)
+        fig.update_layout(**{**CL, "margin": dict(l=0,r=0,t=44,b=40 if rotate else 0)})
+        fig.update_coloraxes(showscale=False)
+        if rotate:
+            fig.update_layout(xaxis_tickangle=-45)
+        return fig
 
-        seg_col   = find_col(["요일"])
-        time_col  = find_col(["시간대","시간"])
-        age_col   = find_col(["연령","나이"])
-        dev_col   = find_col(["기기","디바이스"])
-        conv_col  = find_metric(["전환수","전환"])
-        spend_col = find_metric(["총비용","광고비","비용"])
-        roas_col  = find_metric(["광고수익률","roas"])
-        ctr_col   = find_metric(["클릭률","ctr"])
+    def seg_pie(sdf, label_col, val_col, title):
+        tmp = sdf[[label_col, val_col]].copy()
+        tmp[val_col] = pd.to_numeric(tmp[val_col].astype(str).str.replace(",","",regex=False), errors="coerce")
+        tmp = tmp.dropna()
+        if tmp.empty: return None
+        fig = go.Figure(go.Pie(
+            labels=tmp[label_col], values=tmp[val_col], hole=0.45,
+            marker=dict(colors=["#0D47A1","#28B463","#E67E22","#8E44AD","#8E44AD"],
+                        line=dict(color="#fff", width=2)),
+        ))
+        fig.update_layout(**{k:v for k,v in CL.items() if k != "showlegend"},
+                          title=title, showlegend=True, legend=dict(font=dict(size=11)))
+        return fig
 
-        DAY_ORDER = ["월요일","화요일","수요일","목요일","금요일","토요일","일요일",
-                     "월","화","수","목","금","토","일"]
+    if segment_dfs:
+        st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
 
-        has_segment = any([seg_col, time_col, age_col, dev_col])
-        if has_segment:
-            st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
+        for seg_type, sdf in segment_dfs.items():
+            if sdf is None or sdf.empty:
+                continue
+            metrics = get_metrics(sdf)
+            active  = {k: v for k, v in metrics.items() if v}
 
-        # 요일별
-        if seg_col:
-            sdf = raw_df.copy()
-            sdf[seg_col] = sdf[seg_col].astype(str).str.strip()
-            day_order_present = [d for d in DAY_ORDER if d in sdf[seg_col].values]
-            sdf = sdf[sdf[seg_col].isin(DAY_ORDER)]
-            if not sdf.empty:
-                st.markdown("**📅 요일별 분석**")
-                day_metrics = [m for m in [conv_col, spend_col, roas_col, ctr_col] if m]
-                if day_metrics:
-                    dc1, dc2 = st.columns(2)
-                    pairs = [(day_metrics[i], day_metrics[i+1]) if i+1 < len(day_metrics) else (day_metrics[i], None)
-                             for i in range(0, len(day_metrics), 2)]
-                    for idx, (ma, mb) in enumerate(pairs):
-                        col_a, col_b = st.columns(2)
-                        for col_obj, m in [(col_a, ma), (col_b, mb)]:
-                            if m:
-                                tmp = sdf[[seg_col, m]].copy()
-                                tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
-                                tmp = tmp.dropna()
-                                if day_order_present:
-                                    cat_order = [d for d in DAY_ORDER if d in tmp[seg_col].values]
-                                    tmp[seg_col] = pd.Categorical(tmp[seg_col], categories=cat_order, ordered=True)
-                                    tmp = tmp.sort_values(seg_col)
-                                with col_obj:
-                                    fig = px.bar(tmp, x=seg_col, y=m, title=f"📅 요일별 {m}",
-                                        color=m, color_continuous_scale=[[0,"#1498D7"],[1,"#0D47A1"]])
-                                    fig.update_layout(**CL)
-                                    fig.update_coloraxes(showscale=False)
-                                    st.plotly_chart(fig, use_container_width=True)
+            # ── 요일별 ──
+            if "요일" in seg_type:
+                seg_col = next((c for c in sdf.columns if "요일" in c.replace(" ","")), None)
+                if seg_col:
+                    sdf2 = sdf.copy()
+                    sdf2[seg_col] = sdf2[seg_col].astype(str).str.strip()
+                    sdf2 = sdf2[sdf2[seg_col].isin(DAY_ORDER)]
+                    cat = [d for d in DAY_ORDER if d in sdf2[seg_col].values]
+                    if cat:
+                        sdf2[seg_col] = pd.Categorical(sdf2[seg_col], categories=cat, ordered=True)
+                        sdf2 = sdf2.sort_values(seg_col)
+                    st.markdown("**📅 요일별 분석**")
+                    cols_pair = st.columns(2)
+                    for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                        fig = seg_bar(sdf2, seg_col, mc, f"📅 요일별 {mk}",
+                                      [[0,"#1498D7"],[1,"#0D47A1"]])
+                        if fig:
+                            with cols_pair[idx % 2]:
+                                st.plotly_chart(fig, use_container_width=True)
 
-        # 시간대별
-        if time_col:
-            tdf = raw_df.copy()
-            tdf[time_col] = pd.to_numeric(tdf[time_col].astype(str).str.replace("[^0-9]","",regex=True), errors="coerce")
-            tdf = tdf.dropna(subset=[time_col]).sort_values(time_col)
-            tdf[time_col] = tdf[time_col].astype(int).astype(str) + "시"
-            if not tdf.empty:
-                st.markdown("**⏰ 시간대별 분석**")
-                time_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
-                if time_metrics:
-                    for m in time_metrics:
-                        tmp = tdf[[time_col, m]].copy()
-                        tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
-                        tmp = tmp.dropna()
-                        fig = px.bar(tmp, x=time_col, y=m, title=f"⏰ 시간대별 {m}",
-                            color=m, color_continuous_scale=[[0,"#6CC24A"],[1,"#1A7A3C"]])
-                        fig.update_layout(**{**CL, "height":300})
-                        fig.update_coloraxes(showscale=False)
-                        st.plotly_chart(fig, use_container_width=True)
+            # ── 시간대별 ──
+            elif "시간" in seg_type:
+                time_col = next((c for c in sdf.columns if "시간" in c.replace(" ","")), None)
+                if time_col:
+                    tdf = sdf.copy()
+                    tdf[time_col] = pd.to_numeric(tdf[time_col].astype(str).str.replace("[^0-9]","",regex=True), errors="coerce")
+                    tdf = tdf.dropna(subset=[time_col]).sort_values(time_col)
+                    tdf[time_col] = tdf[time_col].astype(int).astype(str) + "시"
+                    st.markdown("**⏰ 시간대별 분석**")
+                    cols_pair = st.columns(2)
+                    for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                        fig = seg_bar(tdf, time_col, mc, f"⏰ 시간대별 {mk}",
+                                      [[0,"#6CC24A"],[1,"#1A7A3C"]], rotate=True)
+                        if fig:
+                            with cols_pair[idx % 2]:
+                                st.plotly_chart(fig, use_container_width=True)
 
-        # 연령별
-        if age_col:
-            adf_seg = raw_df.copy()
-            adf_seg[age_col] = adf_seg[age_col].astype(str).str.strip()
-            age_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
-            if age_metrics and not adf_seg.empty:
-                st.markdown("**👤 연령별 분석**")
-                ac1, ac2 = st.columns(2)
-                for idx, m in enumerate(age_metrics[:4]):
-                    col_obj = ac1 if idx % 2 == 0 else ac2
-                    tmp = adf_seg[[age_col, m]].copy()
-                    tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
-                    tmp = tmp.dropna().sort_values(m, ascending=False)
-                    with col_obj:
-                        fig = px.bar(tmp, x=age_col, y=m, title=f"👤 연령별 {m}",
-                            color=m, color_continuous_scale=[[0,"#F39C12"],[1,"#CA6F1E"]])
-                        fig.update_layout(**CL)
-                        fig.update_coloraxes(showscale=False)
-                        st.plotly_chart(fig, use_container_width=True)
+            # ── 연령별 ──
+            elif "연령" in seg_type:
+                age_col = next((c for c in sdf.columns if "연령" in c.replace(" ","")), None)
+                if age_col:
+                    st.markdown("**👤 연령별 분석**")
+                    cols_pair = st.columns(2)
+                    for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                        fig = seg_bar(sdf, age_col, mc, f"👤 연령별 {mk}",
+                                      [[0,"#F39C12"],[1,"#CA6F1E"]])
+                        if fig:
+                            with cols_pair[idx % 2]:
+                                st.plotly_chart(fig, use_container_width=True)
 
-        # 기기별
-        if dev_col:
-            ddf = raw_df.copy()
-            ddf[dev_col] = ddf[dev_col].astype(str).str.strip()
-            dev_metrics = [m for m in [conv_col, spend_col, roas_col] if m]
-            if dev_metrics and not ddf.empty:
-                st.markdown("**📱 기기별 분석**")
-                dc1, dc2 = st.columns(2)
-                for idx, m in enumerate(dev_metrics[:4]):
-                    col_obj = dc1 if idx % 2 == 0 else dc2
-                    tmp = ddf[[dev_col, m]].copy()
-                    tmp[m] = pd.to_numeric(tmp[m].astype(str).str.replace(",","",regex=False), errors="coerce")
-                    tmp = tmp.dropna()
-                    with col_obj:
-                        fig = go.Figure(go.Pie(
-                            labels=tmp[dev_col], values=tmp[m], hole=0.45,
-                            marker=dict(colors=["#0D47A1","#28B463","#E67E22","#8E44AD"],
-                                        line=dict(color="#fff",width=2)),
-                        ))
-                        fig.update_layout(**{k:v for k,v in CL.items() if k!="showlegend"},
-                            title=f"📱 기기별 {m}", showlegend=True,
-                            legend=dict(font=dict(size=11)))
-                        st.plotly_chart(fig, use_container_width=True)
+            # ── 기기별 ──
+            elif "기기" in seg_type:
+                dev_col = next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["기기","디바이스","pc","모바일"])), None)
+                if dev_col:
+                    st.markdown("**📱 기기별 분석**")
+                    cols_pair = st.columns(2)
+                    for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                        fig = seg_pie(sdf, dev_col, mc, f"📱 기기별 {mk}")
+                        if fig:
+                            with cols_pair[idx % 2]:
+                                st.plotly_chart(fig, use_container_width=True)
+
+            # ── 지역별 ──
+            elif "지역" in seg_type:
+                reg_col = next((c for c in sdf.columns if any(k in c.replace(" ","") for k in ["지역","시도"])), None)
+                if reg_col:
+                    st.markdown("**📍 지역별 분석**")
+                    cols_pair = st.columns(2)
+                    for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                        fig = seg_bar(sdf, reg_col, mc, f"📍 지역별 {mk}",
+                                      [[0,"#8E44AD"],[1,"#6C3483"]])
+                        if fig:
+                            with cols_pair[idx % 2]:
+                                st.plotly_chart(fig, use_container_width=True)
 
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
@@ -1585,22 +1588,16 @@ def main():
                         st.dataframe(d.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
-                    # 키워드 파일을 메인 df로, 나머지는 raw_df에 병합
-                    kw_dfs = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
-                    other_dfs = [v["df"] for v in loaded.values() if "키워드" not in v["type"]]
+                    kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
+                    seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
 
-                    if kw_dfs:
-                        main_df = pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1 else kw_dfs[0]
-                    else:
-                        main_df = list(loaded.values())[0]["df"]
+                    main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
+                               else kw_dfs[0] if kw_dfs
+                               else list(loaded.values())[0]["df"])
 
-                    # 세그먼트 데이터도 raw_df에 포함 (세로 병합)
-                    all_dfs = [v["df"] for v in loaded.values()]
-                    raw_merged = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]
-
-                    st.session_state["confirmed_df"] = main_df
-                    st.session_state["raw_df_extra"] = raw_merged
-                    st.session_state["last_df_hash"] = ""
+                    st.session_state["confirmed_df"]  = main_df
+                    st.session_state["segment_dfs"]   = seg_map   # {"📅 요일별": df, "📱 기기별": df, ...}
+                    st.session_state["last_df_hash"]  = ""
                     st.rerun()
 
         if st.session_state.get("confirmed_df") is not None and not files:
