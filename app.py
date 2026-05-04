@@ -1047,9 +1047,10 @@ def show_results(adf, api_key, model):
             text = df[x].apply(lambda v: f"{v:.1f}%")
         else:
             text = df[x].apply(lambda v: f"{v:,.0f}")
+        cl = {k: v for k, v in CL.items() if k != "margin"}
         fig = px.bar(df, x=x, y=y, orientation="h", title=title,
                      color=x, color_continuous_scale=scale, text=text)
-        fig.update_layout(**CL, yaxis={"categoryorder": "total ascending"},
+        fig.update_layout(**cl, yaxis={"categoryorder": "total ascending"},
                           margin=dict(l=0, r=90, t=44, b=0))
         fig.update_coloraxes(showscale=False)
         fig.update_traces(marker_line_width=0, textposition="outside",
