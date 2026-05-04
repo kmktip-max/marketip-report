@@ -691,7 +691,7 @@ def load_advertisers():
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        return {"마케팁": "marketip2024"}
+        return {"admin": {"name": "마케팁 관리자", "password": "mktip"}}
 
 # ────────────────────────────────────────────
 # 인증
@@ -709,15 +709,16 @@ def check_auth():
 
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.markdown('<div class="login-box"><h2>🔐 접속 확인</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="login-box"><h2>🔐 로그인</h2>', unsafe_allow_html=True)
+        user_id  = st.text_input("아이디", placeholder="아이디를 입력하세요", label_visibility="collapsed")
         password = st.text_input("패스워드", type="password", placeholder="패스워드를 입력하세요", label_visibility="collapsed")
         if st.button("접속하기", use_container_width=True):
             advertisers = load_advertisers()
             matched = None
-            for name, pwd in advertisers.items():
-                if password == pwd:
-                    matched = name
-                    break
+            if user_id in advertisers:
+                info = advertisers[user_id]
+                if password == info.get("password", ""):
+                    matched = info.get("name", user_id)
             if matched:
                 st.session_state.authenticated = True
                 st.session_state.advertiser_name = matched

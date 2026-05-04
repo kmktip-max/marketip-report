@@ -1,5 +1,5 @@
 {
-  "마케팁 관리자": "marketip2024",
-  "광고주A": "adA1234",
-  "광고주B": "adB5678"
+  "admin": {"name": "마케팁 관리자", "password": "mktip"},
+  "adA": {"name": "광고주A", "password": "adA1234"},
+  "adB": {"name": "광고주B", "password": "adB5678"}
 }
