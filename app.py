@@ -1038,12 +1038,24 @@ def show_results(adf, api_key, model):
         "하위 (검토 필요)": "#566573",
     }
 
-    def hbar(df, x, y, title, scale):
+    def hbar(df, x, y, title, scale, fmt=None):
+        # 수치 레이블 포맷
+        if fmt == "money":
+            text = df[x].apply(lambda v: f"₩{v:,.0f}")
+        elif fmt == "pct":
+            text = df[x].apply(lambda v: f"{v:.1f}%")
+        else:
+            text = df[x].apply(lambda v: f"{v:,.0f}")
+
         fig = px.bar(df, x=x, y=y, orientation="h", title=title,
-                     color=x, color_continuous_scale=scale)
-        fig.update_layout(**CL, yaxis={"categoryorder": "total ascending"})
+                     color=x, color_continuous_scale=scale,
+                     text=text)
+        fig.update_layout(**CL, yaxis={"categoryorder": "total ascending"},
+                          margin=dict(l=0, r=80, t=44, b=0))
         fig.update_coloraxes(showscale=False)
-        fig.update_traces(marker_line_width=0)
+        fig.update_traces(marker_line_width=0,
+                          textposition="outside",
+                          textfont=dict(size=11, color="#111111"))
         return fig
 
     # ── [1] 키워드 분석 차트 ──────────────────────
@@ -1052,25 +1064,25 @@ def show_results(adf, api_key, model):
     c1, c2 = st.columns(2)
     with c1:
         st.plotly_chart(hbar(adf.nlargest(10,"광고비"), "광고비", "키워드",
-            "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]]),
+            "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]], fmt="money"),
             use_container_width=True)
     with c2:
         roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
         if not roas_df.empty:
             st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
-                [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]]), use_container_width=True)
+                [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True)
 
     c3, c4 = st.columns(2)
     with c3:
         cvr_df = adf[adf["전환율"].notna() & (adf["전환수"] > 0)].nlargest(10,"전환율")
         if not cvr_df.empty:
             st.plotly_chart(hbar(cvr_df,"전환율","키워드","🎯 전환율 TOP 10",
-                [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]]), use_container_width=True)
+                [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]], fmt="pct"), use_container_width=True)
     with c4:
         waste_df = adf[(adf["전환수"] == 0) & (adf["클릭수"] > 0)].nlargest(10,"광고비")
         if not waste_df.empty:
             st.plotly_chart(hbar(waste_df,"광고비","키워드","🚨 낭비 키워드 TOP 10 (전환 0)",
-                [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]]), use_container_width=True)
+                [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]], fmt="money"), use_container_width=True)
         else:
             st.success("낭비 키워드가 없습니다.")
 
