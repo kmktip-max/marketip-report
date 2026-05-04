@@ -1475,39 +1475,49 @@ def main():
         st.divider()
         st.caption("© 마케팁 광고 구조 분석 시스템")
 
-    # ── 네이버 보고서 CSV/Excel 헤더 자동 감지 파서 ──
+    # ── 네이버 보고서 파서 (인코딩·헤더 자동 감지) ──
     def parse_naver_file(f):
-        """네이버 보고서 특유의 1행 메타데이터를 건너뛰고 실제 데이터 헤더를 찾아 파싱"""
         MAX_MB = 3
         if f.size > MAX_MB * 1024 * 1024:
             raise ValueError(f"파일 크기가 {MAX_MB}MB를 초과합니다. 30일 기준 데이터만 등록해주세요.")
 
-        if f.name.endswith(".csv"):
-            raw = pd.read_csv(f, header=None, encoding_errors="replace")
-        else:
-            raw = pd.read_excel(f, header=None)
+        HINTS = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스","전환"]
+        name  = f.name.lower()
 
-        # 실제 헤더 행 탐색: "키워드", "노출수", "클릭수" 등이 포함된 행
-        header_row = 0
-        kw_hints = ["키워드","노출수","클릭수","요일","시간","연령","기기","지역","디바이스"]
-        for i, row in raw.iterrows():
-            row_str = " ".join(row.astype(str).str.lower())
-            if any(h in row_str for h in kw_hints):
-                header_row = i
-                break
+        def valid(df):
+            cols = " ".join(df.columns.astype(str).str.lower())
+            return any(h in cols for h in HINTS)
 
-        df_out = pd.read_csv(
-            io.StringIO(raw.to_csv(index=False, header=False)),
-            skiprows=header_row, header=0
-        ) if f.name.endswith(".csv") else raw.iloc[header_row:].reset_index(drop=True)
+        def clean(df):
+            df.columns = [str(c).strip() for c in df.columns]
+            return df.dropna(how="all").reset_index(drop=True)
 
-        if not f.name.endswith(".csv"):
-            df_out.columns = df_out.iloc[0]
-            df_out = df_out.iloc[1:].reset_index(drop=True)
+        # ── Excel ──
+        if name.endswith((".xlsx", ".xls")):
+            for h in [0, 1]:
+                try:
+                    f.seek(0)
+                    df = pd.read_excel(f, header=h)
+                    if valid(df):
+                        return clean(df)
+                except Exception:
+                    pass
+            f.seek(0)
+            return clean(pd.read_excel(f))
 
-        df_out.columns = [str(c).strip() for c in df_out.columns]
-        df_out = df_out.dropna(how="all")
-        return df_out
+        # ── CSV ──
+        for enc in ["utf-8-sig", "euc-kr", "cp949", "utf-8"]:
+            for h in [0, 1]:
+                try:
+                    f.seek(0)
+                    df = pd.read_csv(f, encoding=enc, header=h, on_bad_lines="skip")
+                    if valid(df):
+                        return clean(df)
+                except Exception:
+                    pass
+        # 최후 시도
+        f.seek(0)
+        return clean(pd.read_csv(f, on_bad_lines="skip", encoding_errors="replace"))
 
     def detect_file_type(df):
         cols = " ".join(df.columns.astype(str).str.lower())
