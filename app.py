@@ -686,21 +686,11 @@ CPA / CPC → 소수점 2자리
 # 광고주 계정 로드
 # ────────────────────────────────────────────
 def load_advertisers():
-    # Streamlit Cloud secrets 우선 사용
-    try:
-        if "advertisers" in st.secrets:
-            result = {}
-            for uid, info in st.secrets["advertisers"].items():
-                result[uid] = {"name": info["name"], "password": info["password"]}
-            return result
-    except Exception:
-        pass
-    # 로컬 JSON 파일 fallback
     path = os.path.join(os.path.dirname(__file__), "advertisers.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
-    except FileNotFoundError:
+    except Exception:
         return {"admin": {"name": "마케팁 관리자", "password": "mktip"}}
 
 # ────────────────────────────────────────────
@@ -723,18 +713,31 @@ def check_auth():
         user_id  = st.text_input("아이디", placeholder="아이디", label_visibility="collapsed")
         password = st.text_input("패스워드", type="password", placeholder="패스워드", label_visibility="collapsed")
         if st.button("접속하기", use_container_width=True):
-            advertisers = load_advertisers()
             matched = None
-            if user_id in advertisers:
-                info = advertisers[user_id]
-                if password == info.get("password", ""):
-                    matched = info.get("name", user_id)
+
+            # 1순위: st.secrets 직접 조회 (Streamlit Cloud)
+            try:
+                pw_key = f"PW_{user_id}"
+                name_key = f"NAME_{user_id}"
+                if pw_key in st.secrets and password == str(st.secrets[pw_key]):
+                    matched = str(st.secrets.get(name_key, user_id))
+            except Exception:
+                pass
+
+            # 2순위: 로컬 JSON 파일
+            if not matched:
+                advertisers = load_advertisers()
+                if user_id in advertisers:
+                    info = advertisers[user_id]
+                    if password == info.get("password", ""):
+                        matched = info.get("name", user_id)
+
             if matched:
                 st.session_state.authenticated = True
                 st.session_state.advertiser_name = matched
                 st.rerun()
             else:
-                st.error("⛔ 패스워드가 일치하지 않습니다. 관리자에게 문의하세요.")
+                st.error("⛔ 아이디 또는 패스워드가 일치하지 않습니다.")
         st.markdown('</div>', unsafe_allow_html=True)
 
     return False
