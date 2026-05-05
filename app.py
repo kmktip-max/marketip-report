@@ -1141,8 +1141,8 @@ def show_results(adf, api_key, model):
             return f"{v:,.0f}건"
         return f"{v:,.0f}"
 
-    # 빨강→노랑→초록 스케일 (값이 클수록 쨍한 초록, 작을수록 빨강)
-    RYG = [[0.0, "#C0392B"], [0.35, "#E67E22"], [0.6, "#F1C40F"], [0.8, "#6CC24A"], [1.0, "#1A7A3C"]]
+    # 빨강→청록→초록 스케일 (엑셀 3색 조건부 서식과 동일)
+    RYG = [[0.0, "#FF0000"], [0.5, "#00FFFF"], [1.0, "#00FF00"]]
 
     def seg_bar(sdf, x_col, m_col, title, scale=None, rotate=False):
         tmp = sdf[[x_col, m_col]].copy()
