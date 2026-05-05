@@ -5,11 +5,17 @@ import plotly.graph_objects as go
 import io
 import json
 import os
+import hashlib
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_TOKEN_SECRET = "marketip_internal_2024"
+
+def _make_token(user_id, name):
+    return hashlib.md5(f"{user_id}{name}{_TOKEN_SECRET}".encode()).hexdigest()[:20]
 
 # ────────────────────────────────────────────
 # 페이지 설정
@@ -697,6 +703,19 @@ def load_advertisers():
 # 인증
 # ────────────────────────────────────────────
 def check_auth():
+    # ── URL 토큰으로 자동 로그인 (새로고침 유지) ──
+    if not st.session_state.get("authenticated"):
+        try:
+            qp = st.query_params
+            t  = qp.get("t", "")
+            u  = qp.get("u", "")
+            n  = qp.get("n", "")
+            if t and u and n and t == _make_token(u, n):
+                st.session_state.authenticated    = True
+                st.session_state.advertiser_name  = n
+        except Exception:
+            pass
+
     if st.session_state.get("authenticated"):
         return True
 
@@ -733,8 +752,12 @@ def check_auth():
                         matched = info.get("name", user_id)
 
             if matched:
-                st.session_state.authenticated = True
+                st.session_state.authenticated   = True
                 st.session_state.advertiser_name = matched
+                # URL에 토큰 저장 → 새로고침 후에도 유지
+                st.query_params["t"] = _make_token(user_id, matched)
+                st.query_params["u"] = user_id
+                st.query_params["n"] = matched
                 st.rerun()
             else:
                 st.error("⛔ 아이디 또는 패스워드가 일치하지 않습니다.")
@@ -1534,6 +1557,7 @@ def main():
         if st.button("🚪 로그아웃", use_container_width=True):
             for k in ["authenticated", "advertiser_name", "last_ai", "confirmed_df", "adf", "raw_df", "last_df_hash", "chat_messages", "chat_api"]:
                 st.session_state.pop(k, None)
+            st.query_params.clear()
             st.rerun()
         st.divider()
         st.caption("© 마케팁 광고 구조 분석 시스템")
