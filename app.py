@@ -1253,6 +1253,28 @@ def show_results(adf, api_key, model):
                                 with cols_pair[idx % 2]:
                                     st.plotly_chart(fig, use_container_width=True)
 
+                    # ── 성별 ──
+                    elif "성별" in seg_type:
+                        gen_col = next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["성별","남성","여성"])), None)
+                        if gen_col:
+                            cols_pair = st.columns(2)
+                            for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
+                                tmp = sdf[[gen_col, mc]].copy()
+                                tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
+                                tmp = tmp.dropna().sort_values(mc, ascending=False)
+                                if tmp.empty: continue
+                                text = tmp[mc].apply(lambda v: fmt_val(v, mc))
+                                fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}",
+                                             color=gen_col,
+                                             color_discrete_map={"남성":"#0D47A1","여성":"#E91E8C","남":"#0D47A1","여":"#E91E8C"},
+                                             text=text)
+                                fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0)})
+                                fig.update_traces(textposition="outside",
+                                                  textfont=dict(size=13,color="#111111"),
+                                                  marker_line_width=0, width=0.5)
+                                with cols_pair[idx % 2]:
+                                    st.plotly_chart(fig, use_container_width=True)
+
                     # ── 지역별 ──
                     elif "지역" in seg_type:
                         reg_col = next((c for c in sdf.columns if any(k in c.replace(" ","") for k in ["지역","시도"])), None)
@@ -1568,8 +1590,9 @@ def main():
         if any(k in cols for k in ["요일"]): return "📅 요일별"
         if any(k in cols for k in ["시간대","시간"]): return "⏰ 시간대별"
         if any(k in cols for k in ["연령","나이"]): return "👤 연령별"
+        if any(k in cols for k in ["성별","남성","여성"]): return "👫 성별"
         if any(k in cols for k in ["기기","디바이스","pc","모바일"]): return "📱 기기별"
-        if any(k in cols for k in ["지역","시도"]): return "📍 지역별"
+        if any(k in cols for k in ["지역","시도","광역"]): return "📍 지역별"
         if any(k in cols for k in ["키워드"]): return "🔑 키워드"
         return "📄 기타"
 
