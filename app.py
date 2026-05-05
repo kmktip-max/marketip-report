@@ -1428,7 +1428,7 @@ def show_results(adf, api_key, model):
             with col_sel:
                 req = st.selectbox("분석 유형 선택", analysis_opts, label_visibility="collapsed")
             with col_btn:
-                start = st.button("🤖 분석 시작", type="primary", use_container_width=True, config={"displayModeBar": False})
+                start = st.button("🤖 분석 시작", type="primary", use_container_width=True)
             if start:
                 st.session_state.chat_api.append({"role": "user", "content": f"분석 요청: {req}"})
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
