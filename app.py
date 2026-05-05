@@ -1691,17 +1691,36 @@ def main():
             df = st.session_state["confirmed_df"]
 
     with tab2:
-        st.info("엑셀에서 데이터 선택 → Ctrl+C → 아래 창에 Ctrl+V 후 확인 버튼 클릭")
+        st.info("엑셀에서 데이터 선택 → Ctrl+C → 아래 창에 Ctrl+V 후 확인 버튼 클릭\n여러 보고서를 순서대로 붙여넣고 각각 확인 버튼을 누르면 세그먼트 분석에 추가됩니다.")
         pasted = st.text_area("붙여넣기 영역", height=180,
                               placeholder="키워드\t노출수\t클릭수\t광고비\t전환수\t전환매출",
                               key="paste_area")
         if pasted.strip():
             try:
-                df_preview = pd.read_csv(io.StringIO(pasted), sep="\t")
-                st.success(f"✅ {len(df_preview):,}행 · {len(df_preview.columns)}열 인식됨")
+                # 구분자 자동 감지 (탭 우선, 없으면 콤마)
+                sep = "\t" if pasted.count("\t") > pasted.count(",") else ","
+                df_preview = pd.read_csv(io.StringIO(pasted), sep=sep, on_bad_lines="skip")
+                df_preview.columns = [str(c).strip() for c in df_preview.columns]
+                df_preview = df_preview.dropna(how="all").reset_index(drop=True)
+
+                ftype = detect_file_type(df_preview)
+                st.success(f"{ftype} · {len(df_preview):,}행 · {len(df_preview.columns)}컬럼 인식됨")
+
+                with st.expander("미리보기"):
+                    st.dataframe(df_preview.head(5), use_container_width=True)
+
                 if st.button("📊 분석 확인", type="primary", use_container_width=True):
-                    st.session_state["confirmed_df"] = df_preview
-                    st.session_state["last_df_hash"] = ""
+                    seg_dfs = st.session_state.get("segment_dfs", {})
+                    if "키워드" in ftype:
+                        st.session_state["confirmed_df"]  = df_preview
+                        st.session_state["last_df_hash"]  = ""
+                    else:
+                        # 세그먼트 데이터면 segment_dfs에 추가
+                        seg_dfs[ftype] = df_preview
+                        st.session_state["segment_dfs"] = seg_dfs
+                        if st.session_state.get("confirmed_df") is None:
+                            st.session_state["confirmed_df"] = df_preview
+                            st.session_state["last_df_hash"] = ""
                     st.rerun()
             except Exception as e:
                 st.error(f"데이터 파싱 실패: {e}")
