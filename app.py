@@ -1637,17 +1637,15 @@ def show_results(adf, api_key, model):
         ]
         kf(9)
         for i, (lbl, val) in enumerate(cards):
+            pdf.set_fill_color(232, 240, 254)
+            pdf.cell(25, 10, f"  {lbl}", border=1, fill=True)
+            pdf.set_fill_color(255, 255, 255)
             if i % 2 == 0:
-                pdf.set_fill_color(232,240,254)
-                pdf.cell(25,10,f"  {lbl}",border=1,fill=True)
-                pdf.set_fill_color(255,255,255)
-                pdf.cell(65,10,f"  {val}",border=1,fill=False)
+                pdf.cell(65, 10, f"  {val}", border=1, fill=False)
             else:
-                pdf.set_fill_color(232,240,254)
-                pdf.cell(25,10,f"  {lbl}",border=1,fill=True)
-                pdf.set_fill_color(255,255,255)
-                pdf.cell(65,10,f"  {val}",border=1,fill=False,ln=True)
-        if len(cards)%2 != 0: pdf.ln()
+                pdf.cell(65, 10, f"  {val}", border=1, fill=False, ln=True)
+        if len(cards) % 2 != 0:
+            pdf.ln()
         pdf.ln(6)
         divider()
 
@@ -1720,16 +1718,24 @@ def show_results(adf, api_key, model):
 
         def kw_table(title, df, hcol):
             kf(9)
-            pdf.set_fill_color(*hcol); pdf.set_text_color(255,255,255)
+            pdf.set_fill_color(*hcol)
+            pdf.set_text_color(255,255,255)
             pdf.cell(W, 8, f"  {title}", fill=True, ln=True)
-            pdf.set_text_color(17,17,17); pdf.ln(1)
+            pdf.set_text_color(17,17,17)
+            pdf.ln(1)
             kf(8)
             pdf.set_fill_color(232,240,254)
-            for c,w in zip(show_c,cw): pdf.cell(w,7,c,border=1,fill=True,align="C")
+            for c, w in zip(show_c, cw):
+                pdf.cell(w, 7, c, border=1, fill=True, align="C")
             pdf.ln()
-            for i,(_, row) in enumerate(df[show_c].head(15).iterrows()):
-                pdf.set_fill_color(248,249,250) if i%2==0 else pdf.set_fill_color(255,255,255)
-                for c,w in zip(show_c,cw): safe_cell(w,6,row[c] if pd.notna(row[c]) else "-",border=1,align="C")
+            for i, (_, row) in enumerate(df[show_c].head(15).iterrows()):
+                if i % 2 == 0:
+                    pdf.set_fill_color(248, 249, 250)
+                else:
+                    pdf.set_fill_color(255, 255, 255)
+                for c, w in zip(show_c, cw):
+                    val = row[c] if pd.notna(row[c]) else "-"
+                    safe_cell(w, 6, val, border=1, align="C")
                 pdf.ln()
             pdf.ln(5)
 
