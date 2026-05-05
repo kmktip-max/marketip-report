@@ -1637,7 +1637,7 @@ def main():
                     st.success(f"{info['type']} · **{fname}** — {len(d):,}행 · {len(d.columns)}컬럼")
 
                     with st.expander(f"미리보기: {fname}"):
-                        st.dataframe(d.head(5), use_container_width=True, config={"displayModeBar": False})
+                        st.dataframe(d.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
                     kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
@@ -1719,7 +1719,7 @@ def main():
 
     # 감지 결과 요약 표시
     with st.expander("📋 데이터 미리보기 및 컬럼 감지 결과", expanded=True):
-        st.dataframe(df.head(5), use_container_width=True, config={"displayModeBar": False})
+        st.dataframe(df.head(5), use_container_width=True)
         st.caption(f"총 {len(df):,}행 · {len(df.columns)}열")
         st.divider()
         detected = {k: v for k, v in cols_map.items() if v != none}
