@@ -1213,7 +1213,7 @@ def show_results(adf, api_key, model):
                             tdf = sdf.copy()
                             tdf[time_col] = pd.to_numeric(tdf[time_col].astype(str).str.replace("[^0-9]","",regex=True), errors="coerce")
                             tdf = tdf.dropna(subset=[time_col]).sort_values(time_col)
-                            tdf[time_col] = tdf[time_col].astype(int).astype(str) + "시"
+                            tdf[time_col] = tdf[time_col].astype(int).apply(lambda h: f"{h}~{h+1}시")
                             cols_pair = st.columns(2)
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 fig = seg_bar(tdf, time_col, mc, f"⏰ 시간대별 {mk}",
