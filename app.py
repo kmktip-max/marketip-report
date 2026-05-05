@@ -1069,19 +1069,19 @@ def show_results(adf, api_key, model):
         roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
         if not roas_df.empty:
             st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
-                [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True)
+                [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
 
     c3, c4 = st.columns(2)
     with c3:
         cvr_df = adf[adf["전환율"].notna() & (adf["전환수"] > 0)].nlargest(10,"전환율")
         if not cvr_df.empty:
             st.plotly_chart(hbar(cvr_df,"전환율","키워드","🎯 전환율 TOP 10",
-                [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]], fmt="pct"), use_container_width=True)
+                [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
     with c4:
         waste_df = adf[(adf["전환수"] == 0) & (adf["클릭수"] > 0)].nlargest(10,"광고비")
         if not waste_df.empty:
             st.plotly_chart(hbar(waste_df,"광고비","키워드","🚨 낭비 키워드 TOP 10 (전환 0)",
-                [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]], fmt="money"), use_container_width=True)
+                [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]], fmt="money"), use_container_width=True, config={"displayModeBar": False})
         else:
             st.success("낭비 키워드가 없습니다.")
 
@@ -1097,7 +1097,7 @@ def show_results(adf, api_key, model):
         fig_pie.update_layout(**{k:v for k,v in CL.items() if k not in ("showlegend",)},
             title="🏷️ 키워드 등급 분포", showlegend=True,
             legend=dict(font=dict(size=10), orientation="v"))
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
     with c6:
         sc = adf[adf["CTR"].notna() & adf["전환율"].notna()]
         if not sc.empty:
@@ -1107,7 +1107,7 @@ def show_results(adf, api_key, model):
             fig_sc.update_layout(**{**CL, "showlegend":True,
                 "legend":dict(font=dict(size=10))})
             fig_sc.update_traces(marker=dict(line=dict(width=1,color="#ffffff"), opacity=0.88))
-            st.plotly_chart(fig_sc, use_container_width=True)
+            st.plotly_chart(fig_sc, use_container_width=True, config={"displayModeBar": False})
 
     # ── [2] 세그먼트 차트 ──
     segment_dfs = st.session_state.get("segment_dfs", {})
@@ -1204,7 +1204,7 @@ def show_results(adf, api_key, model):
                                               [[0,"#1498D7"],[1,"#0D47A1"]])
                                 if fig:
                                     with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
                     # ── 시간대별 ──
                     elif "시간" in seg_type:
@@ -1222,7 +1222,7 @@ def show_results(adf, api_key, model):
                                               [[0,"#6CC24A"],[1,"#1A7A3C"]], rotate=True)
                                 if fig:
                                     with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
                     # ── 연령별 ──
                     elif "연령" in seg_type:
@@ -1234,7 +1234,7 @@ def show_results(adf, api_key, model):
                                               [[0,"#F39C12"],[1,"#CA6F1E"]])
                                 if fig:
                                     with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
                     # ── 기기별 ──
                     elif "기기" in seg_type:
@@ -1256,7 +1256,7 @@ def show_results(adf, api_key, model):
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
                     # ── 성별 ──
                     elif "성별" in seg_type:
@@ -1278,7 +1278,7 @@ def show_results(adf, api_key, model):
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
                     # ── 지역별 ──
                     elif "지역" in seg_type:
@@ -1290,7 +1290,7 @@ def show_results(adf, api_key, model):
                                               [[0,"#8E44AD"],[1,"#6C3483"]])
                                 if fig:
                                     with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
@@ -1419,7 +1419,7 @@ def show_results(adf, api_key, model):
             with col_sel:
                 req = st.selectbox("분석 유형 선택", analysis_opts, label_visibility="collapsed")
             with col_btn:
-                start = st.button("🤖 분석 시작", type="primary", use_container_width=True)
+                start = st.button("🤖 분석 시작", type="primary", use_container_width=True, config={"displayModeBar": False})
             if start:
                 st.session_state.chat_api.append({"role": "user", "content": f"분석 요청: {req}"})
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
@@ -1637,7 +1637,7 @@ def main():
                     st.success(f"{info['type']} · **{fname}** — {len(d):,}행 · {len(d.columns)}컬럼")
 
                     with st.expander(f"미리보기: {fname}"):
-                        st.dataframe(d.head(5), use_container_width=True)
+                        st.dataframe(d.head(5), use_container_width=True, config={"displayModeBar": False})
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
                     kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
@@ -1719,7 +1719,7 @@ def main():
 
     # 감지 결과 요약 표시
     with st.expander("📋 데이터 미리보기 및 컬럼 감지 결과", expanded=True):
-        st.dataframe(df.head(5), use_container_width=True)
+        st.dataframe(df.head(5), use_container_width=True, config={"displayModeBar": False})
         st.caption(f"총 {len(df):,}행 · {len(df.columns)}열")
         st.divider()
         detected = {k: v for k, v in cols_map.items() if v != none}
