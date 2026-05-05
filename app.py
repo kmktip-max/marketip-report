@@ -1211,8 +1211,10 @@ def show_results(adf, api_key, model):
                         time_col = next((c for c in sdf.columns if "시간" in c.replace(" ","")), None)
                         if time_col:
                             tdf = sdf.copy()
-                            tdf[time_col] = pd.to_numeric(tdf[time_col].astype(str).str.replace("[^0-9]","",regex=True), errors="coerce")
-                            tdf = tdf.dropna(subset=[time_col]).sort_values(time_col)
+                            tdf[time_col] = tdf[time_col].astype(str).str.extract(r'(\d+)')[0]
+                            tdf[time_col] = pd.to_numeric(tdf[time_col], errors="coerce")
+                            tdf = tdf.dropna(subset=[time_col])
+                            tdf = tdf[tdf[time_col].between(0, 23)].sort_values(time_col)
                             tdf[time_col] = tdf[time_col].astype(int).apply(lambda h: f"{h}~{h+1}시")
                             cols_pair = st.columns(2)
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
