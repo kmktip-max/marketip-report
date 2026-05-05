@@ -1051,7 +1051,7 @@ def show_results(adf, api_key, model):
         fig = px.bar(df, x=x, y=y, orientation="h", title=title,
                      color=x, color_continuous_scale=scale, text=text)
         fig.update_layout(**cl, yaxis={"categoryorder": "total ascending"},
-                          margin=dict(l=0, r=90, t=44, b=0))
+                          margin=dict(l=0, r=90, t=44, b=0), dragmode=False)
         fig.update_coloraxes(showscale=False)
         fig.update_traces(marker_line_width=0, textposition="outside",
                           textfont=dict(size=11, color="#111111"))
@@ -1152,7 +1152,8 @@ def show_results(adf, api_key, model):
         text = tmp[m_col].apply(lambda v: fmt_val(v, m_col))
         fig = px.bar(tmp, x=x_col, y=m_col, title=title, color=m_col,
                      color_continuous_scale=RYG, text=text)
-        fig.update_layout(**{**CL, "margin": dict(l=0, r=0, t=44, b=40 if rotate else 10)})
+        fig.update_layout(**{**CL, "margin": dict(l=0, r=0, t=44, b=40 if rotate else 10),
+                             "dragmode": False})
         fig.update_coloraxes(showscale=False)
         fig.update_traces(textposition="outside", textfont=dict(size=11, color="#111111"),
                           marker_line_width=0)
@@ -1248,15 +1249,14 @@ def show_results(adf, api_key, model):
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
-                                             color=mc, color_continuous_scale=RYG,
                                              text=text)
-                                fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0)})
-                                fig.update_coloraxes(showscale=False)
-                                fig.update_traces(textposition="outside",
+                                fig.update_traces(marker_color="#0D47A1", textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
+                                fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
+                                                     "dragmode": False})
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": False, "scrollZoom": False})
 
                     # ── 성별 ──
                     elif "성별" in seg_type:
@@ -1270,15 +1270,14 @@ def show_results(adf, api_key, model):
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}",
-                                             color=mc, color_continuous_scale=RYG,
                                              text=text)
-                                fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0)})
-                                fig.update_coloraxes(showscale=False)
-                                fig.update_traces(textposition="outside",
+                                fig.update_traces(marker_color="#0D47A1", textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
+                                fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
+                                                     "dragmode": False})
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False})
 
                     # ── 지역별 ──
                     elif "지역" in seg_type:
