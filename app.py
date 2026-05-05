@@ -1141,14 +1141,17 @@ def show_results(adf, api_key, model):
             return f"{v:,.0f}건"
         return f"{v:,.0f}"
 
-    def seg_bar(sdf, x_col, m_col, title, scale, rotate=False):
+    # 빨강→노랑→초록 스케일 (값이 클수록 쨍한 초록, 작을수록 빨강)
+    RYG = [[0.0, "#C0392B"], [0.35, "#E67E22"], [0.6, "#F1C40F"], [0.8, "#6CC24A"], [1.0, "#1A7A3C"]]
+
+    def seg_bar(sdf, x_col, m_col, title, scale=None, rotate=False):
         tmp = sdf[[x_col, m_col]].copy()
         tmp[m_col] = pd.to_numeric(tmp[m_col].astype(str).str.replace(",","",regex=False), errors="coerce")
         tmp = tmp.dropna()
         if tmp.empty: return None
         text = tmp[m_col].apply(lambda v: fmt_val(v, m_col))
         fig = px.bar(tmp, x=x_col, y=m_col, title=title, color=m_col,
-                     color_continuous_scale=scale, text=text)
+                     color_continuous_scale=RYG, text=text)
         fig.update_layout(**{**CL, "margin": dict(l=0, r=0, t=44, b=40 if rotate else 10)})
         fig.update_coloraxes(showscale=False)
         fig.update_traces(textposition="outside", textfont=dict(size=11, color="#111111"),
@@ -1243,10 +1246,10 @@ def show_results(adf, api_key, model):
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
-                                             color=dev_col,
-                                             color_discrete_map={"PC":"#0D47A1","모바일":"#28B463"},
+                                             color=mc, color_continuous_scale=RYG,
                                              text=text)
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0)})
+                                fig.update_coloraxes(showscale=False)
                                 fig.update_traces(textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
@@ -1265,10 +1268,10 @@ def show_results(adf, api_key, model):
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}",
-                                             color=gen_col,
-                                             color_discrete_map={"남성":"#0D47A1","여성":"#E91E8C","남":"#0D47A1","여":"#E91E8C"},
+                                             color=mc, color_continuous_scale=RYG,
                                              text=text)
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0)})
+                                fig.update_coloraxes(showscale=False)
                                 fig.update_traces(textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=0, width=0.5)
