@@ -1516,6 +1516,210 @@ def show_results(adf, api_key, model):
     # ── 다운로드 ──
     st.markdown('<div class="section-title">⬇️ 결과 다운로드</div>', unsafe_allow_html=True)
 
+    # ── PDF 생성 함수 ──────────────────────────────
+    def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
+        from fpdf import FPDF
+        import urllib.request, os, tempfile
+        import plotly.io as pio
+
+        # 한국어 폰트 다운로드 (캐시)
+        font_path = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
+        if not os.path.exists(font_path):
+            try:
+                urllib.request.urlretrieve(
+                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
+                    font_path
+                )
+            except Exception:
+                font_path = None
+
+        class PDF(FPDF):
+            def header(self):
+                self.set_fill_color(13, 71, 161)
+                self.rect(0, 0, 210, 12, "F")
+                self.set_font("NanumGothic" if font_path else "Helvetica", size=8)
+                self.set_text_color(255, 255, 255)
+                self.set_xy(10, 3)
+                self.cell(0, 6, "마케팁 광고 구조 분석 보고서", align="L")
+                self.set_xy(0, 3)
+                self.cell(200, 6, datetime.now().strftime("%Y.%m.%d"), align="R")
+                self.set_text_color(0, 0, 0)
+                self.ln(8)
+
+            def footer(self):
+                self.set_y(-12)
+                self.set_font("NanumGothic" if font_path else "Helvetica", size=7)
+                self.set_text_color(150, 150, 150)
+                self.cell(0, 8, f"마케팁 · {advertiser_name} · {self.page_no()} 페이지", align="C")
+
+        pdf = PDF()
+        if font_path:
+            pdf.add_font("NanumGothic", "", font_path)
+        pdf.set_auto_page_break(auto=True, margin=15)
+
+        def kfont(size=10, bold=False):
+            fname = "NanumGothic" if font_path else "Helvetica"
+            pdf.set_font(fname, size=size)
+
+        # ── 표지 ──
+        pdf.add_page()
+        pdf.set_fill_color(13, 71, 161)
+        pdf.rect(0, 0, 210, 297, "F")
+        kfont(32)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_xy(20, 80)
+        pdf.multi_cell(170, 14, "마케팁\n광고 구조 분석 보고서", align="C")
+        kfont(16)
+        pdf.set_xy(20, 140)
+        pdf.cell(170, 10, advertiser_name, align="C")
+        kfont(12)
+        pdf.set_xy(20, 160)
+        pdf.cell(170, 10, datetime.now().strftime("%Y년 %m월 %d일"), align="C")
+        pdf.set_fill_color(40, 180, 99)
+        pdf.rect(40, 185, 130, 2, "F")
+        pdf.set_text_color(200, 230, 255)
+        kfont(9)
+        pdf.set_xy(20, 240)
+        pdf.cell(170, 8, "Powered by 마케팁 AI 광고 구조 분석 시스템", align="C")
+
+        # ── 요약 지표 ──
+        pdf.add_page()
+        pdf.set_text_color(0, 0, 0)
+        kfont(14)
+        pdf.set_fill_color(13, 71, 161)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 10, "  현재 광고 구조 요약", fill=True, ln=True)
+        pdf.ln(4)
+
+        total_imp   = adf["노출수"].sum()
+        total_click = adf["클릭수"].sum()
+        total_spend = adf["광고비"].sum()
+        total_conv  = adf["전환수"].sum()
+        total_rev   = adf["전환매출"].sum()
+        ctr  = round(total_click/total_imp*100,2)   if total_imp   > 0 else 0
+        cvr  = round(total_conv/total_click*100,2)  if total_click > 0 else 0
+        cpa  = round(total_spend/total_conv,0)       if total_conv  > 0 else 0
+        roas = round(total_rev/total_spend*100,2)    if total_spend > 0 else 0
+        cpc  = round(total_spend/total_click,0)      if total_click > 0 else 0
+
+        metrics = [
+            ["총 광고비", f"₩{total_spend:,.0f}", "총 노출수", f"{total_imp:,.0f}"],
+            ["총 클릭수", f"{total_click:,.0f}",  "총 전환수", f"{total_conv:,.0f}"],
+            ["총 전환매출", f"₩{total_rev:,.0f}", "ROAS", f"{roas}%"],
+            ["CTR (클릭률)", f"{ctr}%",            "CPC (평균클릭비용)", f"₩{cpc:,.0f}"],
+            ["전환율", f"{cvr}%",                  "CPA (전환당비용)", f"₩{cpa:,.0f}"],
+        ]
+        kfont(10)
+        pdf.set_text_color(0, 0, 0)
+        for row in metrics:
+            pdf.set_fill_color(232, 240, 254)
+            pdf.cell(45, 9, f"  {row[0]}", fill=True, border=1)
+            pdf.set_fill_color(255, 255, 255)
+            pdf.cell(50, 9, f"  {row[1]}", fill=False, border=1)
+            pdf.set_fill_color(232, 240, 254)
+            pdf.cell(45, 9, f"  {row[2]}", fill=True, border=1)
+            pdf.set_fill_color(255, 255, 255)
+            pdf.cell(0,  9, f"  {row[3]}", fill=False, border=1, ln=True)
+        pdf.ln(6)
+
+        # ── 차트 이미지 ──
+        try:
+            chart_configs = []
+            top_spend = adf.nlargest(10,"광고비")
+            fig_s = px.bar(top_spend, x="광고비", y="키워드", orientation="h",
+                           title="💰 광고비 TOP 10",
+                           color="광고비", color_continuous_scale=[[0,"#1498D7"],[1,"#051F5E"]])
+            fig_s.update_layout(height=350, margin=dict(l=0,r=80,t=44,b=0),
+                                 paper_bgcolor="white", plot_bgcolor="#f8f9fa")
+            chart_configs.append(("광고비 TOP 10", fig_s))
+
+            roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
+            if not roas_df.empty:
+                fig_r = px.bar(roas_df, x="ROAS", y="키워드", orientation="h",
+                               title="📊 ROAS TOP 10",
+                               color="ROAS", color_continuous_scale=[[0,"#6CC24A"],[1,"#1A7A3C"]])
+                fig_r.update_layout(height=350, margin=dict(l=0,r=80,t=44,b=0),
+                                    paper_bgcolor="white", plot_bgcolor="#f8f9fa")
+                chart_configs.append(("ROAS TOP 10", fig_r))
+
+            for i in range(0, len(chart_configs), 2):
+                pdf.add_page()
+                kfont(14)
+                pdf.set_fill_color(13, 71, 161)
+                pdf.set_text_color(255, 255, 255)
+                pdf.cell(0, 10, "  키워드 시각화 분석", fill=True, ln=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(4)
+                for title, fig in chart_configs[i:i+2]:
+                    img_bytes = pio.to_image(fig, format="png", width=700, height=350, scale=1.5)
+                    img_buf = io.BytesIO(img_bytes)
+                    pdf.image(img_buf, x=10, w=190, h=90)
+                    pdf.ln(4)
+        except Exception:
+            pass  # kaleido 없으면 차트 건너뜀
+
+        # ── AI 컨설팅 내용 ──
+        ai_msgs = [m for m in chat_messages if m["role"] == "assistant"]
+        if ai_msgs:
+            pdf.add_page()
+            kfont(14)
+            pdf.set_fill_color(13, 71, 161)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 10, "  AI 광고 구조 컨설팅", fill=True, ln=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(4)
+            kfont(9)
+            for msg in ai_msgs:
+                content = msg["content"]
+                # 마크다운 기호 제거
+                import re
+                content = re.sub(r'\*\*(.+?)\*\*', r'\1', content)
+                content = re.sub(r'#{1,3}\s*', '', content)
+                content = re.sub(r'\|.+\|', '', content)
+                content = content.strip()
+                for line in content.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        pdf.ln(3)
+                        continue
+                    try:
+                        pdf.multi_cell(0, 5, line)
+                    except Exception:
+                        pdf.multi_cell(0, 5, line.encode('latin-1','replace').decode('latin-1'))
+                pdf.ln(6)
+
+        # ── 꿀통/낭비 키워드 표 ──
+        for tab_name, tab_df in [("🍯 꿀통 키워드", tbl[tbl.apply(is_honey,axis=1)]),
+                                  ("🚨 낭비 키워드", tbl[tbl.apply(is_waste,axis=1)])]:
+            if tab_df.empty:
+                continue
+            pdf.add_page()
+            kfont(14)
+            pdf.set_fill_color(13, 71, 161)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 10, f"  {tab_name}", fill=True, ln=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(4)
+            kfont(8)
+            show_c = [c for c in ["키워드","광고비","전환수","전환율","ROAS","상태"] if c in tab_df.columns]
+            col_w = [55, 28, 22, 22, 28, 28][:len(show_c)]
+            # 헤더
+            pdf.set_fill_color(232, 240, 254)
+            for c, w in zip(show_c, col_w):
+                pdf.cell(w, 7, c, border=1, fill=True, align="C")
+            pdf.ln()
+            # 데이터
+            for _, row in tab_df[show_c].head(30).iterrows():
+                for c, w in zip(show_c, col_w):
+                    val = str(row[c]) if pd.notna(row[c]) else "-"
+                    try:
+                        pdf.cell(w, 6, val[:18], border=1, align="C")
+                    except Exception:
+                        pdf.cell(w, 6, "-", border=1, align="C")
+                pdf.ln()
+
+        return bytes(pdf.output())
+
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.formatting.rule import ColorScaleRule
     from openpyxl.utils import get_column_letter
@@ -1599,13 +1803,36 @@ def show_results(adf, api_key, model):
             ccols = next((v for k,v in seg_color_map.items() if k in clean_name), [])
             style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
 
-    st.download_button(
-        "📥 분석 결과 엑셀 다운로드 (멀티시트)",
-        data=buf.getvalue(),
-        file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        st.download_button(
+            "📥 엑셀 다운로드 (멀티시트)",
+            data=buf.getvalue(),
+            file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with dl_col2:
+        if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary"):
+            with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
+                try:
+                    tbl_pdf = adf.copy()
+                    tbl_pdf["상태"] = tbl_pdf.apply(make_badge, axis=1)
+                    pdf_bytes = build_pdf(
+                        adf, tbl_pdf,
+                        st.session_state.get("chat_messages", []),
+                        st.session_state.get("segment_dfs", {}),
+                        st.session_state.get("advertiser_name", "광고주"),
+                    )
+                    st.download_button(
+                        "⬇️ PDF 다운로드",
+                        data=pdf_bytes,
+                        file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.error(f"PDF 생성 실패: {e}")
 
 # ────────────────────────────────────────────
 # 메인
