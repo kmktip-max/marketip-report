@@ -1053,8 +1053,9 @@ def show_results(adf, api_key, model):
         fig.update_layout(**cl, yaxis={"categoryorder": "total ascending"},
                           margin=dict(l=0, r=90, t=44, b=0), dragmode=False)
         fig.update_coloraxes(showscale=False)
-        fig.update_traces(marker_line_width=0, textposition="outside",
-                          textfont=dict(size=11, color="#111111"))
+        fig.update_traces(marker_line_width=1.5, marker_line_color="rgba(255,255,255,0.4)",
+                          textposition="outside", textfont=dict(size=11, color="#111111"),
+                          opacity=0.92)
         return fig
 
     # ── [1] 키워드 분석 차트 ──────────────────────
@@ -1156,7 +1157,8 @@ def show_results(adf, api_key, model):
                              "dragmode": False})
         fig.update_coloraxes(showscale=False)
         fig.update_traces(textposition="outside", textfont=dict(size=11, color="#111111"),
-                          marker_line_width=0)
+                          marker_line_width=1.5, marker_line_color="rgba(255,255,255,0.4)",
+                          opacity=0.92)
         if rotate:
             fig.update_layout(xaxis_tickangle=-45)
         return fig
@@ -1245,14 +1247,20 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 tmp = sdf[[dev_col, mc]].copy()
                                 tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
-                                tmp = tmp.dropna().sort_values(mc, ascending=False)
+                                tmp = tmp.dropna()
+                                # PC → 모바일 순서 고정
+                                order_map = {"PC": 0, "모바일": 1}
+                                tmp["_ord"] = tmp[dev_col].map(order_map).fillna(9)
+                                tmp = tmp.sort_values("_ord").drop(columns=["_ord"])
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
-                                             text=text)
-                                fig.update_traces(marker_color="#0D47A1", textposition="outside",
+                                             text=text, category_orders={dev_col: ["PC","모바일"]})
+                                fig.update_traces(marker_color="#0D47A1",
+                                                  marker_line_color="#1976D2", marker_line_width=1.5,
+                                                  textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
-                                                  marker_line_width=0, width=0.5)
+                                                  width=0.5, opacity=0.92)
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
                                                      "dragmode": False})
                                 with cols_pair[idx % 2]:
@@ -1273,7 +1281,9 @@ def show_results(adf, api_key, model):
                                              text=text)
                                 fig.update_traces(marker_color="#0D47A1", textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
-                                                  marker_line_width=0, width=0.5)
+                                                  marker_line_width=1.5,
+                                                  marker_line_color="rgba(255,255,255,0.4)",
+                                                  width=0.5, opacity=0.92)
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
                                                      "dragmode": False})
                                 with cols_pair[idx % 2]:
