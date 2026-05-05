@@ -1053,7 +1053,7 @@ def show_results(adf, api_key, model):
         fig.update_layout(**cl, yaxis={"categoryorder": "total ascending"},
                           margin=dict(l=0, r=90, t=44, b=0), dragmode=False)
         fig.update_coloraxes(showscale=False)
-        fig.update_traces(marker_line_width=1.5, marker_line_color="rgba(255,255,255,0.4)",
+        fig.update_traces(marker_line_width=2.5, marker_line_color="rgba(255,255,255,0.65)",
                           textposition="outside", textfont=dict(size=11, color="#111111"),
                           opacity=0.92)
         return fig
@@ -1157,7 +1157,7 @@ def show_results(adf, api_key, model):
                              "dragmode": False})
         fig.update_coloraxes(showscale=False)
         fig.update_traces(textposition="outside", textfont=dict(size=11, color="#111111"),
-                          marker_line_width=1.5, marker_line_color="rgba(255,255,255,0.4)",
+                          marker_line_width=2.5, marker_line_color="rgba(255,255,255,0.65)",
                           opacity=0.92)
         if rotate:
             fig.update_layout(xaxis_tickangle=-45)
@@ -1257,7 +1257,7 @@ def show_results(adf, api_key, model):
                                 fig = px.bar(tmp, x=dev_col, y=mc, title=f"📱 기기별 {mk}",
                                              text=text, category_orders={dev_col: ["PC","모바일"]})
                                 fig.update_traces(marker_color="#0D47A1",
-                                                  marker_line_color="#1976D2", marker_line_width=1.5,
+                                                  marker_line_color="rgba(255,255,255,0.65)", marker_line_width=2.5,
                                                   textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   width=0.5, opacity=0.92)
@@ -1281,8 +1281,8 @@ def show_results(adf, api_key, model):
                                              text=text)
                                 fig.update_traces(marker_color="#0D47A1", textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
-                                                  marker_line_width=1.5,
-                                                  marker_line_color="rgba(255,255,255,0.4)",
+                                                  marker_line_width=2.5,
+                                                  marker_line_color="rgba(255,255,255,0.65)",
                                                   width=0.5, opacity=0.92)
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
                                                      "dragmode": False})
