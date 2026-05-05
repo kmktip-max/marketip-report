@@ -1622,57 +1622,136 @@ def show_results(adf, api_key, model):
             pdf.cell(0,  9, f"  {row[3]}", fill=False, border=1, ln=True)
         pdf.ln(6)
 
-        # ── 차트 이미지 ──
+        # ── 차트 이미지 (matplotlib 사용 — kaleido 불필요) ──
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.font_manager as fm
+        import numpy as np
+
+        # 한국어 폰트 matplotlib 적용
+        mpl_font = None
+        if font_path and os.path.exists(font_path):
+            mpl_font = fm.FontProperties(fname=font_path)
+
+        def mpl_hbar(df, x_col, y_col, title, color, ax):
+            vals = df[x_col].astype(float).values
+            labels = df[y_col].astype(str).values
+            colors = plt.cm.Blues(np.linspace(0.4, 0.9, len(vals)))
+            bars = ax.barh(labels, vals, color=color, edgecolor="white", linewidth=1.2, height=0.6)
+            ax.set_title(title, fontproperties=mpl_font, fontsize=10, pad=8, color="#0D47A1", fontweight="bold")
+            ax.set_facecolor("#f8f9fa")
+            ax.spines[["top","right","left"]].set_visible(False)
+            ax.tick_params(axis="y", labelsize=7)
+            ax.tick_params(axis="x", labelsize=7)
+            if mpl_font:
+                for lbl in ax.get_yticklabels():
+                    lbl.set_fontproperties(mpl_font)
+            for bar, val in zip(bars, vals):
+                ax.text(bar.get_width() * 1.01, bar.get_y() + bar.get_height()/2,
+                        f"{val:,.0f}", va="center", ha="left", fontsize=7,
+                        fontproperties=mpl_font)
+            ax.margins(x=0.2)
+
+        def make_chart_img(df1, col1, df2, col2, title1, title2, color1, color2):
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+            fig.patch.set_facecolor("white")
+            mpl_hbar(df1.iloc[::-1], col1, "키워드", title1, color1, axes[0])
+            mpl_hbar(df2.iloc[::-1], col2, "키워드", title2, color2, axes[1])
+            plt.tight_layout(pad=1.5)
+            buf_img = io.BytesIO()
+            plt.savefig(buf_img, format="png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            buf_img.seek(0)
+            return buf_img
+
+        pdf.add_page()
+        kfont(14)
+        pdf.set_fill_color(13, 71, 161)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 10, "  키워드 시각화 분석", fill=True, ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(4)
+
         try:
-            chart_configs = []
-            top_spend = adf.nlargest(10,"광고비")
-            fig_s = px.bar(top_spend, x="광고비", y="키워드", orientation="h",
-                           title="💰 광고비 TOP 10",
-                           color="광고비", color_continuous_scale=[[0,"#1498D7"],[1,"#051F5E"]])
-            fig_s.update_layout(height=350, margin=dict(l=0,r=80,t=44,b=0),
-                                 paper_bgcolor="white", plot_bgcolor="#f8f9fa")
-            chart_configs.append(("광고비 TOP 10", fig_s))
-
-            roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
-            if not roas_df.empty:
-                fig_r = px.bar(roas_df, x="ROAS", y="키워드", orientation="h",
-                               title="📊 ROAS TOP 10",
-                               color="ROAS", color_continuous_scale=[[0,"#6CC24A"],[1,"#1A7A3C"]])
-                fig_r.update_layout(height=350, margin=dict(l=0,r=80,t=44,b=0),
-                                    paper_bgcolor="white", plot_bgcolor="#f8f9fa")
-                chart_configs.append(("ROAS TOP 10", fig_r))
-
-            for i in range(0, len(chart_configs), 2):
-                pdf.add_page()
-                kfont(14)
-                pdf.set_fill_color(13, 71, 161)
-                pdf.set_text_color(255, 255, 255)
-                pdf.cell(0, 10, "  키워드 시각화 분석", fill=True, ln=True)
-                pdf.set_text_color(0, 0, 0)
+            top_spend = adf.nlargest(10,"광고비")[["키워드","광고비"]].dropna()
+            roas_top  = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")[["키워드","ROAS"]].dropna()
+            if not top_spend.empty and not roas_top.empty:
+                img1 = make_chart_img(top_spend,"광고비", roas_top,"ROAS",
+                                       "광고비 TOP 10","ROAS TOP 10","#1498D7","#28B463")
+                pdf.image(img1, x=10, w=190)
                 pdf.ln(4)
-                for title, fig in chart_configs[i:i+2]:
-                    img_bytes = pio.to_image(fig, format="png", width=700, height=350, scale=1.5)
-                    img_buf = io.BytesIO(img_bytes)
-                    pdf.image(img_buf, x=10, w=190, h=90)
-                    pdf.ln(4)
-        except Exception:
-            pass  # kaleido 없으면 차트 건너뜀
+        except Exception as e:
+            kfont(9)
+            pdf.set_text_color(150,150,150)
+            pdf.cell(0,8,f"차트 생성 오류: {e}", ln=True)
+            pdf.set_text_color(0,0,0)
 
-        # ── AI 컨설팅 내용 ──
+        try:
+            cvr_top   = adf[adf["전환율"].notna()&(adf["전환수"]>0)].nlargest(10,"전환율")[["키워드","전환율"]].dropna()
+            waste_top = adf[(adf["전환수"]==0)&(adf["클릭수"]>0)].nlargest(10,"광고비")[["키워드","광고비"]].dropna()
+            if not cvr_top.empty and not waste_top.empty:
+                img2 = make_chart_img(cvr_top,"전환율", waste_top,"광고비",
+                                       "전환율 TOP 10","낭비 키워드 TOP 10","#E67E22","#C0392B")
+                pdf.image(img2, x=10, w=190)
+        except Exception:
+            pass
+
+        # ── 꿀통 + 낭비 키워드 (한 페이지) ──
+        honey_df = tbl[tbl.apply(is_honey,axis=1)]
+        waste_df = tbl[tbl.apply(is_waste,axis=1)]
+        show_c = [c for c in ["키워드","광고비","전환수","전환율","ROAS","상태"] if c in tbl.columns]
+        col_w  = [55, 28, 22, 22, 25, 25][:len(show_c)]
+
+        def draw_kw_table(pdf, tab_name, tab_df, header_color):
+            kfont(11)
+            pdf.set_fill_color(*header_color)
+            pdf.set_text_color(255,255,255)
+            pdf.cell(0, 8, f"  {tab_name}", fill=True, ln=True)
+            pdf.set_text_color(0,0,0)
+            pdf.ln(2)
+            kfont(8)
+            pdf.set_fill_color(232,240,254)
+            for c, w in zip(show_c, col_w):
+                pdf.cell(w, 7, c, border=1, fill=True, align="C")
+            pdf.ln()
+            for _, row in tab_df[show_c].head(20).iterrows():
+                pdf.set_fill_color(248,249,250)
+                for c, w in zip(show_c, col_w):
+                    val = str(row[c]) if pd.notna(row[c]) else "-"
+                    try:
+                        pdf.cell(w, 6, val[:18], border=1, align="C")
+                    except Exception:
+                        pdf.cell(w, 6, "-", border=1, align="C")
+                pdf.ln()
+            pdf.ln(4)
+
+        pdf.add_page()
+        kfont(14)
+        pdf.set_fill_color(13,71,161)
+        pdf.set_text_color(255,255,255)
+        pdf.cell(0, 10, "  키워드 분석 결과", fill=True, ln=True)
+        pdf.set_text_color(0,0,0)
+        pdf.ln(4)
+        if not honey_df.empty:
+            draw_kw_table(pdf, "꿀통 키워드 (효율 우수)", honey_df, (40,180,99))
+        if not waste_df.empty:
+            draw_kw_table(pdf, "낭비 키워드 (즉시 점검 필요)", waste_df, (192,57,43))
+
+        # ── AI 컨설팅 (맨 마지막) ──
+        import re
         ai_msgs = [m for m in chat_messages if m["role"] == "assistant"]
         if ai_msgs:
             pdf.add_page()
             kfont(14)
-            pdf.set_fill_color(13, 71, 161)
-            pdf.set_text_color(255, 255, 255)
+            pdf.set_fill_color(13,71,161)
+            pdf.set_text_color(255,255,255)
             pdf.cell(0, 10, "  AI 광고 구조 컨설팅", fill=True, ln=True)
-            pdf.set_text_color(0, 0, 0)
+            pdf.set_text_color(0,0,0)
             pdf.ln(4)
             kfont(9)
             for msg in ai_msgs:
                 content = msg["content"]
-                # 마크다운 기호 제거
-                import re
                 content = re.sub(r'\*\*(.+?)\*\*', r'\1', content)
                 content = re.sub(r'#{1,3}\s*', '', content)
                 content = re.sub(r'\|.+\|', '', content)
@@ -1686,37 +1765,7 @@ def show_results(adf, api_key, model):
                         pdf.multi_cell(0, 5, line)
                     except Exception:
                         pdf.multi_cell(0, 5, line.encode('latin-1','replace').decode('latin-1'))
-                pdf.ln(6)
-
-        # ── 꿀통/낭비 키워드 표 ──
-        for tab_name, tab_df in [("🍯 꿀통 키워드", tbl[tbl.apply(is_honey,axis=1)]),
-                                  ("🚨 낭비 키워드", tbl[tbl.apply(is_waste,axis=1)])]:
-            if tab_df.empty:
-                continue
-            pdf.add_page()
-            kfont(14)
-            pdf.set_fill_color(13, 71, 161)
-            pdf.set_text_color(255, 255, 255)
-            pdf.cell(0, 10, f"  {tab_name}", fill=True, ln=True)
-            pdf.set_text_color(0, 0, 0)
-            pdf.ln(4)
-            kfont(8)
-            show_c = [c for c in ["키워드","광고비","전환수","전환율","ROAS","상태"] if c in tab_df.columns]
-            col_w = [55, 28, 22, 22, 28, 28][:len(show_c)]
-            # 헤더
-            pdf.set_fill_color(232, 240, 254)
-            for c, w in zip(show_c, col_w):
-                pdf.cell(w, 7, c, border=1, fill=True, align="C")
-            pdf.ln()
-            # 데이터
-            for _, row in tab_df[show_c].head(30).iterrows():
-                for c, w in zip(show_c, col_w):
-                    val = str(row[c]) if pd.notna(row[c]) else "-"
-                    try:
-                        pdf.cell(w, 6, val[:18], border=1, align="C")
-                    except Exception:
-                        pdf.cell(w, 6, "-", border=1, align="C")
-                pdf.ln()
+                pdf.ln(5)
 
         return bytes(pdf.output())
 
