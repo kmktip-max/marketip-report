@@ -1556,6 +1556,8 @@ def show_results(adf, api_key, model):
         if font_path:
             pdf.add_font("NanumGothic", "", font_path)
         pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.set_left_margin(10)
+        pdf.set_right_margin(10)
 
         def kfont(size=10, bold=False):
             fname = "NanumGothic" if font_path else "Helvetica"
@@ -1762,9 +1764,12 @@ def show_results(adf, api_key, model):
                         pdf.ln(3)
                         continue
                     try:
-                        pdf.multi_cell(0, 5, line)
+                        pdf.multi_cell(190, 5, line)
                     except Exception:
-                        pdf.multi_cell(0, 5, line.encode('latin-1','replace').decode('latin-1'))
+                        try:
+                            pdf.multi_cell(190, 5, line.encode('latin-1','replace').decode('latin-1'))
+                        except Exception:
+                            pass
                 pdf.ln(5)
 
         return bytes(pdf.output())
