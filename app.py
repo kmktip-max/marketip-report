@@ -220,7 +220,17 @@ st.markdown("""
     /* ── 숨기기 ── */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
-    header { visibility: hidden; }
+
+    /* 헤더는 숨기되 사이드바 토글 버튼은 살려둠 */
+    header[data-testid="stHeader"] { visibility: hidden; }
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        background: #ffffff !important;
+        border: 1.5px solid #dee2e6 !important;
+        border-radius: 0 8px 8px 0 !important;
+        box-shadow: 2px 0 8px rgba(0,0,0,0.08) !important;
+    }
+    [data-testid="collapsedControl"] svg { color: #0D47A1 !important; }
 </style>
 """, unsafe_allow_html=True)
 
