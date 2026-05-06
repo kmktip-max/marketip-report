@@ -1094,35 +1094,53 @@ def show_results(adf, api_key, model):
 
     # ── 3줄 핵심 요약 ──
     _sum = []
-    if roas:
-        if roas >= 300:
-            _sum.append(f"✅ <b>ROAS {roas:.0f}%</b> — 광고비 대비 수익 양호. 꿀통 키워드 증액으로 추가 확장 가능합니다.")
-        elif roas >= 100:
-            _sum.append(f"⚠️ <b>ROAS {roas:.0f}%</b> — 손익분기 수준. 낭비 키워드 정리 후 효율 개선이 필요합니다.")
-        else:
-            _sum.append(f"🚨 <b>ROAS {roas:.0f}%</b> — 광고비보다 매출이 낮습니다. 즉시 구조 점검이 필요합니다.")
 
+    # 1줄: ROAS
+    _roas_v = roas if roas else 0
+    if _roas_v >= 200:
+        _sum.append(f"✅ <b>ROAS {_roas_v:.0f}%</b> — 광고비 대비 수익 구조 양호. 꿀통 키워드 증액으로 추가 확장 가능합니다.")
+    elif _roas_v >= 100:
+        _sum.append(f"⚠️ <b>ROAS {_roas_v:.0f}%</b> — 손익분기 수준. 낭비 키워드 정리 후 효율 개선이 필요합니다.")
+    elif _roas_v > 0:
+        _sum.append(f"🚨 <b>ROAS {_roas_v:.0f}%</b> — 광고비보다 매출이 낮습니다. 즉시 구조 점검이 필요합니다.")
+    else:
+        _sum.append("📊 전환매출 데이터가 없어 ROAS를 계산할 수 없습니다. 전환매출 컬럼을 확인해주세요.")
+
+    # 2줄: 낭비
     _wkw = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
     _wamt = _wkw["광고비"].sum()
     _wratio = _wamt / total_spend * 100 if total_spend > 0 else 0
     if _wratio >= 20:
         _sum.append(f"🗑 <b>광고비 {_wratio:.0f}%({_wamt:,.0f}원)</b>가 전환 없이 소진 중 — 삭제 검토 키워드 즉시 정리 권장")
     elif _wratio >= 5:
-        _sum.append(f"📉 <b>광고비 {_wratio:.0f}%</b>가 전환 없이 소진 중 — 낭비 키워드 점검이 필요합니다")
+        _sum.append(f"📉 <b>광고비 {_wratio:.0f}%({_wamt:,.0f}원)</b>가 전환 없이 소진 중 — 낭비 키워드 점검 필요")
     else:
-        _sum.append(f"✅ <b>낭비 비중 {_wratio:.0f}%</b> — 광고비 소진 구조는 비교적 효율적입니다")
+        _sum.append(f"✅ <b>낭비 비중 {_wratio:.0f}%</b> — 광고비 소진 구조 효율적. 꿀통 키워드 집중 운영 권장")
 
-    if cvr and cvr < 2:
-        _sum.append(f"📌 <b>전환율 {cvr:.2f}%</b> — 클릭 대비 전환이 낮습니다. 랜딩페이지 점검 또는 키워드 의도 재검토 권장")
-    elif ctr and ctr < 1:
-        _sum.append(f"📌 <b>CTR {ctr:.2f}%</b> — 클릭률이 낮습니다. 광고 소재 개선 또는 확장소재 적용을 권장합니다")
-    elif cvr:
-        _sum.append(f"✅ <b>전환율 {cvr:.2f}%</b> — 클릭 대비 전환 구조는 양호합니다")
+    # 3줄: 전환율 or CTR
+    _cvr_v = cvr if cvr else 0
+    _ctr_v = ctr if ctr else 0
+    if _cvr_v > 0 and _cvr_v < 2:
+        _sum.append(f"📌 <b>전환율 {_cvr_v:.2f}%</b> — 클릭 대비 전환이 낮습니다. 랜딩페이지 구조 점검 또는 키워드 의도 재검토 권장")
+    elif _ctr_v > 0 and _ctr_v < 1:
+        _sum.append(f"📌 <b>CTR {_ctr_v:.2f}%</b> — 클릭률이 낮습니다. 광고 소재 개선 또는 확장소재 적용을 권장합니다")
+    elif _cvr_v >= 2:
+        _sum.append(f"✅ <b>전환율 {_cvr_v:.2f}%</b> — 클릭 대비 전환 구조 양호. 현재 구조 유지하며 증액 테스트 권장")
+    else:
+        _sum.append("📌 전환율 데이터 없음 — 전환수 컬럼을 추가하면 더 정확한 분석이 가능합니다")
 
-    _sum_html = "".join(f'<div style="margin-bottom:0.35rem;">· {s}</div>' for s in _sum)
+    _sum_html = "".join(
+        f'<div style="margin-bottom:0.45rem;display:flex;align-items:flex-start;gap:0.4rem;">'
+        f'<span style="color:#0D47A1;font-weight:700;flex-shrink:0;">·</span>'
+        f'<span>{s}</span></div>'
+        for s in _sum
+    )
     st.markdown(f"""
-    <div style="background:#f8f9fa;border-left:4px solid #0D47A1;border-radius:0 10px 10px 0;
-    padding:0.9rem 1.2rem;margin:0.8rem 0 0.5rem 0;font-size:0.9rem;line-height:1.8;color:#222;">
+    <div style="background:#ffffff;border:1.5px solid #e9ecef;border-left:4px solid #0D47A1;
+    border-radius:0 12px 12px 0;padding:1rem 1.3rem;margin:0.9rem 0 0.5rem 0;
+    font-size:0.9rem;line-height:1.85;color:#222;">
+    <div style="font-size:0.78rem;font-weight:700;color:#0D47A1;margin-bottom:0.5rem;
+    letter-spacing:0.3px;">💡 핵심 요약 3줄</div>
     {_sum_html}</div>
     """, unsafe_allow_html=True)
 
