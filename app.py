@@ -219,21 +219,22 @@ st.markdown("""
 
     /* ── 전체화면 버튼 (작은 브랜드 스타일) ── */
     .fs-btn .stButton > button {
-        font-size: 0.7rem !important;
-        padding: 0.15rem 0.45rem !important;
-        background: #f0f4ff !important;
-        color: #0D47A1 !important;
-        border: 1px solid #0D47A1 !important;
+        font-size: 0.72rem !important;
+        padding: 0.2rem 0.6rem !important;
+        background: linear-gradient(135deg, #0D47A1, #28B463) !important;
+        color: #ffffff !important;
+        border: none !important;
         border-radius: 6px !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
         min-height: 0 !important;
         height: auto !important;
-        line-height: 1.4 !important;
-        box-shadow: none !important;
+        line-height: 1.5 !important;
+        white-space: nowrap !important;
+        box-shadow: 0 2px 6px rgba(13,71,161,0.2) !important;
     }
     .fs-btn .stButton > button:hover {
-        background: #0D47A1 !important;
-        color: #ffffff !important;
+        background: linear-gradient(135deg, #28B463, #0D47A1) !important;
+        box-shadow: 0 3px 10px rgba(40,180,99,0.3) !important;
     }
 
     /* ── 숨기기 ── */
