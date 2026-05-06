@@ -116,7 +116,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #111111;
+        color: #c62828;
         font-size: 0.93rem;
         font-weight: 500;
     }
@@ -126,7 +126,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #111111;
+        color: #e65100;
         font-size: 0.93rem;
         font-weight: 500;
     }
@@ -136,7 +136,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #111111;
+        color: #1b5e20;
         font-size: 0.93rem;
         font-weight: 500;
     }
@@ -1136,7 +1136,12 @@ def show_results(adf, api_key, model):
     else:
         for kind, msg in alerts:
             css = "alert-danger" if kind == "danger" else "alert-warn"
-            st.markdown(f'<div class="{css}">⚠ {msg}</div>', unsafe_allow_html=True)
+            if " — " in msg:
+                _head, _desc = msg.split(" — ", 1)
+                _html_msg = f'{_head} — <span style="color:#111111;font-weight:400;">{_desc}</span>'
+            else:
+                _html_msg = msg
+            st.markdown(f'<div class="{css}">⚠ {_html_msg}</div>', unsafe_allow_html=True)
 
     # ── 차트 공통 설정 ──
     CL = dict(
