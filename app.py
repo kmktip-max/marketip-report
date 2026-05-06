@@ -1271,6 +1271,36 @@ def show_results(adf, api_key, model):
                           title=title, showlegend=True, legend=dict(font=dict(size=11)))
         return fig
 
+    # ── 전체화면 차트 뷰어 ──
+    if st.session_state.get("_fs_fig") is not None:
+        _fh, _fc = st.columns([8, 1])
+        with _fh:
+            st.markdown('<div class="section-title">🔍 전체화면 차트</div>', unsafe_allow_html=True)
+        with _fc:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("✕ 닫기", key="_close_fs_btn", use_container_width=True):
+                st.session_state["_fs_fig"] = None
+                st.rerun()
+        st.plotly_chart(
+            st.session_state["_fs_fig"],
+            use_container_width=True,
+            config={"displayModeBar": True, "scrollZoom": True, "displaylogo": False},
+            height=680,
+        )
+        st.divider()
+
+    def _seg_chart(fig, fs_key):
+        """차트 + 전체화면 버튼"""
+        if fig is None:
+            return
+        _, _fb = st.columns([5, 1])
+        with _fb:
+            if st.button("🔍 전체화면", key=f"fs_{fs_key}", use_container_width=True):
+                st.session_state["_fs_fig"] = fig
+                st.rerun()
+        st.plotly_chart(fig, use_container_width=True,
+                        config={"displayModeBar": False})
+
     if segment_dfs:
         st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
 
@@ -1283,6 +1313,7 @@ def show_results(adf, api_key, model):
                 with tab:
                     metrics = get_metrics(sdf)
                     active  = {k: v for k, v in metrics.items() if v}
+                    _st = seg_type.replace(" ","")[:8]  # 키 용도 짧은 식별자
 
                     # ── 요일별 ──
                     if "요일" in seg_type:
@@ -1299,9 +1330,8 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 fig = seg_bar(sdf2, seg_col, mc, f"📅 요일별 {mk}",
                                               [[0,"#1498D7"],[1,"#0D47A1"]])
-                                if fig:
-                                    with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                with cols_pair[idx % 2]:
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
                     # ── 시간대별 ──
                     elif "시간" in seg_type:
@@ -1317,9 +1347,8 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 fig = seg_bar(tdf, time_col, mc, f"⏰ 시간대별 {mk}",
                                               [[0,"#6CC24A"],[1,"#1A7A3C"]], rotate=True)
-                                if fig:
-                                    with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                with cols_pair[idx % 2]:
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
                     # ── 연령별 ──
                     elif "연령" in seg_type:
@@ -1329,9 +1358,8 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 fig = seg_bar(sdf, age_col, mc, f"👤 연령별 {mk}",
                                               [[0,"#F39C12"],[1,"#CA6F1E"]])
-                                if fig:
-                                    with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                with cols_pair[idx % 2]:
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
                     # ── 기기별 ──
                     elif "기기" in seg_type:
@@ -1342,7 +1370,6 @@ def show_results(adf, api_key, model):
                                 tmp = sdf[[dev_col, mc]].copy()
                                 tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
                                 tmp = tmp.dropna()
-                                # PC → 모바일 순서 고정
                                 order_map = {"PC": 0, "모바일": 1}
                                 tmp["_ord"] = tmp[dev_col].map(order_map).fillna(9)
                                 tmp = tmp.sort_values("_ord").drop(columns=["_ord"])
@@ -1358,7 +1385,7 @@ def show_results(adf, api_key, model):
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
                                                      "dragmode": False})
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": False, "scrollZoom": False})
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
                     # ── 성별 ──
                     elif "성별" in seg_type:
@@ -1371,8 +1398,7 @@ def show_results(adf, api_key, model):
                                 tmp = tmp.dropna().sort_values(mc, ascending=False)
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
-                                fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}",
-                                             text=text)
+                                fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}", text=text)
                                 fig.update_traces(marker_color="#0D47A1", textposition="outside",
                                                   textfont=dict(size=13,color="#111111"),
                                                   marker_line_width=2.5,
@@ -1381,7 +1407,7 @@ def show_results(adf, api_key, model):
                                 fig.update_layout(**{**CL, "showlegend":False, "margin":dict(l=0,r=0,t=44,b=0),
                                                      "dragmode": False})
                                 with cols_pair[idx % 2]:
-                                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "scrollZoom": False})
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
                     # ── 지역별 ──
                     elif "지역" in seg_type:
@@ -1391,9 +1417,8 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 fig = seg_bar(sdf, reg_col, mc, f"📍 지역별 {mk}",
                                               [[0,"#8E44AD"],[1,"#6C3483"]])
-                                if fig:
-                                    with cols_pair[idx % 2]:
-                                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                                with cols_pair[idx % 2]:
+                                    _seg_chart(fig, f"{_st}_{mk}_{idx}")
 
     # ══════════════════════════════════════════════════════════
     # ── [A] 광고 구조 점수 ────────────────────────────────────
