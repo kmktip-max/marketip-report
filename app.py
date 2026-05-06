@@ -230,15 +230,15 @@ st.markdown("""
     header[data-testid="stHeader"]::before { display: none !important; }
 
     /* 사이드바 토글 버튼 — 항상 보이게 */
-    /* 사이드바 토글 버튼 — 헤더 하단에 고정 */
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        display: flex !important;
-        opacity: 1 !important;
-        position: fixed !important;
-        top: 290px !important;
-        left: 0 !important;
-        z-index: 9999 !important;
+    /* 사이드바 항상 고정 — 닫기/토글 버튼 숨김 */
+    [data-testid="collapsedControl"] { display: none !important; }
+    [data-testid="stSidebarCollapseButton"] { display: none !important; }
+    button[data-testid="baseButton-header"] { display: none !important; }
+    section[data-testid="stSidebar"] {
+        transform: none !important;
+        display: block !important;
+        min-width: 244px !important;
+        width: 244px !important;
     }
 </style>
 """, unsafe_allow_html=True)
