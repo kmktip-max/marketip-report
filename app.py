@@ -240,6 +240,10 @@ st.markdown("""
         background: #0D47A1 !important;
         border-radius: 0 8px 8px 0 !important;
         box-shadow: 3px 0 10px rgba(13,71,161,0.25) !important;
+        position: fixed !important;
+        top: 45% !important;
+        left: 0 !important;
+        padding: 1rem 0.5rem !important;
     }
     [data-testid="collapsedControl"] svg,
     [data-testid="stSidebarCollapsedControl"] svg {
