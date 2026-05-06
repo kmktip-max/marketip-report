@@ -230,25 +230,12 @@ st.markdown("""
     header[data-testid="stHeader"]::before { display: none !important; }
 
     /* 사이드바 토글 버튼 — 항상 보이게 */
-    [data-testid="collapsedControl"],
-    button[kind="header"],
-    [data-testid="stSidebarCollapsedControl"] {
+    /* 사이드바 토글 버튼 — 헤더 내 위치를 아래로 조정 */
+    [data-testid="collapsedControl"] {
         visibility: visible !important;
         display: flex !important;
         opacity: 1 !important;
-        z-index: 9999 !important;
-        background: #0D47A1 !important;
-        border-radius: 0 8px 8px 0 !important;
-        box-shadow: 3px 0 10px rgba(13,71,161,0.25) !important;
-        position: fixed !important;
-        top: 45% !important;
-        left: 0 !important;
-        padding: 1rem 0.5rem !important;
-    }
-    [data-testid="collapsedControl"] svg,
-    [data-testid="stSidebarCollapsedControl"] svg {
-        color: #ffffff !important;
-        fill: #ffffff !important;
+        margin-top: 3.5rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
