@@ -1495,7 +1495,7 @@ def show_results(adf, api_key, model):
 
     _ac1, _ac2, _ac3, _ac4 = st.columns(4)
 
-    def _act_card(col, title, color, bg, rows, val_col, val_fmt):
+    def _act_card(col, title, subtitle, color, bg, rows, val_col, val_fmt):
         _items_h = ""
         for _r in rows[:10]:
             _kw = str(_r.get("키워드", ""))
@@ -1517,16 +1517,17 @@ def show_results(adf, api_key, model):
             st.markdown(
                 f'<div style="background:{bg};border:1.5px solid {color}44;'
                 f'border-radius:14px;padding:1rem;">'
-                f'<div style="font-size:0.88rem;font-weight:800;color:{color};margin-bottom:0.55rem;">'
+                f'<div style="font-size:0.88rem;font-weight:800;color:{color};margin-bottom:0.18rem;">'
                 f'{title} <span style="font-size:0.76rem;font-weight:400;color:#999;">({len(rows)}개)</span></div>'
+                f'<div style="font-size:0.74rem;color:#999;margin-bottom:0.55rem;">{subtitle}</div>'
                 + (_items_h if rows else _empty) + '</div>',
                 unsafe_allow_html=True
             )
 
-    _act_card(_ac1, "🗑 삭제 검토",    "#b71c1c", "#fff5f5", _act_buckets["삭제 검토"],    "광고비", "money")
-    _act_card(_ac2, "📉 감액",         "#e65100", "#fffbf0", _act_buckets["감액"],          "ROAS",   "pct")
-    _act_card(_ac3, "🔬 증액 테스트",  "#1565C0", "#f0f4ff", _act_buckets["증액 테스트"],   "ROAS",   "pct")
-    _act_card(_ac4, "💰 증액 권장",    "#1b5e20", "#f0fdf4", _act_buckets["증액 권장"],     "ROAS",   "pct")
+    _act_card(_ac1, "🗑 삭제 검토",   "비용 발생 + 전환 0",                   "#b71c1c", "#fff5f5", _act_buckets["삭제 검토"],  "광고비", "money")
+    _act_card(_ac2, "📉 감액",        "전환 있음 + ROAS 100% 미만",            "#e65100", "#fffbf0", _act_buckets["감액"],        "ROAS",   "pct")
+    _act_card(_ac3, "🔬 증액 테스트", "전환 1~2건 또는 ROAS 평균 미달",        "#1565C0", "#f0f4ff", _act_buckets["증액 테스트"], "ROAS",   "pct")
+    _act_card(_ac4, "💰 증액 권장",   "ROAS 평균 이상 + CPA 평균 이하",        "#1b5e20", "#f0fdf4", _act_buckets["증액 권장"],   "ROAS",   "pct")
 
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
