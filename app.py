@@ -10,6 +10,7 @@ import base64
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
+from PIL import Image
 
 load_dotenv()
 
@@ -21,9 +22,19 @@ def _make_token(user_id, name):
 # ────────────────────────────────────────────
 # 페이지 설정
 # ────────────────────────────────────────────
+def _load_favicon():
+    for fname in ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp", "favicon.ico", "favicon.png"]:
+        path = os.path.join(os.path.dirname(__file__), fname)
+        if os.path.exists(path):
+            try:
+                return Image.open(path)
+            except Exception:
+                pass
+    return "📊"
+
 st.set_page_config(
     page_title="마케팁 광고 구조 분석 시스템",
-    page_icon="📊",
+    page_icon=_load_favicon(),
     layout="wide",
     initial_sidebar_state="expanded",
 )
