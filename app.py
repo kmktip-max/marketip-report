@@ -6,6 +6,7 @@ import io
 import json
 import os
 import hashlib
+import base64
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -56,20 +57,22 @@ st.markdown("""
 
     /* ── 헤더 ── */
     .main-header {
-        background: #0D47A1;
-        padding: 2rem 2.5rem;
+        background: #ffffff;
+        padding: 1.6rem 2.5rem;
         border-radius: 14px;
         margin-bottom: 1.5rem;
         text-align: center;
+        border-bottom: 3px solid #0D47A1;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
     }
     .main-header h1 {
-        color: #ffffff;
-        font-size: 1.85rem;
-        margin: 0;
+        color: #111111;
+        font-size: 1.7rem;
+        margin: 0.3rem 0 0 0;
         letter-spacing: -0.5px;
         font-weight: 800;
     }
-    .main-header p { color: rgba(255,255,255,0.80); margin: 0.45rem 0 0 0; font-size: 0.93rem; }
+    .main-header p { color: #555555; margin: 0.4rem 0 0 0; font-size: 0.93rem; }
 
     /* ── 로그인 박스 ── */
     .login-box {
@@ -700,6 +703,50 @@ def load_advertisers():
         return {"admin": {"name": "마케팁 관리자", "password": "mktip"}}
 
 # ────────────────────────────────────────────
+# 로고 로더
+# ────────────────────────────────────────────
+def load_logo_b64():
+    for fname in ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]:
+        path = os.path.join(os.path.dirname(__file__), fname)
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode(), fname.rsplit(".", 1)[-1]
+    return None, None
+
+# ────────────────────────────────────────────
+# 월별 분석 횟수 제한
+# ────────────────────────────────────────────
+MONTHLY_LIMIT   = 5
+_USAGE_FILE     = os.path.join(os.path.dirname(__file__), "usage.json")
+
+def _load_usage():
+    try:
+        with open(_USAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_usage(data):
+    try:
+        with open(_USAGE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def get_monthly_count(user_id):
+    month = datetime.now().strftime("%Y-%m")
+    return _load_usage().get(user_id, {}).get(month, 0)
+
+def increment_usage(user_id):
+    month = datetime.now().strftime("%Y-%m")
+    data = _load_usage()
+    data.setdefault(user_id, {})[month] = data.get(user_id, {}).get(month, 0) + 1
+    _save_usage(data)
+
+def is_admin(user_id):
+    return str(user_id).lower() == "admin"
+
+# ────────────────────────────────────────────
 # 인증
 # ────────────────────────────────────────────
 def check_auth():
@@ -713,15 +760,20 @@ def check_auth():
             if t and u and n and t == _make_token(u, n):
                 st.session_state.authenticated    = True
                 st.session_state.advertiser_name  = n
+                st.session_state.user_id          = u
         except Exception:
             pass
 
     if st.session_state.get("authenticated"):
         return True
 
-    st.markdown("""
+    _lb64, _lext = load_logo_b64()
+    _logo_html = (f'<img src="data:image/{_lext};base64,{_lb64}" style="height:52px;margin-bottom:0.35rem;" />'
+                  if _lb64 else '<span style="font-size:1.6rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>')
+    st.markdown(f"""
     <div class="main-header">
-        <h1>📊 마케팁 광고 구조 분석 시스템</h1>
+        {_logo_html}
+        <h1>광고 구조 분석 시스템</h1>
         <p>승인된 광고주만 접근 가능합니다</p>
     </div>
     """, unsafe_allow_html=True)
@@ -754,6 +806,7 @@ def check_auth():
             if matched:
                 st.session_state.authenticated   = True
                 st.session_state.advertiser_name = matched
+                st.session_state.user_id         = user_id
                 # URL에 토큰 저장 → 새로고침 후에도 유지
                 st.query_params["t"] = _make_token(user_id, matched)
                 st.query_params["u"] = user_id
@@ -1875,12 +1928,30 @@ def main():
         return
 
     # 헤더
+    _uid = st.session_state.get("user_id", "")
+    _lb64, _lext = load_logo_b64()
+    _logo_html = (f'<img src="data:image/{_lext};base64,{_lb64}" style="height:54px;margin-bottom:0.3rem;" />'
+                  if _lb64 else '<span style="font-size:1.5rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>')
     st.markdown(f"""
     <div class="main-header">
-        <h1>📊 마케팁 광고 구조 분석 시스템</h1>
+        {_logo_html}
+        <h1>광고 구조 분석 시스템</h1>
         <p>안녕하세요, <strong>{st.session_state.get('advertiser_name','')}</strong>님 &nbsp;|&nbsp; 광고 구조 분석 AI</p>
     </div>
     """, unsafe_allow_html=True)
+
+    # 월별 분석 횟수 카운터 (관리자 제외)
+    if _uid and not is_admin(_uid):
+        _count     = get_monthly_count(_uid)
+        _remaining = max(0, MONTHLY_LIMIT - _count)
+        _cnt_color = "#e53935" if _remaining == 0 else ("#f9a825" if _remaining <= 2 else "#1b5e20")
+        _cnt_bg    = "#fff5f5" if _remaining == 0 else ("#fffbf0" if _remaining <= 2 else "#f6fef9")
+        st.markdown(
+            f'<div style="text-align:right;padding:0.35rem 0.8rem;background:{_cnt_bg};border-radius:8px;'
+            f'margin-bottom:0.8rem;font-size:0.88rem;font-weight:600;color:{_cnt_color};">'
+            f'이번달 분석 사용: {_count}/{MONTHLY_LIMIT} &nbsp;|&nbsp; 잔여 {_remaining}회</div>',
+            unsafe_allow_html=True
+        )
 
     # API 키는 .env에서만 읽음 (UI 노출 없음)
     api_key = os.getenv("OPENAI_API_KEY", "")
@@ -1891,8 +1962,12 @@ def main():
         st.markdown("### 마케팁 분석 시스템")
         st.divider()
         st.markdown("**광고주:** " + st.session_state.get("advertiser_name", ""))
+        if _uid and not is_admin(_uid):
+            _sc = get_monthly_count(_uid)
+            _sr = max(0, MONTHLY_LIMIT - _sc)
+            st.caption(f"이번달 분석: {_sc}/{MONTHLY_LIMIT} (잔여 {_sr}회)")
         if st.button("🚪 로그아웃", use_container_width=True):
-            for k in ["authenticated", "advertiser_name", "last_ai", "confirmed_df", "adf", "raw_df", "last_df_hash", "chat_messages", "chat_api"]:
+            for k in ["authenticated", "advertiser_name", "user_id", "last_ai", "confirmed_df", "adf", "raw_df", "last_df_hash", "chat_messages", "chat_api"]:
                 st.session_state.pop(k, None)
             st.query_params.clear()
             st.rerun()
@@ -2010,17 +2085,23 @@ def main():
                         st.dataframe(d.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
-                    kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
-                    seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
+                    _u = st.session_state.get("user_id", "")
+                    if _u and not is_admin(_u) and get_monthly_count(_u) >= MONTHLY_LIMIT:
+                        st.error(f"이번달 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달에 다시 이용해주세요.")
+                    else:
+                        kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
+                        seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
 
-                    main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
-                               else kw_dfs[0] if kw_dfs
-                               else list(loaded.values())[0]["df"])
+                        main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
+                                   else kw_dfs[0] if kw_dfs
+                                   else list(loaded.values())[0]["df"])
 
-                    st.session_state["confirmed_df"]  = main_df
-                    st.session_state["segment_dfs"]   = seg_map   # {"📅 요일별": df, "📱 기기별": df, ...}
-                    st.session_state["last_df_hash"]  = ""
-                    st.rerun()
+                        if _u and not is_admin(_u):
+                            increment_usage(_u)
+                        st.session_state["confirmed_df"]  = main_df
+                        st.session_state["segment_dfs"]   = seg_map
+                        st.session_state["last_df_hash"]  = ""
+                        st.rerun()
 
         if st.session_state.get("confirmed_df") is not None and not files:
             df = st.session_state["confirmed_df"]
@@ -2047,18 +2128,25 @@ def main():
                     st.dataframe(df_preview.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True):
-                    seg_dfs = st.session_state.get("segment_dfs", {})
-                    if "키워드" in ftype:
-                        st.session_state["confirmed_df"]  = df_preview
-                        st.session_state["last_df_hash"]  = ""
+                    _u = st.session_state.get("user_id", "")
+                    if _u and not is_admin(_u) and get_monthly_count(_u) >= MONTHLY_LIMIT:
+                        st.error(f"이번달 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달에 다시 이용해주세요.")
                     else:
-                        # 세그먼트 데이터면 segment_dfs에 추가
-                        seg_dfs[ftype] = df_preview
-                        st.session_state["segment_dfs"] = seg_dfs
-                        if st.session_state.get("confirmed_df") is None:
-                            st.session_state["confirmed_df"] = df_preview
-                            st.session_state["last_df_hash"] = ""
-                    st.rerun()
+                        seg_dfs = st.session_state.get("segment_dfs", {})
+                        if "키워드" in ftype:
+                            if _u and not is_admin(_u):
+                                increment_usage(_u)
+                            st.session_state["confirmed_df"]  = df_preview
+                            st.session_state["last_df_hash"]  = ""
+                        else:
+                            seg_dfs[ftype] = df_preview
+                            st.session_state["segment_dfs"] = seg_dfs
+                            if st.session_state.get("confirmed_df") is None:
+                                if _u and not is_admin(_u):
+                                    increment_usage(_u)
+                                st.session_state["confirmed_df"] = df_preview
+                                st.session_state["last_df_hash"] = ""
+                        st.rerun()
             except Exception as e:
                 st.error(f"데이터 파싱 실패: {e}")
 
