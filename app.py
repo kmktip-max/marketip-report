@@ -220,7 +220,7 @@ st.markdown("""
     /* ── 전체화면 버튼 (작은 브랜드 스타일) ── */
     .fs-btn .stButton > button {
         font-size: 0.72rem !important;
-        padding: 0.2rem 0.6rem !important;
+        padding: 0.2rem 0.7rem !important;
         background: linear-gradient(135deg, #0D47A1, #28B463) !important;
         color: #ffffff !important;
         border: none !important;
@@ -228,14 +228,19 @@ st.markdown("""
         font-weight: 700 !important;
         min-height: 0 !important;
         height: auto !important;
-        line-height: 1.5 !important;
+        line-height: 1.6 !important;
         white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: clip !important;
+        width: auto !important;
+        display: inline-block !important;
         box-shadow: 0 2px 6px rgba(13,71,161,0.2) !important;
     }
     .fs-btn .stButton > button:hover {
         background: linear-gradient(135deg, #28B463, #0D47A1) !important;
         box-shadow: 0 3px 10px rgba(40,180,99,0.3) !important;
     }
+    .fs-btn .stButton { text-align: right !important; }
 
     /* ── 숨기기 ── */
     #MainMenu { visibility: hidden; }
@@ -1079,6 +1084,40 @@ def show_results(adf, api_key, model):
     d4.metric("💸 CPA (전환당비용)",   f"₩{cpa:,.0f}"  if cpa  else "N/A")
     d5.metric("📊 ROAS",               f"{roas}%"       if roas else "N/A")
 
+    # ── 3줄 핵심 요약 ──
+    _sum = []
+    if roas:
+        if roas >= 300:
+            _sum.append(f"✅ <b>ROAS {roas:.0f}%</b> — 광고비 대비 수익 양호. 꿀통 키워드 증액으로 추가 확장 가능합니다.")
+        elif roas >= 100:
+            _sum.append(f"⚠️ <b>ROAS {roas:.0f}%</b> — 손익분기 수준. 낭비 키워드 정리 후 효율 개선이 필요합니다.")
+        else:
+            _sum.append(f"🚨 <b>ROAS {roas:.0f}%</b> — 광고비보다 매출이 낮습니다. 즉시 구조 점검이 필요합니다.")
+
+    _wkw = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+    _wamt = _wkw["광고비"].sum()
+    _wratio = _wamt / total_spend * 100 if total_spend > 0 else 0
+    if _wratio >= 20:
+        _sum.append(f"🗑 <b>광고비 {_wratio:.0f}%({_wamt:,.0f}원)</b>가 전환 없이 소진 중 — 삭제 검토 키워드 즉시 정리 권장")
+    elif _wratio >= 5:
+        _sum.append(f"📉 <b>광고비 {_wratio:.0f}%</b>가 전환 없이 소진 중 — 낭비 키워드 점검이 필요합니다")
+    else:
+        _sum.append(f"✅ <b>낭비 비중 {_wratio:.0f}%</b> — 광고비 소진 구조는 비교적 효율적입니다")
+
+    if cvr and cvr < 2:
+        _sum.append(f"📌 <b>전환율 {cvr:.2f}%</b> — 클릭 대비 전환이 낮습니다. 랜딩페이지 점검 또는 키워드 의도 재검토 권장")
+    elif ctr and ctr < 1:
+        _sum.append(f"📌 <b>CTR {ctr:.2f}%</b> — 클릭률이 낮습니다. 광고 소재 개선 또는 확장소재 적용을 권장합니다")
+    elif cvr:
+        _sum.append(f"✅ <b>전환율 {cvr:.2f}%</b> — 클릭 대비 전환 구조는 양호합니다")
+
+    _sum_html = "".join(f'<div style="margin-bottom:0.35rem;">· {s}</div>' for s in _sum)
+    st.markdown(f"""
+    <div style="background:#f8f9fa;border-left:4px solid #0D47A1;border-radius:0 10px 10px 0;
+    padding:0.9rem 1.2rem;margin:0.8rem 0 0.5rem 0;font-size:0.9rem;line-height:1.8;color:#222;">
+    {_sum_html}</div>
+    """, unsafe_allow_html=True)
+
     # ── 광고 구조 진단 ──
     waste_kw   = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
     waste_spend_amt = waste_kw["광고비"].sum()
@@ -1318,11 +1357,11 @@ def show_results(adf, api_key, model):
         """차트 + 전체화면 버튼"""
         if fig is None:
             return
-        _, _fb = st.columns([7, 1])
+        _, _fb = st.columns([5, 2])
         with _fb:
             st.markdown('<div class="fs-btn">', unsafe_allow_html=True)
             if st.button("⛶ 전체화면", key=f"fs_{fs_key}",
-                         use_container_width=True):
+                         use_container_width=False):
                 st.session_state["_fs_fig"] = fig
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
