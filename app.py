@@ -407,6 +407,7 @@ CPA / CPC → 소수점 2자리
 7️⃣ 기기 × 성별
 8️⃣ 시간대 × 기기
 9️⃣ 전체 구조 종합 컨설팅
+🔟 **마케팁 실전 노하우 전자책 구매 바로가기** → https://kmong.com/gig/752337
 
 번호를 선택해주세요."
 
@@ -743,6 +744,7 @@ CPA / CPC → 소수점 2자리
 7️⃣ 기기 × 성별 교차 분석
 8️⃣ 시간대 × 기기 교차 분석
 9️⃣ 전체 구조 종합 컨설팅
+🔟 **마케팁 실전 노하우 전자책 구매 바로가기** → https://kmong.com/gig/752337
 
 번호를 선택하거나, 추가로 궁금한 점을 자유롭게 질문해주세요."""
 
@@ -1749,6 +1751,26 @@ def show_results(adf, api_key, model):
             st.success("낭비 키워드가 없습니다.")
         else:
             st.dataframe(waste_df[disp].reset_index(drop=True), use_container_width=True, height=360)
+
+    # ── 전자책 구매 배너 ──
+    st.markdown("""
+    <a href="https://kmong.com/gig/752337" target="_blank" style="text-decoration:none;">
+    <div style="background:linear-gradient(135deg,#0D47A1,#28B463);border-radius:12px;
+    padding:1rem 1.8rem;margin:1.5rem 0 0.8rem 0;display:flex;
+    align-items:center;justify-content:space-between;cursor:pointer;
+    box-shadow:0 4px 14px rgba(13,71,161,0.25);">
+      <div>
+        <div style="color:#ffffff;font-size:1.05rem;font-weight:900;letter-spacing:-0.3px;">
+          📖 마케팁 실전 노하우 전자책 구매 바로가기
+        </div>
+        <div style="color:rgba(255,255,255,0.82);font-size:0.83rem;margin-top:0.2rem;">
+          검색광고 게임체인저 · O.K전략 · S.S.D전략 · 24시간전략 수록
+        </div>
+      </div>
+      <div style="color:#ffffff;font-size:1.6rem;margin-left:1rem;">→</div>
+    </div>
+    </a>
+    """, unsafe_allow_html=True)
 
     # ── AI 채팅 (다운로드 바로 위) ──
     st.markdown("""
