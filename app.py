@@ -217,6 +217,25 @@ st.markdown("""
         box-shadow: 0 3px 12px rgba(13,71,161,0.2);
     }
 
+    /* ── 전체화면 버튼 (작은 브랜드 스타일) ── */
+    .fs-btn .stButton > button {
+        font-size: 0.7rem !important;
+        padding: 0.15rem 0.45rem !important;
+        background: #f0f4ff !important;
+        color: #0D47A1 !important;
+        border: 1px solid #0D47A1 !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        min-height: 0 !important;
+        height: auto !important;
+        line-height: 1.4 !important;
+        box-shadow: none !important;
+    }
+    .fs-btn .stButton > button:hover {
+        background: #0D47A1 !important;
+        color: #ffffff !important;
+    }
+
     /* ── 숨기기 ── */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
@@ -1223,12 +1242,12 @@ def show_results(adf, api_key, model):
                         return c
             return None
         return {
-            "전환수":  fm(["전환수"]),
-            "광고비":  fm(["총비용","광고비","비용"]),
-            "ROAS":    fm(["광고수익률","roas"]),
-            "CTR":     fm(["클릭률","ctr"]),
-            "클릭수":  fm(["클릭수"]),
+            "전환수":   fm(["전환수"]),
+            "광고비":   fm(["총비용","광고비","비용"]),
+            "ROAS":     fm(["광고수익률","roas"]),
             "전환매출": fm(["전환매출"]),
+            "CTR":      fm(["클릭률","ctr"]),
+            "클릭수":   fm(["클릭수"]),
         }
 
     def fmt_val(v, metric_name):
@@ -1298,11 +1317,14 @@ def show_results(adf, api_key, model):
         """차트 + 전체화면 버튼"""
         if fig is None:
             return
-        _, _fb = st.columns([5, 1])
+        _, _fb = st.columns([7, 1])
         with _fb:
-            if st.button("🔍 전체화면", key=f"fs_{fs_key}", use_container_width=True):
+            st.markdown('<div class="fs-btn">', unsafe_allow_html=True)
+            if st.button("⛶ 전체화면", key=f"fs_{fs_key}",
+                         use_container_width=True):
                 st.session_state["_fs_fig"] = fig
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True,
                         config={"displayModeBar": False})
 
