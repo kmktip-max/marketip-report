@@ -230,12 +230,15 @@ st.markdown("""
     header[data-testid="stHeader"]::before { display: none !important; }
 
     /* 사이드바 토글 버튼 — 항상 보이게 */
-    /* 사이드바 토글 버튼 — 헤더 내 위치를 아래로 조정 */
+    /* 사이드바 토글 버튼 — 헤더 하단에 고정 */
     [data-testid="collapsedControl"] {
         visibility: visible !important;
         display: flex !important;
         opacity: 1 !important;
-        margin-top: 3.5rem !important;
+        position: fixed !important;
+        top: 290px !important;
+        left: 0 !important;
+        z-index: 9999 !important;
     }
 </style>
 """, unsafe_allow_html=True)
