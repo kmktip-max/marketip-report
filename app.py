@@ -2130,7 +2130,7 @@ def main():
         _lb64_main, _lext_main = load_logo_b64()
     _logo_html = (
         f'<img src="data:image/{_lext_main};base64,{_lb64_main}" '
-        f'style="height:80px;max-width:260px;object-fit:contain;margin-bottom:0.4rem;" />'
+        f'style="height:140px;max-width:400px;object-fit:contain;margin-bottom:0.4rem;" />'
         if _lb64_main
         else '<span style="font-size:1.8rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>'
     )
