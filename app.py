@@ -839,6 +839,7 @@ def check_auth():
     st.markdown(f"""
     <div class="main-header">
         {_logo_html_login}
+        <h1>광고 구조 분석 시스템</h1>
         <p>승인된 광고주만 접근 가능합니다</p>
     </div>
     """, unsafe_allow_html=True)
