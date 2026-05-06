@@ -221,16 +221,31 @@ st.markdown("""
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
 
-    /* 헤더는 숨기되 사이드바 토글 버튼은 살려둠 */
-    header[data-testid="stHeader"] { visibility: hidden; }
-    [data-testid="collapsedControl"] {
-        visibility: visible !important;
-        background: #ffffff !important;
-        border: 1.5px solid #dee2e6 !important;
-        border-radius: 0 8px 8px 0 !important;
-        box-shadow: 2px 0 8px rgba(0,0,0,0.08) !important;
+    /* 헤더 배경만 투명하게 (토글 버튼은 살림) */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        height: 0 !important;
+        min-height: 0 !important;
     }
-    [data-testid="collapsedControl"] svg { color: #0D47A1 !important; }
+    header[data-testid="stHeader"]::before { display: none !important; }
+
+    /* 사이드바 토글 버튼 — 항상 보이게 */
+    [data-testid="collapsedControl"],
+    button[kind="header"],
+    [data-testid="stSidebarCollapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        opacity: 1 !important;
+        z-index: 9999 !important;
+        background: #0D47A1 !important;
+        border-radius: 0 8px 8px 0 !important;
+        box-shadow: 3px 0 10px rgba(13,71,161,0.25) !important;
+    }
+    [data-testid="collapsedControl"] svg,
+    [data-testid="stSidebarCollapsedControl"] svg {
+        color: #ffffff !important;
+        fill: #ffffff !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
