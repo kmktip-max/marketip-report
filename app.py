@@ -116,7 +116,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #c62828;
+        color: #111111;
         font-size: 0.93rem;
         font-weight: 500;
     }
@@ -126,7 +126,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #e65100;
+        color: #111111;
         font-size: 0.93rem;
         font-weight: 500;
     }
@@ -136,7 +136,7 @@ st.markdown("""
         padding: 0.85rem 1.1rem;
         border-radius: 0 8px 8px 0;
         margin: 0.5rem 0;
-        color: #1b5e20;
+        color: #111111;
         font-size: 0.93rem;
         font-weight: 500;
     }
