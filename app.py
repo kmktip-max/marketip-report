@@ -1362,6 +1362,172 @@ def show_results(adf, api_key, model):
                                     with cols_pair[idx % 2]:
                                         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    # ══════════════════════════════════════════════════════════
+    # ── [A] 광고 구조 점수 ────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    st.markdown('<div class="section-title">🏆 광고 구조 점수</div>', unsafe_allow_html=True)
+
+    _avgs_q = {
+        "CPA":    total_spend / total_conv if total_conv > 0 else 0,
+        "ROAS":   total_rev   / total_spend * 100 if total_spend > 0 else 0,
+        "광고비": total_spend / len(adf)   if len(adf)   > 0 else 0,
+    }
+    _grades_q = adf.apply(lambda r: classify(r, _avgs_q), axis=1)
+    _honey_n_q  = _grades_q.isin(["증액 권장", "증액 테스트"]).sum()
+    _honey_pct_q = _honey_n_q / len(adf) * 100 if len(adf) > 0 else 0
+
+    _sc_roas_q  = 25 if (roas  or 0) >= 200 else (15 if (roas  or 0) >= 100 else 0)
+    _sc_cvr_q   = 25 if (cvr   or 0) >= 5   else (15 if (cvr   or 0) >= 1   else 0)
+    _sc_waste_q = 25 if waste_ratio   < 10   else (15 if waste_ratio   < 30  else 0)
+    _sc_ctr_q   = 15 if (ctr   or 0) >= 2   else (10 if (ctr   or 0) >= 1   else 0)
+    _sc_honey_q = 10 if _honey_pct_q >= 20  else (5  if _honey_pct_q >= 5   else 0)
+    _total_sq   = _sc_roas_q + _sc_cvr_q + _sc_waste_q + _sc_ctr_q + _sc_honey_q
+
+    if _total_sq >= 70:
+        _sg_q, _gc_q, _gb_q, _gi_q = "양호",    "#1b5e20", "#f0fdf4", "🟢"
+    elif _total_sq >= 45:
+        _sg_q, _gc_q, _gb_q, _gi_q = "개선 필요","#e65100", "#fffbf0", "🟡"
+    else:
+        _sg_q, _gc_q, _gb_q, _gi_q = "구조 문제","#b71c1c", "#fff5f5", "🔴"
+
+    _dims_q = [
+        ("ROAS 효율",   _sc_roas_q,  25),
+        ("전환율 구조", _sc_cvr_q,   25),
+        ("낭비 차단",   _sc_waste_q, 25),
+        ("CTR 경쟁력",  _sc_ctr_q,   15),
+        ("꿀통 집중도", _sc_honey_q, 10),
+    ]
+    _bars_q = ""
+    for _dn_q, _dsc_q, _dmx_q in _dims_q:
+        _dpct_q = round(_dsc_q / _dmx_q * 100) if _dmx_q else 0
+        _dbc_q  = "#28B463" if _dpct_q >= 80 else ("#f9a825" if _dpct_q >= 50 else "#e53935")
+        _bars_q += (
+            '<div style="margin-bottom:0.65rem;">'
+            '<div style="display:flex;justify-content:space-between;'
+            'font-size:0.85rem;font-weight:600;margin-bottom:0.22rem;">'
+            f'<span style="color:#444;">{_dn_q}</span>'
+            f'<span style="color:{_dbc_q};">{_dsc_q}/{_dmx_q}점</span></div>'
+            '<div style="background:#f1f3f5;border-radius:999px;height:10px;">'
+            f'<div style="background:{_dbc_q};width:{_dpct_q}%;height:10px;'
+            'border-radius:999px;"></div></div></div>'
+        )
+
+    _scc1, _scc2 = st.columns([1, 2.5])
+    with _scc1:
+        st.markdown(
+            f'<div style="background:{_gb_q};border:1.5px solid #e9ecef;border-radius:16px;'
+            f'padding:2rem 1.5rem;text-align:center;">'
+            f'<div style="font-size:4.5rem;font-weight:900;color:{_gc_q};line-height:1.05;">{_total_sq}</div>'
+            f'<div style="font-size:0.82rem;color:#aaa;">/ 100점</div>'
+            f'<div style="font-size:1rem;font-weight:800;color:{_gc_q};margin-top:0.4rem;">{_gi_q} {_sg_q}</div>'
+            f'<div style="font-size:0.72rem;color:#bbb;margin-top:0.25rem;">참고용 종합 점수</div></div>',
+            unsafe_allow_html=True
+        )
+    with _scc2:
+        st.markdown(
+            f'<div style="background:#fff;border:1.5px solid #e9ecef;border-radius:16px;padding:1.5rem 1.8rem;">'
+            f'{_bars_q}</div>',
+            unsafe_allow_html=True
+        )
+
+    # ══════════════════════════════════════════════════════════
+    # ── [B] 평균 대비 성과 비교 ──────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    st.markdown('<div class="section-title">📐 평균 대비 성과 비교</div>', unsafe_allow_html=True)
+
+    _avg_roas_kw = adf["ROAS"][adf["ROAS"].notna()].mean()                                      if adf["ROAS"].notna().any()                             else None
+    _avg_cvr_kw  = adf["전환율"][(adf["전환율"].notna()) & (adf["전환수"] > 0)].mean()         if (adf["전환율"].notna() & (adf["전환수"] > 0)).any()   else None
+    _avg_cpa_kw  = adf["CPA"][adf["CPA"].notna()].mean()                                        if adf["CPA"].notna().any()                              else None
+    _avg_ctr_kw  = adf["CTR"][adf["CTR"].notna()].mean()                                        if adf["CTR"].notna().any()                              else None
+
+    def _cmp_html(label, cur_v, avg_v, cur_fmt, avg_fmt, lower_better=False):
+        if cur_v is None or avg_v is None or avg_v == 0:
+            return ""
+        _diff = (cur_v - avg_v) / avg_v * 100
+        _good  = (_diff > 0) if not lower_better else (_diff < 0)
+        _arrow = "▲" if _diff > 0 else "▼"
+        _clr   = "#28B463" if _good else "#e53935"
+        _bg2   = "#f0fdf4" if _good else "#fff5f5"
+        _sign  = "+" if _diff > 0 else ""
+        return (
+            f'<div style="background:{_bg2};border:1.5px solid #e9ecef;border-radius:14px;'
+            f'padding:1.1rem 0.8rem;text-align:center;flex:1;min-width:130px;">'
+            f'<div style="font-size:0.78rem;font-weight:700;color:#6c757d;margin-bottom:0.35rem;">{label}</div>'
+            f'<div style="font-size:1.45rem;font-weight:900;color:#111;">{cur_fmt}</div>'
+            f'<div style="font-size:0.77rem;color:#aaa;margin:0.12rem 0;">키워드 평균 {avg_fmt}</div>'
+            f'<div style="font-size:1.05rem;font-weight:800;color:{_clr};">'
+            f'{_arrow} {_sign}{_diff:.1f}%</div></div>'
+        )
+
+    _cmp_cards = ""
+    if roas is not None and _avg_roas_kw is not None:
+        _cmp_cards += _cmp_html("ROAS", roas, _avg_roas_kw,
+                                 f"{roas:.1f}%", f"{_avg_roas_kw:.1f}%")
+    if cvr is not None and _avg_cvr_kw is not None:
+        _cmp_cards += _cmp_html("전환율", cvr, _avg_cvr_kw,
+                                  f"{cvr:.2f}%", f"{_avg_cvr_kw:.2f}%")
+    if cpa is not None and _avg_cpa_kw is not None:
+        _cmp_cards += _cmp_html("CPA", cpa, _avg_cpa_kw,
+                                  f"₩{cpa:,.0f}", f"₩{_avg_cpa_kw:,.0f}", lower_better=True)
+    if ctr is not None and _avg_ctr_kw is not None:
+        _cmp_cards += _cmp_html("CTR", ctr, _avg_ctr_kw,
+                                  f"{ctr:.2f}%", f"{_avg_ctr_kw:.2f}%")
+
+    if _cmp_cards:
+        st.markdown(
+            f'<div style="display:flex;gap:0.8rem;flex-wrap:wrap;">{_cmp_cards}</div>',
+            unsafe_allow_html=True
+        )
+        st.caption("집계 지표(전체 합산 기반) vs 키워드 단순 평균 비교 · 차이가 클수록 특정 키워드가 전체 성과를 끌어내리고 있다는 신호")
+    else:
+        st.info("비교할 지표 데이터가 부족합니다.")
+
+    # ══════════════════════════════════════════════════════════
+    # ── [C] 즉시 실행 리스트 ─────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    st.markdown('<div class="section-title">📋 즉시 실행 리스트</div>', unsafe_allow_html=True)
+
+    _act_buckets = {"증액 권장": [], "증액 테스트": [], "감액": [], "삭제 검토": []}
+    for _ai, _arow in adf.iterrows():
+        _ag = classify(_arow, _avgs_q)
+        if _ag in _act_buckets:
+            _act_buckets[_ag].append(_arow)
+
+    _ac1, _ac2, _ac3, _ac4 = st.columns(4)
+
+    def _act_card(col, title, color, bg, rows, val_col, val_fmt):
+        _items_h = ""
+        for _r in rows[:10]:
+            _kw = str(_r.get("키워드", ""))
+            _kw = (_kw[:15] + "…") if len(_kw) > 15 else _kw
+            _v  = _r.get(val_col)
+            if pd.notna(_v):
+                _vtxt = f"{_v:.0f}%" if val_fmt == "pct" else f"₩{_v:,.0f}"
+            else:
+                _vtxt = "-"
+            _items_h += (
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:0.28rem 0;border-bottom:1px solid rgba(0,0,0,0.06);font-size:0.82rem;">'
+                f'<span style="color:#333;overflow:hidden;text-overflow:ellipsis;'
+                f'white-space:nowrap;max-width:65%;">{_kw}</span>'
+                f'<span style="color:{color};font-weight:700;flex-shrink:0;">{_vtxt}</span></div>'
+            )
+        _empty = '<div style="font-size:0.82rem;color:#bbb;text-align:center;padding:0.8rem 0;">해당 없음</div>'
+        with col:
+            st.markdown(
+                f'<div style="background:{bg};border:1.5px solid {color}44;'
+                f'border-radius:14px;padding:1rem;">'
+                f'<div style="font-size:0.88rem;font-weight:800;color:{color};margin-bottom:0.55rem;">'
+                f'{title} <span style="font-size:0.76rem;font-weight:400;color:#999;">({len(rows)}개)</span></div>'
+                + (_items_h if rows else _empty) + '</div>',
+                unsafe_allow_html=True
+            )
+
+    _act_card(_ac1, "🗑 삭제 검토",    "#b71c1c", "#fff5f5", _act_buckets["삭제 검토"],    "광고비", "money")
+    _act_card(_ac2, "📉 감액",         "#e65100", "#fffbf0", _act_buckets["감액"],          "ROAS",   "pct")
+    _act_card(_ac3, "🔬 증액 테스트",  "#1565C0", "#f0f4ff", _act_buckets["증액 테스트"],   "ROAS",   "pct")
+    _act_card(_ac4, "💰 증액 권장",    "#1b5e20", "#f0fdf4", _act_buckets["증액 권장"],     "ROAS",   "pct")
+
     # ── 키워드 테이블 ──
     st.markdown('<div class="section-title">🔍 키워드별 상세 분석</div>', unsafe_allow_html=True)
 
@@ -1410,7 +1576,22 @@ def show_results(adf, api_key, model):
 
     tbl = adf.copy()
     tbl["상태"] = tbl.apply(make_badge, axis=1)
-    disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl.columns]
+
+    # 평균 대비 % 컬럼 추가
+    if _avg_roas_kw and _avg_roas_kw > 0 and "ROAS" in tbl.columns:
+        def _roas_vs(v):
+            if pd.isna(v): return "-"
+            d = (v - _avg_roas_kw) / _avg_roas_kw * 100
+            return f"+{d:.0f}%" if d >= 0 else f"{d:.0f}%"
+        tbl["ROAS vs 평균"] = tbl["ROAS"].apply(_roas_vs)
+    if _avg_cpa_kw and _avg_cpa_kw > 0 and "CPA" in tbl.columns:
+        def _cpa_vs(v):
+            if pd.isna(v): return "-"
+            d = (v - _avg_cpa_kw) / _avg_cpa_kw * 100
+            return f"+{d:.0f}%" if d >= 0 else f"{d:.0f}%"
+        tbl["CPA vs 평균"] = tbl["CPA"].apply(_cpa_vs)
+
+    disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","CPA vs 평균","ROAS","ROAS vs 평균","상태"] if c in tbl.columns]
 
     # ── 꿀통 기준: 증액 권장 + 증액 테스트 ──
     def is_honey(row):
