@@ -716,8 +716,11 @@ def load_advertisers():
 # ────────────────────────────────────────────
 # 로고 로더
 # ────────────────────────────────────────────
-def load_logo_b64():
-    for fname in ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]:
+def load_logo_b64(name=None):
+    candidates = [name] if name else ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]
+    for fname in candidates:
+        if not fname:
+            continue
         path = os.path.join(os.path.dirname(__file__), fname)
         if os.path.exists(path):
             with open(path, "rb") as f:
@@ -2122,14 +2125,19 @@ def main():
 
     # 헤더
     _uid = st.session_state.get("user_id", "")
-    _lb64, _lext = load_logo_b64()
-    _logo_html = (f'<img src="data:image/{_lext};base64,{_lb64}" style="height:54px;margin-bottom:0.3rem;" />'
-                  if _lb64 else '<span style="font-size:1.5rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>')
+    _lb64_main, _lext_main = load_logo_b64("logo2.png")
+    if not _lb64_main:
+        _lb64_main, _lext_main = load_logo_b64()
+    _logo_html = (
+        f'<img src="data:image/{_lext_main};base64,{_lb64_main}" '
+        f'style="height:80px;max-width:260px;object-fit:contain;margin-bottom:0.4rem;" />'
+        if _lb64_main
+        else '<span style="font-size:1.8rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>'
+    )
     st.markdown(f"""
     <div class="main-header">
         {_logo_html}
-        <h1>광고 구조 분석 시스템</h1>
-        <p>안녕하세요, <strong>{st.session_state.get('advertiser_name','')}</strong>님 &nbsp;|&nbsp; 광고 구조 분석 AI</p>
+        <p style="margin-top:0.5rem;">안녕하세요, <strong>{st.session_state.get('advertiser_name','')}</strong>님 &nbsp;|&nbsp; 광고 구조 분석 AI</p>
     </div>
     """, unsafe_allow_html=True)
 
