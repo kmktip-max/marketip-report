@@ -808,56 +808,46 @@ def calculate_metrics(df, cols):
 # 키워드 등급 분류
 # ────────────────────────────────────────────
 def classify(row, avgs):
+    """5단계 키워드 분류"""
     clicks = row["클릭수"]
     conv   = row["전환수"]
-    cpa    = row["CPA"]
-    roas   = row["ROAS"]
-    ctr    = row["CTR"]
+    cpa    = row["CPA"]   if pd.notna(row.get("CPA"))  else None
+    roas   = row["ROAS"]  if pd.notna(row.get("ROAS")) else None
     spend  = row["광고비"]
 
-    avg_cpa   = avgs.get("CPA")
-    avg_roas  = avgs.get("ROAS")
-    avg_ctr   = avgs.get("CTR")
-    avg_spend = avgs.get("광고비")
+    avg_cpa   = avgs.get("CPA")   or 0
+    avg_roas  = avgs.get("ROAS")  or 0
+    avg_spend = avgs.get("광고비") or 0
 
-    # ── 전환 없는 경우 ──────────────────────────────
-    if conv == 0 or pd.isna(roas):
-        # 클릭 50회 이상인데 전환 0 → 낭비 의심
-        if clicks >= 50:
-            return "낭비 의심"
-        # 클릭 발생 + 광고비 소진 + 전환 0 → 낭비 의심
-        if clicks > 0 and spend > 0:
-            return "낭비 의심"
-        # 노출은 있으나 클릭 저조
-        if pd.notna(ctr) and avg_ctr and avg_ctr > 0 and ctr < avg_ctr * 0.5:
-            return "클릭 저조"
-        return "하위 (검토 필요)"
+    # ── 삭제 검토: 비용 발생 + 전환 없음 ──
+    if conv == 0 and spend > 0:
+        return "삭제 검토"
 
-    # ── 전환 있는 경우: ROAS 최우선 판단 ───────────
-    # [1] 상위: ROAS 평균 이상 → 전환수에 관계없이 효율 키워드
-    if pd.notna(roas) and avg_roas and avg_roas > 0 and roas >= avg_roas:
-        return "상위 (증액 검토)"
+    # ── 이하 전환 있는 경우 ──
+    roas_good = roas and avg_roas > 0 and roas >= avg_roas
+    cpa_good  = cpa  and avg_cpa  > 0 and cpa  <= avg_cpa
 
-    # [2] 중위: ROAS 100% 이상 (광고비 대비 매출 손익 분기 이상)
-    #     전환이 2~3건이더라도 ROAS가 100% 이상이면 비효율 아님
-    if pd.notna(roas) and roas >= 100:
-        return "중위 (유지)"
+    # 증액 권장: ROAS 높음 + CPA 낮음
+    if roas_good and cpa_good:
+        return "증액 권장"
 
-    # ── 이하: ROAS < 100% (광고비보다 매출이 적음) ──
-    # [3] 고비용: 광고비를 평균 이상 쓰면서 CPA도 높음
-    if (avg_spend and spend >= avg_spend and
-            pd.notna(cpa) and avg_cpa and avg_cpa > 0 and cpa > avg_cpa * 1.3):
-        return "고비용 (감액)"
+    # 증액 권장: ROAS만 높아도 (ROAS 최우선)
+    if roas_good and conv >= 3:
+        return "증액 권장"
 
-    # [4] 저효율: ROAS가 평균의 절반 이하
-    if pd.notna(roas) and avg_roas and avg_roas > 0 and roas < avg_roas * 0.5:
-        return "저효율 (감액)"
+    # 증액 테스트: 성과 있으나 데이터 부족 (전환 1~2건, ROAS 100%↑)
+    if conv > 0 and conv <= 2 and roas and roas >= 100:
+        return "증액 테스트"
 
-    # [5] CTR 매우 낮음
-    if pd.notna(ctr) and avg_ctr and avg_ctr > 0 and ctr < avg_ctr * 0.5:
-        return "클릭 저조"
+    # 증액 테스트: 전환 있고 ROAS 손익분기 이상이나 평균 미달
+    if conv > 0 and roas and roas >= 100 and not roas_good:
+        return "증액 테스트"
 
-    return "하위 (검토 필요)"
+    # 감액: 전환 있으나 ROAS < 100% (광고비 > 매출)
+    if conv > 0 and roas and roas < 100:
+        return "감액"
+
+    return "유지"
 
 # ────────────────────────────────────────────
 # AI 분석용 데이터 포맷
@@ -983,37 +973,49 @@ def show_results(adf, api_key, model):
     d4.metric("💸 CPA (전환당비용)",   f"₩{cpa:,.0f}"  if cpa  else "N/A")
     d5.metric("📊 ROAS",               f"{roas}%"       if roas else "N/A")
 
-    # ── 한줄평 ──
-    def make_summary(total_spend, total_click, total_conv, total_imp, total_rev, ctr, cvr, cpa, roas):
-        parts = []
-        if roas and roas >= 300:
-            parts.append(f"ROAS {roas}%로 수익 구조는 양호합니다")
-        elif roas and roas >= 100:
-            parts.append(f"ROAS {roas}%로 손익 분기 수준입니다")
-        elif roas:
-            parts.append(f"ROAS {roas}%로 수익 구조 개선이 필요합니다")
+    # ── 광고 구조 진단 ──
+    waste_kw   = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+    waste_spend_amt = waste_kw["광고비"].sum()
+    waste_ratio = waste_spend_amt / total_spend * 100 if total_spend > 0 else 0
 
-        if ctr and ctr >= 3:
-            parts.append(f"클릭률(CTR) {ctr}%로 광고 소재 반응은 좋은 편입니다")
-        elif ctr:
-            parts.append(f"클릭률(CTR) {ctr}%로 광고 소재 개선 여지가 있습니다")
+    # 공포/손실 1줄
+    if waste_ratio >= 30:
+        fear_line = f'🚨 현재 총 광고비 ₩{total_spend:,.0f} 중 <b>약 ₩{waste_spend_amt:,.0f}({waste_ratio:.0f}%)이 전환 없이 소진</b>되고 있어 낭비 가능성이 매우 높습니다.'
+        fear_color = "#7f0000"
+        fear_bg    = "#fff5f5"
+        fear_border= "#e53935"
+    elif waste_ratio >= 10:
+        fear_line = f'⚠️ 총 광고비의 <b>약 {waste_ratio:.0f}%(₩{waste_spend_amt:,.0f})이 전환 없이 소진</b>되고 있습니다. 낭비 구간 점검이 필요합니다.'
+        fear_color = "#e65100"
+        fear_bg    = "#fff8f0"
+        fear_border= "#f9a825"
+    else:
+        fear_line = f'광고비 소진 대비 전환 구조는 비교적 안정적입니다. 아래 상세 분석을 확인하세요.'
+        fear_color = "#1b5e20"
+        fear_bg    = "#f6fef9"
+        fear_border= "#28B463"
 
-        if cvr and cvr >= 10:
-            parts.append(f"전환율 {cvr}%로 랜딩 구조가 안정적입니다")
-        elif cvr and cvr < 5:
-            parts.append(f"전환율 {cvr}%로 랜딩페이지 점검이 필요합니다")
+    # 평가 2줄
+    eval_lines = []
+    if roas and roas < 100:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 광고비보다 매출이 낮아 <b>구조적 손실</b>이 발생 중입니다.")
+    elif roas and roas < 200:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 손익 분기 수준으로 <b>수익 구조 개선</b>이 필요합니다.")
+    else:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 수익 구조는 유지되고 있으나 낭비 키워드 정리로 추가 개선 가능합니다.")
 
-        if not parts:
-            return "데이터를 기반으로 아래 위험 신호와 AI 분석을 참고하세요."
+    if cvr and cvr < 5:
+        eval_lines.append(f"• 전환율 <b>{cvr}%</b> — 클릭 대비 구매/문의 전환이 낮아 <b>랜딩페이지 구조 점검</b>을 권장합니다.")
+    elif ctr and ctr < 1:
+        eval_lines.append(f"• CTR <b>{ctr}%</b> — 노출 대비 클릭이 매우 낮아 <b>소재 경쟁력 개선</b>이 필요합니다.")
 
-        return " · ".join(parts[:2]) + "."
+    eval_html = "<br>".join(eval_lines)
 
-    summary_text = make_summary(total_spend, total_click, total_conv, total_imp, total_rev, ctr, cvr, cpa, roas)
     st.markdown(f"""
-    <div style="background:#f8fdf9;border-left:4px solid #28B463;
-    padding:0.9rem 1.2rem;border-radius:0 10px 10px 0;margin-top:0.8rem;
-    color:#1b5e20;font-size:0.95rem;line-height:1.75;font-weight:500;">
-    📝 <strong>한줄평</strong> &nbsp;|&nbsp; {summary_text}
+    <div style="background:{fear_bg};border-left:5px solid {fear_border};
+    padding:1rem 1.3rem;border-radius:0 10px 10px 0;margin-top:0.8rem;line-height:1.9;">
+    <div style="color:{fear_color};font-size:1rem;font-weight:700;margin-bottom:0.5rem;">{fear_line}</div>
+    <div style="color:#333;font-size:0.9rem;">{eval_html}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1021,10 +1023,10 @@ def show_results(adf, api_key, model):
     st.markdown('<div class="section-title">⚠️ 위험 신호 감지</div>', unsafe_allow_html=True)
     alerts = []
 
-    waste = adf[(adf["클릭수"] >= 50) & (adf["전환수"] == 0)]
-    if not waste.empty:
-        w_spend = waste["광고비"].sum()
-        alerts.append(("danger", f"⚠ 광고비 낭비 가능성 — 클릭 50회 이상·전환 0인 키워드 {len(waste)}개 (₩{w_spend:,.0f} 소진 중)"))
+    waste50 = adf[(adf["클릭수"] >= 50) & (adf["전환수"] == 0)]
+    if not waste50.empty:
+        w_spend = waste50["광고비"].sum()
+        alerts.append(("danger", f"<b>광고비 낭비 가능성</b> — 클릭 50회 이상·전환 0인 키워드 {len(waste50)}개 (₩{w_spend:,.0f} 소진 중)"))
 
     if adf["CTR"].notna().any() and adf["전환율"].notna().any():
         illusion = adf[
@@ -1032,19 +1034,23 @@ def show_results(adf, api_key, model):
             (adf["전환율"] < adf["전환율"].mean() * 0.7)
         ]
         if not illusion.empty:
-            alerts.append(("warn", f"⚠ 클릭 착시 구조 — CTR 높으나 전환율 낮은 키워드 {len(illusion)}개"))
+            alerts.append(("warn", f"<b>클릭 착시 구조</b> — CTR은 높으나 전환율이 낮은 키워드 {len(illusion)}개 · 클릭 의도와 구매 의도가 다를 수 있습니다"))
 
     spread = adf[adf["ROAS"].notna() & (adf["전환수"] > 0)]
     total_kw = len(adf)
     if total_kw > 0 and len(spread) / total_kw < 0.3:
-        alerts.append(("warn", f"⚠ 키워드 확산 구조 — 전환 발생 키워드가 전체의 {len(spread)/total_kw*100:.1f}%에 불과"))
+        alerts.append(("warn", f"<b>키워드 예산 과집중 위험</b> — 전환 발생 키워드가 전체의 {len(spread)/total_kw*100:.1f}%에 불과 · 나머지 예산이 낭비될 가능성이 있습니다"))
+
+    roas_drop = adf[(adf["ROAS"].notna()) & (adf["ROAS"] < 100) & (adf["광고비"] > adf["광고비"].mean())]
+    if not roas_drop.empty:
+        alerts.append(("danger", f"<b>구조 손실 위험</b> — ROAS 100% 미만이면서 광고비 평균 초과 키워드 {len(roas_drop)}개 · 광고비보다 매출이 낮은 구간입니다"))
 
     if not alerts:
         st.markdown('<div class="alert-ok">✅ 주요 위험 신호가 감지되지 않았습니다.</div>', unsafe_allow_html=True)
     else:
         for kind, msg in alerts:
             css = "alert-danger" if kind == "danger" else "alert-warn"
-            st.markdown(f'<div class="{css}">{msg}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="{css}">⚠ {msg}</div>', unsafe_allow_html=True)
 
     # ── 차트 공통 설정 ──
     CL = dict(
@@ -1055,10 +1061,11 @@ def show_results(adf, api_key, model):
         showlegend=False,
     )
     color_map = {
-        "상위 (증액 검토)": "#28B463", "중위 (유지)": "#1498D7",
-        "낭비 의심": "#C0392B",        "고비용 (감액)": "#E67E22",
-        "저효율 (감액)": "#8E44AD",    "클릭 저조": "#7F8C8D",
-        "하위 (검토 필요)": "#566573",
+        "증액 권장":   "#28B463",
+        "증액 테스트": "#1498D7",
+        "유지":        "#6C8EBF",
+        "감액":        "#E67E22",
+        "삭제 검토":   "#C0392B",
     }
 
     def hbar(df, x, y, title, scale, fmt=None):
@@ -1109,29 +1116,7 @@ def show_results(adf, api_key, model):
         else:
             st.success("낭비 키워드가 없습니다.")
 
-    c5, c6 = st.columns(2)
-    with c5:
-        grade_counts = adf["등급"].value_counts()
-        colors = [color_map.get(g,"#95A5A6") for g in grade_counts.index]
-        fig_pie = go.Figure(go.Pie(
-            labels=grade_counts.index, values=grade_counts.values, hole=0.52,
-            marker=dict(colors=colors, line=dict(color="#ffffff", width=2)),
-            textfont=dict(size=12),
-        ))
-        fig_pie.update_layout(**{k:v for k,v in CL.items() if k not in ("showlegend",)},
-            title="🏷️ 키워드 등급 분포", showlegend=True,
-            legend=dict(font=dict(size=10), orientation="v"))
-        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
-    with c6:
-        sc = adf[adf["CTR"].notna() & adf["전환율"].notna()]
-        if not sc.empty:
-            fig_sc = px.scatter(sc, x="CTR", y="전환율", size="광고비", size_max=44,
-                hover_name="키워드", color="등급", title="📉 CTR vs 전환율",
-                color_discrete_map=color_map)
-            fig_sc.update_layout(**{**CL, "showlegend":True,
-                "legend":dict(font=dict(size=10))})
-            fig_sc.update_traces(marker=dict(line=dict(width=1,color="#ffffff"), opacity=0.88))
-            st.plotly_chart(fig_sc, use_container_width=True, config={"displayModeBar": False})
+    # (파이차트 / CTR vs 전환율 산점도 제거 — 추후 다른 콘텐츠로 교체 예정)
 
     # ── [2] 세그먼트 차트 ──
     segment_dfs = st.session_state.get("segment_dfs", {})
@@ -1333,69 +1318,59 @@ def show_results(adf, api_key, model):
     _avg_conv = adf["전환수"].mean()
     _avg_spend = adf["광고비"].mean()
 
-    # ── 상태 배지 (ROAS 최우선) ──
+    # ── 상태 배지 (5단계 구체적 이유 표시) ──
     def make_badge(row):
         conv  = row.get("전환수", 0)
         roas  = row.get("ROAS",  0) if pd.notna(row.get("ROAS"))  else 0
+        cpa   = row.get("CPA",   0) if pd.notna(row.get("CPA"))   else 0
         spend = row.get("광고비", 0)
         click = row.get("클릭수", 0)
 
-        # 전환 없음
-        if conv == 0 and click > 0:
+        # 삭제 검토: 비용 발생 + 전환 없음
+        if conv == 0 and spend > 0:
             if spend >= _avg_spend:
-                return "🚨 즉시 주의"
-            return "⚠️ 낭비"
+                return "🗑 삭제검토 (고비용·전환없음)"
+            return "🗑 삭제검토 (비용발생·전환없음)"
 
-        # ROAS 100% 미만 = 광고비 > 매출 → 무조건 낭비
+        # 전환 있는 경우
+        roas_good = _avg_roas > 0 and roas >= _avg_roas
+        cpa_good  = _avg_cpa  > 0 and cpa  > 0 and cpa <= _avg_cpa
+
+        if roas_good and cpa_good:
+            return "💰 증액권장 (ROAS높음·CPA낮음)"
+        if roas_good and conv >= 3:
+            return "💰 증액권장 (ROAS높음·전환충분)"
+        if roas_good:
+            return "💰 증액권장 (ROAS높음)"
+        if cpa_good and conv >= 2:
+            return "💰 증액권장 (CPA낮음)"
+
+        if conv > 0 and conv <= 2 and roas >= 100:
+            return "🔬 증액테스트 (성과있음·데이터부족)"
+        if conv > 0 and roas >= 100 and not roas_good:
+            return "🔬 증액테스트 (손익분기·평균미달)"
+
         if conv > 0 and roas < 100:
-            return "🚨 즉시 주의" if spend >= _avg_spend else "⚠️ 낭비"
+            return "📉 감액 (ROAS100%미만)"
 
-        # ROAS 100~200% = 손익분기 근처 → 주의
-        if conv > 0 and roas < 200:
-            return "⚠️ 관리 필요"
-
-        # ROAS 평균 1.5배 이상 → 증액 추천
-        if _avg_roas > 0 and roas >= _avg_roas * 1.5:
-            return "💰 증액 추천"
-
-        # ROAS 평균 이상 → 효율
-        if _avg_roas > 0 and roas >= _avg_roas:
-            return "✅ 효율"
-
-        return ""
+        return "➖ 유지"
 
     tbl = adf.copy()
     tbl["상태"] = tbl.apply(make_badge, axis=1)
     disp = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl.columns]
 
-    # ── 꿀통 기준: ROAS 200% 이상 + 전환 있음 ──
+    # ── 꿀통 기준: 증액 권장 + 증액 테스트 ──
     def is_honey(row):
-        roas = row.get("ROAS", 0) if pd.notna(row.get("ROAS")) else 0
-        conv = row.get("전환수", 0)
-        if conv <= 0 or roas <= 0:
-            return False
-        # ROAS 평균 이상이거나 최소 200% 이상
-        return roas >= max(_avg_roas, 200)
+        badge = row.get("상태","")
+        return "증액권장" in badge or "증액테스트" in badge
 
-    # ── 낭비 기준: ROAS 100% 미만 or 전환 0 (클릭 있음) ──
+    # ── 낭비 기준: 삭제 검토 + 감액 ──
     def is_waste(row):
-        roas  = row.get("ROAS",  0) if pd.notna(row.get("ROAS"))  else 0
-        conv  = row.get("전환수", 0)
-        click = row.get("클릭수", 0)
-        spend = row.get("광고비", 0)
-        # 전환 없는데 클릭/비용 발생
-        if conv == 0 and click > 0:
-            return True
-        # ROAS 100% 미만 (광고비 > 매출)
-        if conv > 0 and roas < 100 and spend > 0:
-            return True
-        # ROAS 200% 미만이고 광고비 평균 이상 (비용 대비 효율 낮음)
-        if conv > 0 and roas < 200 and spend >= _avg_spend * 1.5:
-            return True
-        return False
+        badge = row.get("상태","")
+        return "삭제검토" in badge or "감액" in badge
 
     honey_df = tbl[tbl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
-    waste_df = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+    waste_df  = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
 
     tab_all, tab_honey, tab_waste = st.tabs([
         f"📋 전체 키워드 ({len(tbl)}개)",
