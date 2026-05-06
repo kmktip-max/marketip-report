@@ -2066,6 +2066,127 @@ def show_results(adf, api_key, model):
             safe_line(f"차트 생성 실패: {e}")
             pdf.set_text_color(17,17,17)
 
+        # ━━━ 세그먼트 차트 페이지 ━━━
+        _seg_colors = ["#1498D7", "#28B463", "#E67E22", "#8E44AD"]
+        _day_order = ["월요일","화요일","수요일","목요일","금요일","토요일","일요일",
+                      "월","화","수","목","금","토","일"]
+
+        def _seg_fm(sdf, kws):
+            for c in sdf.columns:
+                n = c.replace(" ","").lower()
+                if any(k in n for k in kws):
+                    if pd.to_numeric(sdf[c], errors="coerce").notna().sum() > 0:
+                        return c
+            return None
+
+        def _seg_x_col(sdf, seg_type):
+            if "요일" in seg_type:
+                return next((c for c in sdf.columns if "요일" in c.replace(" ","")), None)
+            if "시간" in seg_type:
+                return next((c for c in sdf.columns if "시간" in c.replace(" ","")), None)
+            if "연령" in seg_type:
+                return next((c for c in sdf.columns if "연령" in c.replace(" ","")), None)
+            if "기기" in seg_type:
+                return next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["기기","디바이스","pc","모바일"])), None)
+            if "성별" in seg_type:
+                return next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["성별","남성","여성"])), None)
+            if "지역" in seg_type:
+                return next((c for c in sdf.columns if any(k in c.replace(" ","") for k in ["지역","시도"])), None)
+            return None
+
+        _seg_valid = {k: v for k, v in segment_dfs.items() if v is not None and not v.empty}
+        for _seg_type, _sdf in _seg_valid.items():
+            _xcol = _seg_x_col(_sdf, _seg_type)
+            if not _xcol:
+                continue
+            _mets = [
+                ("전환수",   _seg_fm(_sdf, ["전환수"])),
+                ("광고비",   _seg_fm(_sdf, ["총비용","광고비","비용"])),
+                ("ROAS",     _seg_fm(_sdf, ["광고수익률","roas"])),
+                ("전환매출", _seg_fm(_sdf, ["전환매출"])),
+            ]
+            _active = [(mk, mc) for mk, mc in _mets if mc][:4]
+            if not _active:
+                continue
+            try:
+                pdf.add_page()
+                _slabel = (_seg_type.replace("📅","").replace("⏰","").replace("👤","")
+                           .replace("📱","").replace("📍","").replace("👫","").strip())
+                section_title(f"세그먼트 분석 — {_slabel}")
+
+                _rows = (len(_active) + 1) // 2
+                _fig, _axes = plt.subplots(_rows, 2, figsize=(11, _rows * 4))
+                _fig.patch.set_facecolor("white")
+                plt.subplots_adjust(hspace=0.55, wspace=0.35)
+
+                # axes 평탄화
+                if _rows == 1:
+                    _axes_flat = list(_axes) if len(_active) > 1 else [_axes, None]
+                else:
+                    _axes_flat = [ax for row in _axes for ax in row]
+
+                for _ci, (_mk, _mc) in enumerate(_active):
+                    _ax = _axes_flat[_ci]
+                    if _ax is None:
+                        continue
+                    _tmp = _sdf[[_xcol, _mc]].copy()
+                    _tmp[_mc] = pd.to_numeric(
+                        _tmp[_mc].astype(str).str.replace(",","",regex=False),
+                        errors="coerce")
+                    _tmp = _tmp.dropna()
+                    if _tmp.empty:
+                        _ax.axis("off")
+                        continue
+
+                    # 요일 정렬
+                    if "요일" in _seg_type:
+                        _tmp[_xcol] = _tmp[_xcol].astype(str).str.strip()
+                        _omap = {d: i for i, d in enumerate(_day_order)}
+                        _tmp["_o"] = _tmp[_xcol].map(_omap).fillna(99)
+                        _tmp = _tmp.sort_values("_o").drop(columns=["_o"])
+                    # 시간대 정렬
+                    elif "시간" in _seg_type:
+                        _tmp[_xcol] = pd.to_numeric(
+                            _tmp[_xcol].astype(str).str.extract(r'(\d+)')[0],
+                            errors="coerce")
+                        _tmp = _tmp.dropna(subset=[_xcol]).sort_values(_xcol)
+                        _tmp[_xcol] = _tmp[_xcol].astype(int).apply(lambda h: f"{h}시")
+
+                    _bars = _ax.bar(
+                        _tmp[_xcol].astype(str), _tmp[_mc],
+                        color=_seg_colors[_ci % len(_seg_colors)],
+                        edgecolor="white", linewidth=1)
+                    _ax.set_title(f"{_slabel} {_mk}",
+                                  fontproperties=mpl_font, fontsize=9, pad=6,
+                                  color="#0D47A1", fontweight="bold")
+                    _ax.set_facecolor("#f8f9fa")
+                    for _sp in ["top","right"]: _ax.spines[_sp].set_visible(False)
+                    _ax.tick_params(axis="x", labelsize=6.5, rotation=40)
+                    _ax.tick_params(axis="y", labelsize=6.5)
+                    if mpl_font:
+                        for _xl in _ax.get_xticklabels():
+                            _xl.set_fontproperties(mpl_font)
+                    for _bar, _val in zip(_bars, _tmp[_mc]):
+                        _ax.text(_bar.get_x()+_bar.get_width()/2,
+                                 _bar.get_height()*1.01,
+                                 f"{_val:,.0f}", ha="center", va="bottom",
+                                 fontsize=5.5, fontproperties=mpl_font)
+
+                # 빈 축 숨김
+                for _ei in range(len(_active), len(_axes_flat)):
+                    if _axes_flat[_ei] is not None:
+                        _axes_flat[_ei].axis("off")
+
+                _buf_s = io.BytesIO()
+                plt.savefig(_buf_s, format="png", dpi=130, bbox_inches="tight")
+                plt.close(_fig)
+                _buf_s.seek(0)
+                pdf.image(_buf_s, x=12, w=W)
+            except Exception as _se:
+                kf(9); pdf.set_text_color(150,150,150)
+                safe_line(f"세그먼트 차트 생성 실패 ({_seg_type}): {_se}")
+                pdf.set_text_color(17,17,17)
+
         # ━━━ 꿀통 + 낭비 키워드 (한 페이지) ━━━
         pdf.add_page()
         section_title("키워드 분석 결과")
