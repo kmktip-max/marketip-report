@@ -827,13 +827,18 @@ def check_auth():
     if st.session_state.get("authenticated"):
         return True
 
-    _lb64, _lext = load_logo_b64()
-    _logo_html = (f'<img src="data:image/{_lext};base64,{_lb64}" style="height:52px;margin-bottom:0.35rem;" />'
-                  if _lb64 else '<span style="font-size:1.6rem;font-weight:900;color:#0D47A1;letter-spacing:-1px;">마케팁</span>')
+    _lb64_login, _lext_login = load_logo_b64("logo2.png")
+    if not _lb64_login:
+        _lb64_login, _lext_login = load_logo_b64()
+    _logo_html_login = (
+        f'<img src="data:image/{_lext_login};base64,{_lb64_login}" '
+        f'style="height:130px;max-width:340px;object-fit:contain;margin-bottom:0.4rem;" />'
+        if _lb64_login
+        else '<span style="font-size:1.8rem;font-weight:900;color:#0D47A1;">마케팁</span>'
+    )
     st.markdown(f"""
     <div class="main-header">
-        {_logo_html}
-        <h1>광고 구조 분석 시스템</h1>
+        {_logo_html_login}
         <p>승인된 광고주만 접근 가능합니다</p>
     </div>
     """, unsafe_allow_html=True)
