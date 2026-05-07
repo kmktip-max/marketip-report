@@ -911,7 +911,7 @@ def load_logo_b64(name=None):
 # ────────────────────────────────────────────
 # 월별 분석 횟수 제한
 # ────────────────────────────────────────────
-MONTHLY_LIMIT      = 5
+MONTHLY_LIMIT      = 3
 MONTHLY_COST_LIMIT = 0.8          # 광고주 월 AI 비용 한도 (USD)
 _USAGE_FILE        = os.path.join(os.path.dirname(__file__), "usage.json")
 
