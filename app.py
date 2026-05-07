@@ -1548,10 +1548,19 @@ def show_results(adf, api_key, model):
             "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]], fmt="money"),
             use_container_width=True)
     with c2:
-        roas_df = adf[adf["ROAS"].notna()].nlargest(10,"ROAS")
+        roas_df = adf[(adf["ROAS"].notna()) & (adf["ROAS"] > 0)].nlargest(10,"ROAS")
         if not roas_df.empty:
+            # ROAS 데이터 있음 → ROAS TOP 10
             st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
                 [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
+        else:
+            # ROAS 없음(문의업종 등) → 전환수 TOP 10
+            conv_df = adf[adf["전환수"] > 0].nlargest(10,"전환수")
+            if not conv_df.empty:
+                st.plotly_chart(hbar(conv_df,"전환수","키워드","📞 전환수 TOP 10 (ROAS 미집계 업종)",
+                    [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]]), use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.info("전환 데이터가 없습니다.")
 
     c3, c4 = st.columns(2)
     with c3:
