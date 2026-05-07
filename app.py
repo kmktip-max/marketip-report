@@ -911,8 +911,9 @@ def load_logo_b64(name=None):
 # ────────────────────────────────────────────
 # 월별 분석 횟수 제한
 # ────────────────────────────────────────────
-MONTHLY_LIMIT   = 5
-_USAGE_FILE     = os.path.join(os.path.dirname(__file__), "usage.json")
+MONTHLY_LIMIT      = 5
+MONTHLY_COST_LIMIT = 0.8          # 광고주 월 AI 비용 한도 (USD)
+_USAGE_FILE        = os.path.join(os.path.dirname(__file__), "usage.json")
 
 def _load_usage():
     try:
@@ -936,6 +937,18 @@ def increment_usage(user_id):
     month = datetime.now().strftime("%Y-%m")
     data = _load_usage()
     data.setdefault(user_id, {})[month] = data.get(user_id, {}).get(month, 0) + 1
+    _save_usage(data)
+
+def get_monthly_cost(user_id):
+    month = datetime.now().strftime("%Y-%m")
+    return float(_load_usage().get(user_id, {}).get(f"{month}_cost", 0.0))
+
+def add_monthly_cost(user_id, cost_usd):
+    month = datetime.now().strftime("%Y-%m")
+    data  = _load_usage()
+    key   = f"{month}_cost"
+    data.setdefault(user_id, {})[key] = round(
+        data.get(user_id, {}).get(key, 0.0) + cost_usd, 6)
     _save_usage(data)
 
 def is_admin(user_id):
@@ -1205,24 +1218,53 @@ def format_for_ai(adf, request_type, raw_df=None):
 # OpenAI 스트리밍 호출
 # ────────────────────────────────────────────
 def run_ai(full_messages, api_key, model):
-    """full_messages: system + context + chat history 포함한 전체 메시지 리스트"""
+    """full_messages: system + context + chat history 포함한 전체 메시지 리스트
+    반환: (응답텍스트, 비용USD)
+    """
+    # gpt-4.1 단가 (per token)
+    _IN_PRICE  = 2.0 / 1_000_000
+    _OUT_PRICE = 8.0 / 1_000_000
+
     client = OpenAI(api_key=api_key)
     placeholder = st.empty()
     full = ""
+    _last_usage = None
 
-    stream = client.chat.completions.create(
-        model=model,
-        messages=full_messages,
-        stream=True,
-        max_tokens=3000,
-    )
+    try:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            stream=True,
+            max_tokens=3000,
+            stream_options={"include_usage": True},
+        )
+    except Exception:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            stream=True,
+            max_tokens=3000,
+        )
+
     for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            full += delta
+        if chunk.choices and chunk.choices[0].delta.content:
+            full += chunk.choices[0].delta.content
             placeholder.markdown(full + "▌")
+        if hasattr(chunk, "usage") and chunk.usage:
+            _last_usage = chunk.usage
+
     placeholder.markdown(full)
-    return full
+
+    if _last_usage:
+        cost = (_last_usage.prompt_tokens * _IN_PRICE +
+                _last_usage.completion_tokens * _OUT_PRICE)
+    else:
+        # 토큰 정보 없을 때 글자수 기반 추정
+        in_chars  = sum(len(m.get("content","")) for m in full_messages)
+        out_chars = len(full)
+        cost = (in_chars / 4 * _IN_PRICE + out_chars / 4 * _OUT_PRICE)
+
+    return full, cost
 
 # ────────────────────────────────────────────
 # 결과 화면
@@ -1972,6 +2014,31 @@ def show_results(adf, api_key, model):
             {"role": "assistant", "content": "네, 제공된 모든 컬럼 데이터(평균클릭비용, 클릭률, 전환율, 광고수익률 등 포함)를 확인했습니다. 분석을 시작하겠습니다."},
         ]
 
+        _ai_uid   = st.session_state.get("user_id", "")
+        _ai_limited = _ai_uid and not is_admin(_ai_uid)
+        _ai_count  = get_monthly_count(_ai_uid)  if _ai_limited else 0
+        _ai_cost   = get_monthly_cost(_ai_uid)   if _ai_limited else 0.0
+        _ai_remain = max(0, MONTHLY_LIMIT - _ai_count)
+        _cost_remain = max(0.0, MONTHLY_COST_LIMIT - _ai_cost)
+        _cost_blocked = _ai_limited and _ai_cost >= MONTHLY_COST_LIMIT
+
+        # 비용 게이지 표시 (광고주만)
+        if _ai_limited:
+            _pct = min(100, int(_ai_cost / MONTHLY_COST_LIMIT * 100))
+            _bar_color = "#e53935" if _pct >= 90 else ("#f9a825" if _pct >= 60 else "#28B463")
+            st.markdown(
+                f'<div style="background:#f8f9fa;border-radius:8px;padding:0.5rem 0.8rem;'
+                f'margin-bottom:0.5rem;font-size:0.82rem;">'
+                f'<div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">'
+                f'<span style="font-weight:600;color:#444;">💳 이번달 AI 사용 비용</span>'
+                f'<span style="font-weight:700;color:{_bar_color};">'
+                f'${_ai_cost:.3f} / ${MONTHLY_COST_LIMIT:.1f} &nbsp;(잔여 ${_cost_remain:.3f})</span></div>'
+                f'<div style="background:#dee2e6;border-radius:999px;height:8px;">'
+                f'<div style="background:{_bar_color};width:{_pct}%;height:8px;border-radius:999px;"></div>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
         if not st.session_state.chat_messages:
             analysis_opts = [
                 "전체 구조 종합 컨설팅 (9번)",
@@ -1980,31 +2047,32 @@ def show_results(adf, api_key, model):
                 "예산 재배분 전략",
                 "2주 테스트 실행안",
             ]
-            _ai_uid = st.session_state.get("user_id", "")
-            _ai_count = get_monthly_count(_ai_uid) if (_ai_uid and not is_admin(_ai_uid)) else 0
-            _ai_remain = max(0, MONTHLY_LIMIT - _ai_count)
 
             col_sel, col_btn = st.columns([3, 1])
             with col_sel:
                 req = st.selectbox("분석 유형 선택", analysis_opts, label_visibility="collapsed")
             with col_btn:
-                if _ai_uid and not is_admin(_ai_uid):
+                if _ai_limited:
                     _btn_label = f"🤖 분석 시작 ({_ai_remain}회 남음)"
                 else:
                     _btn_label = "🤖 분석 시작"
                 start = st.button(_btn_label, type="primary", use_container_width=True,
-                                  disabled=(_ai_uid and not is_admin(_ai_uid) and _ai_remain <= 0))
+                                  disabled=(_ai_limited and (_ai_remain <= 0 or _cost_blocked)))
 
-            if _ai_uid and not is_admin(_ai_uid) and _ai_remain <= 0:
-                st.error(f"이번달 AI 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달 1일에 자동으로 충전됩니다.")
+            if _ai_limited and _ai_remain <= 0:
+                st.error(f"이번달 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달 1일에 자동 충전됩니다.")
+            elif _cost_blocked:
+                st.error(f"이번달 AI 사용 한도(${MONTHLY_COST_LIMIT})에 도달했습니다. 다음달 1일에 자동 충전됩니다.")
 
             if start:
-                if _ai_uid and not is_admin(_ai_uid):
+                if _ai_limited:
                     increment_usage(_ai_uid)
                 st.session_state.chat_api.append({"role": "user", "content": f"분석 요청: {req}"})
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
                     try:
-                        result = run_ai(system_context + st.session_state.chat_api, api_key, model)
+                        result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
+                        if _ai_limited:
+                            add_monthly_cost(_ai_uid, _cost)
                         st.session_state.chat_messages.append({"role": "assistant", "content": result})
                         st.session_state.chat_api.append({"role": "assistant", "content": result})
                         st.rerun()
@@ -2048,16 +2116,22 @@ def show_results(adf, api_key, model):
             with col_send:
                 send_btn = st.button("전송 →", type="primary", use_container_width=True, key=f"send_{input_key}")
             if send_btn and user_input.strip():
-                st.session_state.chat_messages.append({"role": "user", "content": user_input})
-                st.session_state.chat_api.append({"role": "user", "content": user_input})
-                with st.spinner("AI 분석 중..."):
-                    try:
-                        result = run_ai(system_context + st.session_state.chat_api, api_key, model)
-                        st.session_state.chat_messages.append({"role": "assistant", "content": result})
-                        st.session_state.chat_api.append({"role": "assistant", "content": result})
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"AI 오류: {e}")
+                # 비용 한도 체크
+                if _cost_blocked:
+                    st.error(f"이번달 AI 사용 한도(${MONTHLY_COST_LIMIT})에 도달했습니다. 다음달 1일에 자동 충전됩니다.")
+                else:
+                    st.session_state.chat_messages.append({"role": "user", "content": user_input})
+                    st.session_state.chat_api.append({"role": "user", "content": user_input})
+                    with st.spinner("AI 분석 중..."):
+                        try:
+                            result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
+                            if _ai_limited:
+                                add_monthly_cost(_ai_uid, _cost)
+                            st.session_state.chat_messages.append({"role": "assistant", "content": result})
+                            st.session_state.chat_api.append({"role": "assistant", "content": result})
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"AI 오류: {e}")
 
     st.divider()
 
