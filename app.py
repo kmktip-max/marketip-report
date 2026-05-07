@@ -2911,13 +2911,14 @@ def main():
 
     def detect_file_type(df):
         cols = " ".join(df.columns.astype(str).str.lower())
+        # 키워드 컬럼 최우선 (다른 컬럼이 함께 있어도 키워드 파일로 처리)
+        if any(k in cols for k in ["키워드"]): return "🔑 키워드"
         if any(k in cols for k in ["요일"]): return "📅 요일별"
         if any(k in cols for k in ["시간대","시간"]): return "⏰ 시간대별"
         if any(k in cols for k in ["연령","나이"]): return "👤 연령별"
         if any(k in cols for k in ["성별","남성","여성"]): return "👫 성별"
         if any(k in cols for k in ["기기","디바이스","pc","모바일"]): return "📱 기기별"
         if any(k in cols for k in ["지역","시도","광역"]): return "📍 지역별"
-        if any(k in cols for k in ["키워드"]): return "🔑 키워드"
         return "📄 기타"
 
     # 데이터 입력
@@ -2964,9 +2965,13 @@ def main():
                     main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
                                else kw_dfs[0] if kw_dfs
                                else list(loaded.values())[0]["df"])
+                    # 새 데이터 → 이전 세션 채팅/분석 초기화
                     st.session_state["confirmed_df"]  = main_df
                     st.session_state["segment_dfs"]   = seg_map
                     st.session_state["last_df_hash"]  = ""
+                    st.session_state["chat_messages"] = []
+                    st.session_state["chat_api"]      = []
+                    st.session_state["chat_turns"]    = 0
                     st.rerun()
 
         if st.session_state.get("confirmed_df") is not None and not files:
@@ -2994,11 +2999,16 @@ def main():
                     st.dataframe(df_preview.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True):
-                    seg_dfs = st.session_state.get("segment_dfs", {})
                     if "키워드" in ftype:
+                        # 새 키워드 데이터 → 이전 세션 데이터 전체 초기화
                         st.session_state["confirmed_df"]  = df_preview
+                        st.session_state["segment_dfs"]   = {}
                         st.session_state["last_df_hash"]  = ""
+                        st.session_state["chat_messages"] = []
+                        st.session_state["chat_api"]      = []
+                        st.session_state["chat_turns"]    = 0
                     else:
+                        seg_dfs = st.session_state.get("segment_dfs", {})
                         seg_dfs[ftype] = df_preview
                         st.session_state["segment_dfs"] = seg_dfs
                         if st.session_state.get("confirmed_df") is None:
