@@ -7,10 +7,19 @@ import json
 import os
 import hashlib
 import base64
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 from PIL import Image
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    _GSHEET_AVAILABLE = True
+except ImportError:
+    _GSHEET_AVAILABLE = False
 
 load_dotenv()
 
@@ -770,6 +779,122 @@ def load_advertisers():
         return {"admin": {"name": "마케팁 관리자", "password": "mktip"}}
 
 # ────────────────────────────────────────────
+# 구글 시트 회원 관리
+# ────────────────────────────────────────────
+def _hash_pw(pw):
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _connect_gsheet():
+    if not _GSHEET_AVAILABLE:
+        return None
+    try:
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds_info = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        client = gspread.authorize(creds)
+        url = st.secrets.get("GSHEET_URL", "")
+        if not url:
+            return None
+        ws = client.open_by_url(url).worksheet("회원신청")
+        return ws
+    except Exception:
+        return None
+
+def gs_register(user_id, name, email, password):
+    ws = _connect_gsheet()
+    if ws is None:
+        return False, "구글 시트 연결 실패. 관리자에게 문의하세요."
+    try:
+        records = ws.get_all_records()
+        for r in records:
+            if str(r.get("ID","")).strip() == user_id.strip():
+                return False, "이미 사용 중인 아이디입니다."
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ws.append_row([user_id, name, email, _hash_pw(password), now, "대기중", ""])
+        return True, "신청 완료"
+    except Exception as e:
+        return False, f"오류: {e}"
+
+def gs_authenticate(user_id, password):
+    ws = _connect_gsheet()
+    if ws is None:
+        return None
+    try:
+        records = ws.get_all_records()
+        for r in records:
+            if (str(r.get("ID","")).strip() == user_id.strip()
+                    and str(r.get("상태","")).strip() == "승인"
+                    and str(r.get("비밀번호","")) == _hash_pw(password)):
+                return str(r.get("이름", user_id))
+    except Exception:
+        pass
+    return None
+
+def gs_get_pending():
+    ws = _connect_gsheet()
+    if ws is None:
+        return []
+    try:
+        records = ws.get_all_records()
+        return [(i + 2, r) for i, r in enumerate(records)
+                if str(r.get("상태","")).strip() == "대기중"]
+    except Exception:
+        return []
+
+def gs_get_all_members():
+    ws = _connect_gsheet()
+    if ws is None:
+        return []
+    try:
+        return ws.get_all_records()
+    except Exception:
+        return []
+
+def gs_set_status(row_num, status, email="", name=""):
+    ws = _connect_gsheet()
+    if ws is None:
+        return False
+    try:
+        ws.update_cell(row_num, 6, status)
+        ws.update_cell(row_num, 7, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        if status == "승인" and email:
+            _send_approval_email(email, name)
+        return True
+    except Exception:
+        return False
+
+def _send_approval_email(to_email, name):
+    try:
+        gmail_user = st.secrets.get("GMAIL_USER", "")
+        gmail_pw   = st.secrets.get("GMAIL_APP_PASSWORD", "")
+        if not gmail_user or not gmail_pw:
+            return
+        msg = MIMEMultipart()
+        msg["From"]    = gmail_user
+        msg["To"]      = to_email
+        msg["Subject"] = "[마케팁] 광고 구조 분석 시스템 이용 승인 완료"
+        body = f"""안녕하세요, {name}님!
+
+마케팁 광고 구조 분석 시스템 이용이 승인되었습니다.
+아래 링크에서 로그인 후 바로 이용 가능합니다.
+
+https://marketip-ad.streamlit.app
+
+이용 중 문의사항은 언제든지 연락해주세요.
+감사합니다.
+
+마케팁 팀 드림"""
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_pw)
+            server.send_message(msg)
+    except Exception:
+        pass
+
+# ────────────────────────────────────────────
 # 로고 로더
 # ────────────────────────────────────────────
 def load_logo_b64(name=None):
@@ -854,43 +979,80 @@ def check_auth():
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1.2, 1, 1.2])
+    col1, col2, col3 = st.columns([1.2, 1.4, 1.2])
     with col2:
-        st.markdown('<div class="login-box"><h2>🔐 로그인</h2>', unsafe_allow_html=True)
-        user_id  = st.text_input("아이디", placeholder="아이디", label_visibility="collapsed")
-        password = st.text_input("패스워드", type="password", placeholder="패스워드", label_visibility="collapsed")
-        if st.button("접속하기", use_container_width=True):
-            matched = None
+        tab_login, tab_reg = st.tabs(["🔐 로그인", "📝 이용 신청"])
 
-            # 1순위: st.secrets 직접 조회 (Streamlit Cloud)
-            try:
-                pw_key = f"PW_{user_id}"
-                name_key = f"NAME_{user_id}"
-                if pw_key in st.secrets and password == str(st.secrets[pw_key]):
-                    matched = str(st.secrets.get(name_key, user_id))
-            except Exception:
-                pass
+        # ── 로그인 탭 ──
+        with tab_login:
+            st.markdown('<div class="login-box"><h2>🔐 로그인</h2>', unsafe_allow_html=True)
+            user_id  = st.text_input("아이디", placeholder="아이디", label_visibility="collapsed", key="login_id")
+            password = st.text_input("패스워드", type="password", placeholder="패스워드", label_visibility="collapsed", key="login_pw")
+            if st.button("접속하기", use_container_width=True, key="login_btn"):
+                matched = None
 
-            # 2순위: 로컬 JSON 파일
-            if not matched:
-                advertisers = load_advertisers()
-                if user_id in advertisers:
-                    info = advertisers[user_id]
-                    if password == info.get("password", ""):
-                        matched = info.get("name", user_id)
+                # 1순위: st.secrets (Streamlit Cloud)
+                try:
+                    pw_key, name_key = f"PW_{user_id}", f"NAME_{user_id}"
+                    if pw_key in st.secrets and password == str(st.secrets[pw_key]):
+                        matched = str(st.secrets.get(name_key, user_id))
+                except Exception:
+                    pass
 
-            if matched:
-                st.session_state.authenticated   = True
-                st.session_state.advertiser_name = matched
-                st.session_state.user_id         = user_id
-                # URL에 토큰 저장 → 새로고침 후에도 유지
-                st.query_params["t"] = _make_token(user_id, matched)
-                st.query_params["u"] = user_id
-                st.query_params["n"] = matched
-                st.rerun()
-            else:
-                st.error("⛔ 아이디 또는 패스워드가 일치하지 않습니다.")
-        st.markdown('</div>', unsafe_allow_html=True)
+                # 2순위: 로컬 JSON
+                if not matched:
+                    advertisers = load_advertisers()
+                    if user_id in advertisers:
+                        info = advertisers[user_id]
+                        if password == info.get("password", ""):
+                            matched = info.get("name", user_id)
+
+                # 3순위: 구글 시트 승인 회원
+                if not matched:
+                    matched = gs_authenticate(user_id, password)
+
+                if matched:
+                    st.session_state.authenticated   = True
+                    st.session_state.advertiser_name = matched
+                    st.session_state.user_id         = user_id
+                    st.query_params["t"] = _make_token(user_id, matched)
+                    st.query_params["u"] = user_id
+                    st.query_params["n"] = matched
+                    st.rerun()
+                else:
+                    st.error("⛔ 아이디 또는 패스워드가 일치하지 않습니다.")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── 이용 신청 탭 ──
+        with tab_reg:
+            st.markdown('<div class="login-box">', unsafe_allow_html=True)
+            st.markdown("#### 📝 이용 신청")
+            st.caption("신청 후 관리자 승인 시 이메일로 안내됩니다.")
+            r_id   = st.text_input("희망 아이디 *", placeholder="영문+숫자, 4자 이상", key="reg_id")
+            r_name = st.text_input("이름 *", placeholder="홍길동", key="reg_name")
+            r_email= st.text_input("이메일 *", placeholder="example@email.com", key="reg_email")
+            r_pw   = st.text_input("비밀번호 *", type="password", placeholder="6자 이상", key="reg_pw")
+            r_pw2  = st.text_input("비밀번호 확인 *", type="password", placeholder="비밀번호 재입력", key="reg_pw2")
+            st.caption("※ 마케팁 전자책 구매자 또는 승인 대상자만 이용 가능합니다.")
+
+            if st.button("신청하기", use_container_width=True, type="primary", key="reg_btn"):
+                if not r_id or not r_name or not r_email or not r_pw:
+                    st.error("모든 항목을 입력해주세요.")
+                elif len(r_id) < 4:
+                    st.error("아이디는 4자 이상이어야 합니다.")
+                elif len(r_pw) < 6:
+                    st.error("비밀번호는 6자 이상이어야 합니다.")
+                elif r_pw != r_pw2:
+                    st.error("비밀번호가 일치하지 않습니다.")
+                elif "@" not in r_email:
+                    st.error("올바른 이메일 주소를 입력해주세요.")
+                else:
+                    ok, msg = gs_register(r_id, r_name, r_email, r_pw)
+                    if ok:
+                        st.success("✅ 신청이 완료되었습니다! 관리자 승인 후 이메일로 안내됩니다.")
+                    else:
+                        st.error(f"⛔ {msg}")
+            st.markdown('</div>', unsafe_allow_html=True)
 
     return False
 
@@ -2476,6 +2638,39 @@ def main():
             st.query_params.clear()
             st.rerun()
         st.divider()
+
+        # ── 관리자 전용: 회원 승인 패널 ──
+        if is_admin(_uid):
+            st.markdown("### 👥 회원 관리")
+            _pending = gs_get_pending()
+            if _pending:
+                st.markdown(f"**대기 중: {len(_pending)}건**")
+                for _row_num, _r in _pending:
+                    with st.expander(f"🔔 {_r.get('이름','?')} ({_r.get('ID','?')})"):
+                        st.write(f"📧 이메일: {_r.get('이메일','')}")
+                        st.write(f"📅 신청일: {_r.get('신청일','')}")
+                        _c1, _c2 = st.columns(2)
+                        with _c1:
+                            if st.button("✅ 승인", key=f"approve_{_row_num}", use_container_width=True):
+                                if gs_set_status(_row_num, "승인",
+                                                 _r.get("이메일",""), _r.get("이름","")):
+                                    st.success("승인 완료! 이메일 발송됨")
+                                    st.rerun()
+                        with _c2:
+                            if st.button("❌ 거절", key=f"reject_{_row_num}", use_container_width=True):
+                                if gs_set_status(_row_num, "거절"):
+                                    st.info("거절 처리됨")
+                                    st.rerun()
+            else:
+                st.caption("대기 중인 신청이 없습니다.")
+
+            if st.button("📋 전체 회원 보기", use_container_width=True):
+                _all = gs_get_all_members()
+                if _all:
+                    _df_members = pd.DataFrame(_all)[["ID","이름","이메일","신청일","상태","승인일"]]
+                    st.dataframe(_df_members, use_container_width=True)
+            st.divider()
+
         st.caption("© 마케팁 광고 구조 분석 시스템")
 
     # ── 네이버 보고서 파서 ──
