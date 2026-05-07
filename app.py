@@ -2022,6 +2022,18 @@ def show_results(adf, api_key, model):
         _cost_remain = max(0.0, MONTHLY_COST_LIMIT - _ai_cost)
         _cost_blocked = _ai_limited and _ai_cost >= MONTHLY_COST_LIMIT
 
+        # 비용 게이지 (금액 미표시, 바만 표시)
+        if _ai_limited:
+            _pct = min(100, int(_ai_cost / MONTHLY_COST_LIMIT * 100))
+            _bar_color = "#e53935" if _pct >= 90 else ("#f9a825" if _pct >= 60 else "#28B463")
+            st.markdown(
+                f'<div style="background:#f8f9fa;border-radius:8px;padding:0.5rem 0.8rem;margin-bottom:0.5rem;">'
+                f'<div style="font-size:0.78rem;font-weight:600;color:#888;margin-bottom:0.3rem;">💳 이번달 AI 사용량</div>'
+                f'<div style="background:#dee2e6;border-radius:999px;height:8px;">'
+                f'<div style="background:{_bar_color};width:{_pct}%;height:8px;border-radius:999px;"></div>'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
 
         if not st.session_state.chat_messages:
             analysis_opts = [
