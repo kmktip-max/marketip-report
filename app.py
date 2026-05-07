@@ -1542,20 +1542,22 @@ def show_results(adf, api_key, model):
     # ── [1] 키워드 분석 차트 ──────────────────────
     st.markdown('<div class="section-title">📈 키워드 시각화 분석</div>', unsafe_allow_html=True)
 
+    # 키워드 없는 행 제외 필터 (-, 빈값, None)
+    _has_kw = adf["키워드"].astype(str).str.strip().replace({"":None, "-":None, "nan":None, "None":None}).notna()
+    _adf = adf[_has_kw].copy()
+
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(hbar(adf.nlargest(10,"광고비"), "광고비", "키워드",
+        st.plotly_chart(hbar(_adf.nlargest(10,"광고비"), "광고비", "키워드",
             "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]], fmt="money"),
             use_container_width=True)
     with c2:
-        roas_df = adf[(adf["ROAS"].notna()) & (adf["ROAS"] > 0)].nlargest(10,"ROAS")
+        roas_df = _adf[(_adf["ROAS"].notna()) & (_adf["ROAS"] > 0)].nlargest(10,"ROAS")
         if not roas_df.empty:
-            # ROAS 데이터 있음 → ROAS TOP 10
             st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
                 [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
         else:
-            # ROAS 없음(문의업종 등) → 전환수 TOP 10
-            conv_df = adf[adf["전환수"] > 0].nlargest(10,"전환수")
+            conv_df = _adf[_adf["전환수"] > 0].nlargest(10,"전환수")
             if not conv_df.empty:
                 st.plotly_chart(hbar(conv_df,"전환수","키워드","📞 전환수 TOP 10 (ROAS 미집계 업종)",
                     [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]]), use_container_width=True, config={"displayModeBar": False})
@@ -1564,12 +1566,12 @@ def show_results(adf, api_key, model):
 
     c3, c4 = st.columns(2)
     with c3:
-        cvr_df = adf[adf["전환율"].notna() & (adf["전환수"] > 0)].nlargest(10,"전환율")
+        cvr_df = _adf[_adf["전환율"].notna() & (_adf["전환수"] > 0)].nlargest(10,"전환율")
         if not cvr_df.empty:
             st.plotly_chart(hbar(cvr_df,"전환율","키워드","🎯 전환율 TOP 10",
                 [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
     with c4:
-        waste_df = adf[(adf["전환수"] == 0) & (adf["클릭수"] > 0)].nlargest(10,"광고비")
+        waste_df = _adf[(_adf["전환수"] == 0) & (_adf["클릭수"] > 0)].nlargest(10,"광고비")
         if not waste_df.empty:
             st.plotly_chart(hbar(waste_df,"광고비","키워드","🚨 낭비 키워드 TOP 10 (전환 0)",
                 [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]], fmt="money"), use_container_width=True, config={"displayModeBar": False})
