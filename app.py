@@ -246,9 +246,15 @@ st.markdown("""
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
     [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
     [class*="viewerBadge"] { display: none !important; }
+    [class*="StatusWidget"] { display: none !important; }
     .viewerBadge_container__1QSob { display: none !important; }
     #stDecoration { display: none !important; }
+    ._profileContainer_gzau3_53 { display: none !important; }
+    ._container_gzau3_1 { display: none !important; }
+    button[kind="icon"][data-testid="baseButton-icon"] { display: none !important; }
 
     /* 헤더 배경만 투명하게 (토글 버튼은 살림) */
     header[data-testid="stHeader"] {
