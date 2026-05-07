@@ -1818,12 +1818,27 @@ def show_results(adf, api_key, model):
                 "예산 재배분 전략",
                 "2주 테스트 실행안",
             ]
+            _ai_uid = st.session_state.get("user_id", "")
+            _ai_count = get_monthly_count(_ai_uid) if (_ai_uid and not is_admin(_ai_uid)) else 0
+            _ai_remain = max(0, MONTHLY_LIMIT - _ai_count)
+
             col_sel, col_btn = st.columns([3, 1])
             with col_sel:
                 req = st.selectbox("분석 유형 선택", analysis_opts, label_visibility="collapsed")
             with col_btn:
-                start = st.button("🤖 분석 시작", type="primary", use_container_width=True)
+                if _ai_uid and not is_admin(_ai_uid):
+                    _btn_label = f"🤖 분석 시작 ({_ai_remain}회 남음)"
+                else:
+                    _btn_label = "🤖 분석 시작"
+                start = st.button(_btn_label, type="primary", use_container_width=True,
+                                  disabled=(_ai_uid and not is_admin(_ai_uid) and _ai_remain <= 0))
+
+            if _ai_uid and not is_admin(_ai_uid) and _ai_remain <= 0:
+                st.error(f"이번달 AI 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달 1일에 자동으로 충전됩니다.")
+
             if start:
+                if _ai_uid and not is_admin(_ai_uid):
+                    increment_usage(_ai_uid)
                 st.session_state.chat_api.append({"role": "user", "content": f"분석 요청: {req}"})
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
                     try:
@@ -2574,23 +2589,15 @@ def main():
                         st.dataframe(d.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
-                    _u = st.session_state.get("user_id", "")
-                    if _u and not is_admin(_u) and get_monthly_count(_u) >= MONTHLY_LIMIT:
-                        st.error(f"이번달 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달에 다시 이용해주세요.")
-                    else:
-                        kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
-                        seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
-
-                        main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
-                                   else kw_dfs[0] if kw_dfs
-                                   else list(loaded.values())[0]["df"])
-
-                        if _u and not is_admin(_u):
-                            increment_usage(_u)
-                        st.session_state["confirmed_df"]  = main_df
-                        st.session_state["segment_dfs"]   = seg_map
-                        st.session_state["last_df_hash"]  = ""
-                        st.rerun()
+                    kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
+                    seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
+                    main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
+                               else kw_dfs[0] if kw_dfs
+                               else list(loaded.values())[0]["df"])
+                    st.session_state["confirmed_df"]  = main_df
+                    st.session_state["segment_dfs"]   = seg_map
+                    st.session_state["last_df_hash"]  = ""
+                    st.rerun()
 
         if st.session_state.get("confirmed_df") is not None and not files:
             df = st.session_state["confirmed_df"]
@@ -2617,25 +2624,17 @@ def main():
                     st.dataframe(df_preview.head(5), use_container_width=True)
 
                 if st.button("📊 분석 확인", type="primary", use_container_width=True):
-                    _u = st.session_state.get("user_id", "")
-                    if _u and not is_admin(_u) and get_monthly_count(_u) >= MONTHLY_LIMIT:
-                        st.error(f"이번달 분석 횟수({MONTHLY_LIMIT}회)를 모두 사용했습니다. 다음달에 다시 이용해주세요.")
+                    seg_dfs = st.session_state.get("segment_dfs", {})
+                    if "키워드" in ftype:
+                        st.session_state["confirmed_df"]  = df_preview
+                        st.session_state["last_df_hash"]  = ""
                     else:
-                        seg_dfs = st.session_state.get("segment_dfs", {})
-                        if "키워드" in ftype:
-                            if _u and not is_admin(_u):
-                                increment_usage(_u)
-                            st.session_state["confirmed_df"]  = df_preview
-                            st.session_state["last_df_hash"]  = ""
-                        else:
-                            seg_dfs[ftype] = df_preview
-                            st.session_state["segment_dfs"] = seg_dfs
-                            if st.session_state.get("confirmed_df") is None:
-                                if _u and not is_admin(_u):
-                                    increment_usage(_u)
-                                st.session_state["confirmed_df"] = df_preview
-                                st.session_state["last_df_hash"] = ""
-                        st.rerun()
+                        seg_dfs[ftype] = df_preview
+                        st.session_state["segment_dfs"] = seg_dfs
+                        if st.session_state.get("confirmed_df") is None:
+                            st.session_state["confirmed_df"] = df_preview
+                            st.session_state["last_df_hash"] = ""
+                    st.rerun()
             except Exception as e:
                 st.error(f"데이터 파싱 실패: {e}")
 
