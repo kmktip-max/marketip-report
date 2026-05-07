@@ -273,6 +273,67 @@ st.markdown("""
     }
     header[data-testid="stHeader"]::before { display: none !important; }
 
+    /* ══════════════════════════════════════
+       모바일 최적화 (768px 이하)
+       ══════════════════════════════════════ */
+    @media (max-width: 768px) {
+
+        /* 전체 여백 축소 */
+        .block-container {
+            padding: 0.5rem 0.6rem 2rem 0.6rem !important;
+            max-width: 100% !important;
+        }
+
+        /* 헤더 로고 + 텍스트 */
+        .main-header { padding: 1.2rem 1rem !important; }
+        .main-header img {
+            height: 80px !important;
+            max-width: 200px !important;
+        }
+        .main-header h1 { font-size: 1.2rem !important; }
+        .main-header p  { font-size: 0.8rem !important; }
+
+        /* 로그인 박스 */
+        .login-box {
+            padding: 1.3rem 1rem !important;
+            margin: 0.5rem auto !important;
+        }
+
+        /* 메트릭 카드 글자 크기 */
+        [data-testid="metric-container"] label {
+            font-size: 0.7rem !important;
+        }
+        [data-testid="metric-container"] [data-testid="stMetricValue"] {
+            font-size: 1rem !important;
+        }
+
+        /* 채팅 메시지 */
+        [data-testid="stChatMessage"] {
+            font-size: 0.85rem !important;
+            padding: 0.6rem !important;
+        }
+
+        /* 전송 버튼 */
+        .stButton > button {
+            font-size: 0.85rem !important;
+            padding: 0.5rem 0.8rem !important;
+        }
+
+        /* 섹션 타이틀 */
+        .section-title { font-size: 0.9rem !important; }
+
+        /* 사이드바 항상 숨김 (모바일) */
+        section[data-testid="stSidebar"] {
+            display: none !important;
+        }
+
+        /* 탭 글자 크기 */
+        .stTabs [data-baseweb="tab"] {
+            font-size: 0.82rem !important;
+            padding: 0.4rem 0.6rem !important;
+        }
+    }
+
     /* 사이드바 토글 버튼 — 항상 보이게 */
     /* 사이드바 항상 고정 — 닫기/토글 버튼 숨김 */
     [data-testid="collapsedControl"] { display: none !important; }
@@ -2687,6 +2748,37 @@ def main():
         {_logo_html}
         <p style="margin-top:0.5rem;">안녕하세요, <strong>{st.session_state.get('advertiser_name','')}</strong>님 &nbsp;|&nbsp; 광고 구조 분석 AI</p>
     </div>
+    """, unsafe_allow_html=True)
+
+    # 모바일 전용 로그아웃 버튼
+    st.markdown("""
+    <style>
+    .mobile-logout { display: none; }
+    @media (max-width: 768px) {
+        .mobile-logout { display: block !important; text-align: right; margin-bottom: 0.5rem; }
+    }
+    </style>
+    <div class="mobile-logout" id="mobile-logout-area"></div>
+    """, unsafe_allow_html=True)
+    # 모바일에서도 보이는 로그아웃 (CSS로 PC에선 숨김)
+    _lo_col1, _lo_col2 = st.columns([5, 1])
+    with _lo_col2:
+        st.markdown('<div class="mobile-only-btn">', unsafe_allow_html=True)
+        if st.button("로그아웃", key="mobile_logout_btn"):
+            for k in ["authenticated", "advertiser_name", "user_id", "last_ai",
+                      "confirmed_df", "adf", "raw_df", "last_df_hash",
+                      "chat_messages", "chat_api", "chat_turns"]:
+                st.session_state.pop(k, None)
+            st.query_params.clear()
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("""
+    <style>
+    /* 모바일에서만 로그아웃 표시, PC에선 숨김 */
+    .mobile-only-btn { display: none; }
+    @media (max-width: 768px) { .mobile-only-btn { display: block !important; } }
+    </style>
     """, unsafe_allow_html=True)
 
     # 월별 분석 횟수 카운터 (관리자 제외)
