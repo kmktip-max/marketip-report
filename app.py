@@ -2067,6 +2067,7 @@ def show_results(adf, api_key, model):
             if start:
                 if _ai_limited:
                     increment_usage(_ai_uid)
+                st.session_state["chat_turns"] = 0  # 회당 질문 카운터 초기화
                 st.session_state.chat_api.append({"role": "user", "content": f"분석 요청: {req}"})
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
                     try:
@@ -2084,6 +2085,7 @@ def show_results(adf, api_key, model):
                 if st.button("🔄 대화 초기화", use_container_width=True):
                     st.session_state.chat_messages = []
                     st.session_state.chat_api = []
+                    st.session_state["chat_turns"] = 0
                     st.rerun()
             with ctrl_col2:
                 expand_label = "🔍 크게 보기 ▲" if not st.session_state.get("chat_expanded") else "🔍 작게 보기 ▼"
@@ -2106,32 +2108,43 @@ def show_results(adf, api_key, model):
                     st.markdown(msg["content"])
 
         if st.session_state.chat_messages:
+            TURN_LIMIT = 5  # 회당 추가 질문 최대 횟수
+            _turns     = st.session_state.get("chat_turns", 0)
+            _turn_blocked = _ai_limited and _turns >= TURN_LIMIT
+
             input_key = f"chat_inline_{len(st.session_state.chat_messages)}"
             col_msg, col_send = st.columns([6, 1])
             with col_msg:
                 user_input = st.text_input(
                     "메시지", placeholder="번호 또는 질문 (예: 6 · 키워드 분석해줘 · 낭비 키워드 알려줘)",
                     key=input_key, label_visibility="collapsed",
+                    disabled=(_turn_blocked or _cost_blocked),
                 )
             with col_send:
-                send_btn = st.button("전송 →", type="primary", use_container_width=True, key=f"send_{input_key}")
-            if send_btn and user_input.strip():
-                # 비용 한도 체크
-                if _cost_blocked:
-                    st.error(f"이번달 AI 사용 한도(${MONTHLY_COST_LIMIT})에 도달했습니다. 다음달 1일에 자동 충전됩니다.")
-                else:
-                    st.session_state.chat_messages.append({"role": "user", "content": user_input})
-                    st.session_state.chat_api.append({"role": "user", "content": user_input})
-                    with st.spinner("AI 분석 중..."):
-                        try:
-                            result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
-                            if _ai_limited:
-                                add_monthly_cost(_ai_uid, _cost)
-                            st.session_state.chat_messages.append({"role": "assistant", "content": result})
-                            st.session_state.chat_api.append({"role": "assistant", "content": result})
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"AI 오류: {e}")
+                _turn_label = f"전송 →" if not _ai_limited else f"전송 ({TURN_LIMIT - _turns}회 남음)"
+                send_btn = st.button(_turn_label, type="primary", use_container_width=True,
+                                     key=f"send_{input_key}",
+                                     disabled=(_turn_blocked or _cost_blocked))
+
+            if _turn_blocked:
+                st.warning(f"이번 분석의 추가 질문 {TURN_LIMIT}회를 모두 사용했습니다. '대화 초기화' 후 새 분석을 시작하세요.")
+            elif _cost_blocked:
+                st.error(f"이번달 AI 사용 한도(${MONTHLY_COST_LIMIT})에 도달했습니다. 다음달 1일에 자동 충전됩니다.")
+
+            if send_btn and user_input.strip() and not _turn_blocked and not _cost_blocked:
+                st.session_state["chat_turns"] = _turns + 1
+                st.session_state.chat_messages.append({"role": "user", "content": user_input})
+                st.session_state.chat_api.append({"role": "user", "content": user_input})
+                with st.spinner("AI 분석 중..."):
+                    try:
+                        result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
+                        if _ai_limited:
+                            add_monthly_cost(_ai_uid, _cost)
+                        st.session_state.chat_messages.append({"role": "assistant", "content": result})
+                        st.session_state.chat_api.append({"role": "assistant", "content": result})
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"AI 오류: {e}")
 
     st.divider()
 
