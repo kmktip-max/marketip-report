@@ -1749,6 +1749,8 @@ def show_results(adf, api_key, model):
                                 tmp = sdf[[dev_col, mc]].copy()
                                 tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
                                 tmp = tmp.dropna()
+                                # 기기별 합산 (여러 행을 1개로)
+                                tmp = tmp.groupby(dev_col, as_index=False)[mc].sum()
                                 order_map = {"PC": 0, "모바일": 1}
                                 tmp["_ord"] = tmp[dev_col].map(order_map).fillna(9)
                                 tmp = tmp.sort_values("_ord").drop(columns=["_ord"])
@@ -1774,7 +1776,9 @@ def show_results(adf, api_key, model):
                             for idx, (mk, mc) in enumerate([m for m in active.items() if m[1]][:4]):
                                 tmp = sdf[[gen_col, mc]].copy()
                                 tmp[mc] = pd.to_numeric(tmp[mc].astype(str).str.replace(",","",regex=False), errors="coerce")
-                                tmp = tmp.dropna().sort_values(mc, ascending=False)
+                                tmp = tmp.dropna()
+                                tmp = tmp.groupby(gen_col, as_index=False)[mc].sum()
+                                tmp = tmp.sort_values(mc, ascending=False)
                                 if tmp.empty: continue
                                 text = tmp[mc].apply(lambda v: fmt_val(v, mc))
                                 fig = px.bar(tmp, x=gen_col, y=mc, title=f"👫 성별 {mk}", text=text)
