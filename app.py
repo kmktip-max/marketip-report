@@ -245,6 +245,10 @@ st.markdown("""
     /* ── 숨기기 ── */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
+    [data-testid="stDecoration"] { display: none !important; }
+    [class*="viewerBadge"] { display: none !important; }
+    .viewerBadge_container__1QSob { display: none !important; }
+    #stDecoration { display: none !important; }
 
     /* 헤더 배경만 투명하게 (토글 버튼은 살림) */
     header[data-testid="stHeader"] {
