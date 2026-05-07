@@ -1,5 +1,6 @@
 {
   "admin": {"name": "마케팁 관리자", "password": "mktip"},
   "adA": {"name": "광고주A", "password": "adA1234"},
-  "adB": {"name": "광고주B", "password": "adB5678"}
+  "adB": {"name": "광고주B", "password": "adB5678"},
+  "naver": {"name": "네이버 광고주", "password": "naver"}
 }
