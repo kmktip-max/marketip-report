@@ -2926,8 +2926,8 @@ def main():
 
     def detect_file_type(df):
         cols = " ".join(df.columns.astype(str).str.lower())
-        # 키워드 컬럼 최우선 (다른 컬럼이 함께 있어도 키워드 파일로 처리)
-        if any(k in cols for k in ["키워드"]): return "🔑 키워드"
+        # 키워드/검색어 컬럼 최우선
+        if any(k in cols for k in ["키워드", "검색어"]): return "🔑 키워드"
         if any(k in cols for k in ["요일"]): return "📅 요일별"
         if any(k in cols for k in ["시간대","시간"]): return "⏰ 시간대별"
         if any(k in cols for k in ["연령","나이"]): return "👤 연령별"
@@ -3064,7 +3064,7 @@ def main():
             return none
 
         return {
-            "키워드":      find(["키워드"]),
+            "키워드":      find(["키워드", "검색어", "검색 어"]),
             "노출수":      find(["노출수"]),
             "클릭수":      find(["클릭수"], exclude=["클릭률","클릭비용","클릭당"]),
             "광고비":      find(["총비용","광고비","총 비용"], exclude=["수익률","광고수익"]),
