@@ -1700,7 +1700,7 @@ def show_results(adf, api_key, model):
     _msdf = None
     if "매체" in adf.columns:
         _media_vals = sorted([m for m in adf["매체"].dropna().unique() if str(m) not in ("nan", "")])
-        if len(_media_vals) >= 2:
+        if len(_media_vals) >= 1:
             _media_rows = []
             for _m in _media_vals:
                 _mdf = adf[adf["매체"] == _m]
@@ -1723,7 +1723,7 @@ def show_results(adf, api_key, model):
                 })
             _msdf = pd.DataFrame(_media_rows)
 
-    _has_media_tab = _msdf is not None and not _msdf.empty
+    _has_media_tab = _msdf is not None and not _msdf.empty and len(_media_vals) >= 1
 
     if segment_dfs or _has_media_tab:
         st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
@@ -2991,15 +2991,20 @@ def main():
 
         # ── Excel ──
         if name.endswith((".xlsx", ".xls")):
-            for h in [0, 1, 2]:
+            best_df, best_named = None, 0
+            for h in [0, 1, 2, 3]:
                 try:
                     f.seek(0)
                     df = pd.read_excel(f, header=h)
-                    if len(df.columns) > 1:
-                        df.columns = [str(c).strip() for c in df.columns]
-                        return df.dropna(how="all").reset_index(drop=True)
+                    df.columns = [str(c).strip() for c in df.columns]
+                    df = df.dropna(how="all").reset_index(drop=True)
+                    named = sum(1 for c in df.columns if not str(c).startswith("Unnamed"))
+                    if named > best_named:
+                        best_named, best_df = named, df
                 except Exception:
                     pass
+            if best_df is not None:
+                return best_df
             f.seek(0)
             df = pd.read_excel(f)
             df.columns = [str(c).strip() for c in df.columns]
