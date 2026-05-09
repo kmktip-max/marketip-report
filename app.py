@@ -1146,6 +1146,8 @@ def calculate_metrics(df, cols):
         return pd.to_numeric(cleaned, errors="coerce").fillna(0)
 
     adf["키워드"]    = df[cols["키워드"]].astype(str) if cols.get("키워드", none) != none else "N/A"
+    if cols.get("매체", none) != none:
+        adf["매체"] = df[cols["매체"]].astype(str).str.strip()
     adf["노출수"]    = get_col("노출수")   if cols.get("노출수",   none) != none else pd.Series([0]*len(df))
     adf["클릭수"]    = get_col("클릭수")   if cols.get("클릭수",   none) != none else pd.Series([0]*len(df))
     adf["광고비"]    = get_col("광고비")   if cols.get("광고비",   none) != none else pd.Series([0]*len(df))
@@ -1692,6 +1694,103 @@ def show_results(adf, api_key, model):
             st.markdown('</div>', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True,
                         config={"displayModeBar": False})
+
+    # ── 검색/콘텐츠 매체별 분석 차트 ──
+    if "매체" in adf.columns:
+        _media_vals = sorted([m for m in adf["매체"].dropna().unique() if str(m) not in ("nan", "")])
+        if len(_media_vals) >= 2:
+            st.markdown('<div class="section-title">📡 검색/콘텐츠 매체별 효율 분석</div>', unsafe_allow_html=True)
+
+            # 매체별 집계
+            _media_rows = []
+            for _m in _media_vals:
+                _mdf = adf[adf["매체"] == _m]
+                _mi = _mdf["노출수"].sum()
+                _mc = _mdf["클릭수"].sum()
+                _ms = _mdf["광고비"].sum()
+                _mv = _mdf["전환수"].sum()
+                _mr = _mdf["전환매출"].sum()
+                _media_rows.append({
+                    "매체":     _m,
+                    "노출수":   _mi,
+                    "클릭수":   _mc,
+                    "광고비":   _ms,
+                    "전환수":   _mv,
+                    "CTR(%)":   round(_mc / _mi * 100, 2) if _mi > 0 else 0,
+                    "CPC":      round(_ms / _mc, 0)       if _mc > 0 else 0,
+                    "전환율(%)": round(_mv / _mc * 100, 2) if _mc > 0 else 0,
+                    "CPA":      round(_ms / _mv, 0)       if _mv > 0 else 0,
+                    "ROAS(%)":  round(_mr / _ms * 100, 2) if _ms > 0 else 0,
+                })
+            _msdf = pd.DataFrame(_media_rows)
+
+            _MEDIA_COLORS = ["#0D47A1", "#28B463", "#E67E22", "#8E44AD"]
+
+            def _media_bar(col, title, fmt_type=None):
+                _tmp = _msdf[["매체", col]].copy()
+                _tmp[col] = pd.to_numeric(_tmp[col], errors="coerce").fillna(0)
+                if _tmp[col].sum() == 0:
+                    return None
+                if fmt_type == "money":
+                    _text = _tmp[col].apply(lambda v: f"₩{v:,.0f}")
+                elif fmt_type == "pct":
+                    _text = _tmp[col].apply(lambda v: f"{v:.2f}%")
+                else:
+                    _text = _tmp[col].apply(lambda v: f"{v:,.0f}")
+                _fig = px.bar(_tmp, x="매체", y=col, title=title,
+                              color="매체",
+                              color_discrete_sequence=_MEDIA_COLORS[:len(_media_vals)],
+                              text=_text)
+                _fig.update_traces(textposition="outside",
+                                   textfont=dict(size=13, color="#111111"),
+                                   marker_line_width=2,
+                                   marker_line_color="rgba(255,255,255,0.65)",
+                                   opacity=0.92, width=0.45)
+                _fig.update_layout(**{**CL,
+                                      "showlegend": True,
+                                      "legend": dict(orientation="h", y=1.15,
+                                                     font=dict(size=11)),
+                                      "dragmode": False,
+                                      "height": 340})
+                return _fig
+
+            _chart_specs = [
+                ("광고비",    "💰 광고비",         "money"),
+                ("클릭수",    "👆 클릭수",          None),
+                ("CTR(%)",    "📈 CTR (%)",         "pct"),
+                ("전환수",    "✅ 전환수",           None),
+                ("전환율(%)", "🔄 전환율 (%)",       "pct"),
+                ("CPC",       "🖱️ CPC (평균클릭비용)", "money"),
+                ("CPA",       "💸 CPA (전환당비용)",   "money"),
+                ("ROAS(%)",   "📊 ROAS (%)",          "pct"),
+            ]
+
+            # 유효한 차트만 2열 배치
+            _valid_charts = [
+                (col, title, fmt)
+                for col, title, fmt in _chart_specs
+                if col in _msdf.columns and _msdf[col].sum() > 0
+            ]
+            _cpair = st.columns(2)
+            for _ci, (col, title, fmt) in enumerate(_valid_charts):
+                _fig = _media_bar(col, title, fmt)
+                if _fig:
+                    with _cpair[_ci % 2]:
+                        _seg_chart(_fig, f"media_{col}_{_ci}")
+
+            # 광고비 비중 파이차트
+            _pie_col1, _pie_col2 = st.columns(2)
+            with _pie_col1:
+                _pie_spend = seg_pie(_msdf, "매체", "광고비", "💰 광고비 비중")
+                if _pie_spend:
+                    _seg_chart(_pie_spend, "media_pie_spend")
+            with _pie_col2:
+                if _msdf["전환수"].sum() > 0:
+                    _pie_conv = seg_pie(_msdf, "매체", "전환수", "✅ 전환수 비중")
+                    if _pie_conv:
+                        _seg_chart(_pie_conv, "media_pie_conv")
+
+            st.caption("검색 매체는 구매 의도가 높고, 콘텐츠 매체는 노출 확산에 유리합니다.")
 
     if segment_dfs:
         st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
@@ -3078,6 +3177,7 @@ def main():
 
         return {
             "키워드":      find(["키워드", "검색어", "검색 어"]),
+            "매체":        find(["검색/콘텐츠", "매체구분", "검색콘텐츠", "매체"]),
             "노출수":      find(["노출수"]),
             "클릭수":      find(["클릭수"], exclude=["클릭률","클릭비용","클릭당"]),
             "광고비":      find(["총비용","광고비","총 비용"], exclude=["수익률","광고수익"]),
