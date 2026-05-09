@@ -1700,7 +1700,7 @@ def show_results(adf, api_key, model):
     _msdf = None
     if "매체" in adf.columns:
         _media_vals = sorted([m for m in adf["매체"].dropna().unique() if str(m) not in ("nan", "")])
-        if len(_media_vals) >= 1:
+        if len(_media_vals) >= 2:
             _media_rows = []
             for _m in _media_vals:
                 _mdf = adf[adf["매체"] == _m]
@@ -1723,7 +1723,7 @@ def show_results(adf, api_key, model):
                 })
             _msdf = pd.DataFrame(_media_rows)
 
-    _has_media_tab = _msdf is not None and not _msdf.empty and len(_media_vals) >= 1
+    _has_media_tab = _msdf is not None and not _msdf.empty
 
     if segment_dfs or _has_media_tab:
         st.markdown('<div class="section-title">📊 세그먼트 분석</div>', unsafe_allow_html=True)
