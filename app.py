@@ -3086,15 +3086,21 @@ def main():
                     with st.expander(f"미리보기: {fname}"):
                         st.dataframe(d.head(5), use_container_width=True)
 
+                existing_seg_keys = list(st.session_state.get("segment_dfs", {}).keys())
+                if existing_seg_keys:
+                    st.info(f"기존 세그먼트 유지: {', '.join(existing_seg_keys)}")
+
                 if st.button("📊 분석 확인", type="primary", use_container_width=True, key="file_confirm"):
                     kw_dfs  = [v["df"] for v in loaded.values() if "키워드" in v["type"]]
                     seg_map = {v["type"]: v["df"] for v in loaded.values() if "키워드" not in v["type"]}
                     main_df = (pd.concat(kw_dfs, ignore_index=True) if len(kw_dfs) > 1
                                else kw_dfs[0] if kw_dfs
                                else list(loaded.values())[0]["df"])
-                    # 새 데이터 → 이전 세션 채팅/분석 초기화
+                    # 키워드 파일만 올린 경우 기존 세그먼트 데이터 유지
+                    existing_segs = st.session_state.get("segment_dfs", {})
+                    merged_segs = {**existing_segs, **seg_map}
                     st.session_state["confirmed_df"]  = main_df
-                    st.session_state["segment_dfs"]   = seg_map
+                    st.session_state["segment_dfs"]   = merged_segs
                     st.session_state["last_df_hash"]  = ""
                     st.session_state["chat_messages"] = []
                     st.session_state["chat_api"]      = []
