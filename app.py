@@ -1546,18 +1546,31 @@ def show_results(adf, api_key, model):
     _has_kw = adf["키워드"].astype(str).str.strip().replace({"":None, "-":None, "nan":None, "None":None}).notna()
     _adf = adf[_has_kw].copy()
 
+    # 중복 키워드 합산 (같은 키워드가 여러 캠페인/그룹에 있을 때)
+    _num_cols = [c for c in ["노출수","클릭수","광고비","전환수","전환매출"] if c in _adf.columns]
+    _adf_grp = _adf.groupby("키워드", as_index=False)[_num_cols].sum()
+    # 합산 후 파생 지표 재계산
+    if "클릭수" in _adf_grp and "노출수" in _adf_grp:
+        _adf_grp["CTR"]  = _adf_grp.apply(lambda r: round(r["클릭수"]/r["노출수"]*100,2) if r["노출수"]>0 else None, axis=1)
+    if "클릭수" in _adf_grp and "전환수" in _adf_grp:
+        _adf_grp["전환율"] = _adf_grp.apply(lambda r: round(r["전환수"]/r["클릭수"]*100,2) if r["클릭수"]>0 else None, axis=1)
+    if "광고비" in _adf_grp and "전환수" in _adf_grp:
+        _adf_grp["CPA"]  = _adf_grp.apply(lambda r: round(r["광고비"]/r["전환수"],2) if r["전환수"]>0 else None, axis=1)
+    if "광고비" in _adf_grp and "전환매출" in _adf_grp:
+        _adf_grp["ROAS"] = _adf_grp.apply(lambda r: round(r["전환매출"]/r["광고비"]*100,2) if r["광고비"]>0 else None, axis=1)
+
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(hbar(_adf.nlargest(10,"광고비"), "광고비", "키워드",
+        st.plotly_chart(hbar(_adf_grp.nlargest(10,"광고비"), "광고비", "키워드",
             "💰 광고비 TOP 10", [[0,"#1498D7"],[0.5,"#0D47A1"],[1,"#051F5E"]], fmt="money"),
             use_container_width=True)
     with c2:
-        roas_df = _adf[(_adf["ROAS"].notna()) & (_adf["ROAS"] > 0)].nlargest(10,"ROAS")
+        roas_df = _adf_grp[(_adf_grp["ROAS"].notna()) & (_adf_grp["ROAS"] > 0)].nlargest(10,"ROAS") if "ROAS" in _adf_grp.columns else pd.DataFrame()
         if not roas_df.empty:
             st.plotly_chart(hbar(roas_df,"ROAS","키워드","📊 ROAS TOP 10",
                 [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
         else:
-            conv_df = _adf[_adf["전환수"] > 0].nlargest(10,"전환수")
+            conv_df = _adf_grp[_adf_grp["전환수"] > 0].nlargest(10,"전환수") if "전환수" in _adf_grp.columns else pd.DataFrame()
             if not conv_df.empty:
                 st.plotly_chart(hbar(conv_df,"전환수","키워드","📞 전환수 TOP 10 (ROAS 미집계 업종)",
                     [[0,"#6CC24A"],[0.5,"#28B463"],[1,"#1A7A3C"]]), use_container_width=True, config={"displayModeBar": False})
@@ -1566,12 +1579,12 @@ def show_results(adf, api_key, model):
 
     c3, c4 = st.columns(2)
     with c3:
-        cvr_df = _adf[_adf["전환율"].notna() & (_adf["전환수"] > 0)].nlargest(10,"전환율")
+        cvr_df = _adf_grp[_adf_grp["전환율"].notna() & (_adf_grp["전환수"] > 0)].nlargest(10,"전환율") if "전환율" in _adf_grp.columns else pd.DataFrame()
         if not cvr_df.empty:
             st.plotly_chart(hbar(cvr_df,"전환율","키워드","🎯 전환율 TOP 10",
                 [[0,"#F39C12"],[0.5,"#E67E22"],[1,"#CA6F1E"]], fmt="pct"), use_container_width=True, config={"displayModeBar": False})
     with c4:
-        waste_df = _adf[(_adf["전환수"] == 0) & (_adf["클릭수"] > 0)].nlargest(10,"광고비")
+        waste_df = _adf_grp[(_adf_grp["전환수"] == 0) & (_adf_grp["클릭수"] > 0)].nlargest(10,"광고비") if "전환수" in _adf_grp.columns else pd.DataFrame()
         if not waste_df.empty:
             st.plotly_chart(hbar(waste_df,"광고비","키워드","🚨 낭비 키워드 TOP 10 (전환 0)",
                 [[0,"#E74C3C"],[0.5,"#C0392B"],[1,"#922B21"]], fmt="money"), use_container_width=True, config={"displayModeBar": False})
