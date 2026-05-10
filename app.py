@@ -1604,16 +1604,44 @@ def show_results(adf, api_key, model):
         alerts.append(("danger", f"<b>구조 손실 위험</b> — ROAS 100% 미만이면서 광고비 평균 초과 키워드 {len(roas_drop)}개 · 광고비보다 매출이 낮은 구간입니다"))
 
     if not alerts:
-        st.markdown('<div class="alert-ok">✅ 주요 위험 신호가 감지되지 않았습니다.</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:#f6fef9;border:1.5px solid #b7ebc8;border-radius:10px;
+        padding:0.9rem 1.2rem;display:flex;align-items:center;gap:0.6rem;font-size:0.9rem;color:#1b5e20;">
+          <span style="font-size:1.1rem;">✅</span>
+          <span style="font-weight:600;">주요 위험 신호가 감지되지 않았습니다.</span>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        for kind, msg in alerts:
-            css = "alert-danger" if kind == "danger" else "alert-warn"
+        _danger_alerts = [(k, m) for k, m in alerts if k == "danger"]
+        _warn_alerts   = [(k, m) for k, m in alerts if k != "danger"]
+
+        def _alert_card(kind, msg):
             if " — " in msg:
                 _head, _desc = msg.split(" — ", 1)
-                _html_msg = f'{_head} — <span style="color:#111111;font-weight:400;">{_desc}</span>'
+                _desc = _desc.replace("<b>","").replace("</b>","")
             else:
-                _html_msg = msg
-            st.markdown(f'<div class="{css}">⚠ {_html_msg}</div>', unsafe_allow_html=True)
+                _head, _desc = msg, ""
+            _head = _head.replace("<b>","").replace("</b>","")
+            if kind == "danger":
+                _bg, _border, _badge_bg, _badge_color, _icon = "#fff5f5", "#ffc9c9", "#e53935", "#fff", "🔴"
+            else:
+                _bg, _border, _badge_bg, _badge_color, _icon = "#fffbf0", "#ffe59e", "#f9a825", "#fff", "🟡"
+            return f"""
+            <div style="background:{_bg};border:1.5px solid {_border};border-radius:10px;
+            padding:0.9rem 1.1rem;display:flex;align-items:flex-start;gap:0.8rem;">
+              <span style="font-size:1.1rem;flex-shrink:0;margin-top:1px;">{_icon}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.92rem;font-weight:700;color:#111;margin-bottom:3px;">{_head}</div>
+                <div style="font-size:0.84rem;color:#555;line-height:1.6;">{_desc}</div>
+              </div>
+            </div>"""
+
+        if _danger_alerts:
+            _d_html = "".join(_alert_card(k, m) for k, m in _danger_alerts)
+            st.markdown(f'<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.5rem;">{_d_html}</div>', unsafe_allow_html=True)
+        if _warn_alerts:
+            _w_html = "".join(_alert_card(k, m) for k, m in _warn_alerts)
+            st.markdown(f'<div style="display:flex;flex-direction:column;gap:0.5rem;">{_w_html}</div>', unsafe_allow_html=True)
 
     # ── 차트 공통 설정 ──
     CL = dict(
