@@ -1133,7 +1133,6 @@ def check_auth():
 # ────────────────────────────────────────────
 # 지표 계산
 # ────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
 def calculate_metrics(df, cols: dict):
     none = "(없음)"
     adf = pd.DataFrame()
@@ -1220,7 +1219,6 @@ def classify(row, avgs):
 # ────────────────────────────────────────────
 # AI 분석용 데이터 포맷
 # ────────────────────────────────────────────
-@st.cache_data(show_spinner=False)
 def format_for_ai(adf, request_type, raw_df=None):
     """
     raw_df: 원본 엑셀 전체 컬럼 (있으면 AI에게 모든 데이터 전달)
