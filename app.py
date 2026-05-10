@@ -1421,6 +1421,42 @@ def show_results(adf, api_key, model):
     {_sum_html}</div>
     """, unsafe_allow_html=True)
 
+    # ── 광고 구조 진단 (핵심 요약 바로 아래) ──
+    waste_kw        = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+    waste_spend_amt = waste_kw["광고비"].sum()
+    waste_ratio     = waste_spend_amt / total_spend * 100 if total_spend > 0 else 0
+
+    if waste_ratio >= 30:
+        fear_line   = f'🚨 현재 총 광고비 ₩{total_spend:,.0f} 중 <b>약 ₩{waste_spend_amt:,.0f}({waste_ratio:.0f}%)이 전환 없이 소진</b>되고 있어 낭비 가능성이 매우 높습니다.'
+        fear_color  = "#7f0000"; fear_bg = "#fff5f5"; fear_border = "#e53935"
+    elif waste_ratio >= 10:
+        fear_line   = f'⚠️ 총 광고비의 <b>약 {waste_ratio:.0f}%(₩{waste_spend_amt:,.0f})이 전환 없이 소진</b>되고 있습니다. 낭비 구간 점검이 필요합니다.'
+        fear_color  = "#e65100"; fear_bg = "#fff8f0"; fear_border = "#f9a825"
+    else:
+        fear_line   = f'광고비 소진 대비 전환 구조는 비교적 안정적입니다. 아래 상세 분석을 확인하세요.'
+        fear_color  = "#1b5e20"; fear_bg = "#f6fef9"; fear_border = "#28B463"
+
+    eval_lines = []
+    if roas and roas < 100:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 광고비보다 매출이 낮아 <b>구조적 손실</b>이 발생 중입니다.")
+    elif roas and roas < 200:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 손익 분기 수준으로 <b>수익 구조 개선</b>이 필요합니다.")
+    else:
+        eval_lines.append(f"• ROAS <b>{roas}%</b> — 수익 구조는 유지되고 있으나 낭비 키워드 정리로 추가 개선 가능합니다.")
+    if cvr and cvr < 5:
+        eval_lines.append(f"• 전환율 <b>{cvr}%</b> — 클릭 대비 구매/문의 전환이 낮아 <b>랜딩페이지 구조 점검</b>을 권장합니다.")
+    elif ctr and ctr < 1:
+        eval_lines.append(f"• CTR <b>{ctr}%</b> — 노출 대비 클릭이 매우 낮아 <b>소재 경쟁력 개선</b>이 필요합니다.")
+    eval_html = "<br>".join(eval_lines)
+
+    st.markdown(f"""
+    <div style="background:{fear_bg};border-left:5px solid {fear_border};
+    padding:1rem 1.3rem;border-radius:0 10px 10px 0;margin-top:0.8rem;line-height:1.9;">
+    <div style="color:{fear_color};font-size:1rem;font-weight:700;margin-bottom:0.5rem;">{fear_line}</div>
+    <div style="color:#333;font-size:0.9rem;">{eval_html}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
     # ── 즉시 실행 가능한 개선 포인트 3가지 ──
     st.markdown('<div style="margin-top:2rem;"></div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🎯 즉시 실행 가능한 개선 포인트 3가지</div>', unsafe_allow_html=True)
@@ -1531,52 +1567,6 @@ def show_results(adf, api_key, model):
     with st.expander("📋 카카오톡 공유용 텍스트", expanded=False):
         st.text_area("복사해서 카카오톡에 붙여넣기", value=_kakao_text, height=280, key="kakao_copy")
         st.caption("위 텍스트를 전체 선택(Ctrl+A) 후 복사하세요.")
-
-    # ── 광고 구조 진단 ──
-    waste_kw   = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
-    waste_spend_amt = waste_kw["광고비"].sum()
-    waste_ratio = waste_spend_amt / total_spend * 100 if total_spend > 0 else 0
-
-    # 공포/손실 1줄
-    if waste_ratio >= 30:
-        fear_line = f'🚨 현재 총 광고비 ₩{total_spend:,.0f} 중 <b>약 ₩{waste_spend_amt:,.0f}({waste_ratio:.0f}%)이 전환 없이 소진</b>되고 있어 낭비 가능성이 매우 높습니다.'
-        fear_color = "#7f0000"
-        fear_bg    = "#fff5f5"
-        fear_border= "#e53935"
-    elif waste_ratio >= 10:
-        fear_line = f'⚠️ 총 광고비의 <b>약 {waste_ratio:.0f}%(₩{waste_spend_amt:,.0f})이 전환 없이 소진</b>되고 있습니다. 낭비 구간 점검이 필요합니다.'
-        fear_color = "#e65100"
-        fear_bg    = "#fff8f0"
-        fear_border= "#f9a825"
-    else:
-        fear_line = f'광고비 소진 대비 전환 구조는 비교적 안정적입니다. 아래 상세 분석을 확인하세요.'
-        fear_color = "#1b5e20"
-        fear_bg    = "#f6fef9"
-        fear_border= "#28B463"
-
-    # 평가 2줄
-    eval_lines = []
-    if roas and roas < 100:
-        eval_lines.append(f"• ROAS <b>{roas}%</b> — 광고비보다 매출이 낮아 <b>구조적 손실</b>이 발생 중입니다.")
-    elif roas and roas < 200:
-        eval_lines.append(f"• ROAS <b>{roas}%</b> — 손익 분기 수준으로 <b>수익 구조 개선</b>이 필요합니다.")
-    else:
-        eval_lines.append(f"• ROAS <b>{roas}%</b> — 수익 구조는 유지되고 있으나 낭비 키워드 정리로 추가 개선 가능합니다.")
-
-    if cvr and cvr < 5:
-        eval_lines.append(f"• 전환율 <b>{cvr}%</b> — 클릭 대비 구매/문의 전환이 낮아 <b>랜딩페이지 구조 점검</b>을 권장합니다.")
-    elif ctr and ctr < 1:
-        eval_lines.append(f"• CTR <b>{ctr}%</b> — 노출 대비 클릭이 매우 낮아 <b>소재 경쟁력 개선</b>이 필요합니다.")
-
-    eval_html = "<br>".join(eval_lines)
-
-    st.markdown(f"""
-    <div style="background:{fear_bg};border-left:5px solid {fear_border};
-    padding:1rem 1.3rem;border-radius:0 10px 10px 0;margin-top:0.8rem;line-height:1.9;">
-    <div style="color:{fear_color};font-size:1rem;font-weight:700;margin-bottom:0.5rem;">{fear_line}</div>
-    <div style="color:#333;font-size:0.9rem;">{eval_html}</div>
-    </div>
-    """, unsafe_allow_html=True)
 
     # ── 위험 신호 ──
     st.markdown('<div class="section-title">⚠️ 위험 신호 감지</div>', unsafe_allow_html=True)
