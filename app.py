@@ -1175,46 +1175,41 @@ def calculate_metrics(df, cols: dict):
 # 키워드 등급 분류
 # ────────────────────────────────────────────
 def classify(row, avgs):
-    """5단계 키워드 분류"""
-    clicks = row["클릭수"]
-    conv   = row["전환수"]
-    cpa    = row["CPA"]   if pd.notna(row.get("CPA"))  else None
-    roas   = row["ROAS"]  if pd.notna(row.get("ROAS")) else None
-    spend  = row["광고비"]
+    """5단계 키워드 분류 (단일 row용 — 하위 호환)"""
+    return _classify_series(
+        pd.Series([row["클릭수"]]), pd.Series([row["전환수"]]),
+        pd.Series([row.get("CPA")]), pd.Series([row.get("ROAS")]),
+        pd.Series([row["광고비"]]), avgs
+    ).iloc[0]
 
-    avg_cpa   = avgs.get("CPA")   or 0
-    avg_roas  = avgs.get("ROAS")  or 0
-    avg_spend = avgs.get("광고비") or 0
 
-    # ── 삭제 검토: 비용 발생 + 전환 없음 ──
-    if conv == 0 and spend > 0:
-        return "삭제 검토"
+def _classify_series(clicks, conv, cpa, roas, spend, avgs):
+    """벡터화 5단계 분류 — DataFrame 전체를 한 번에 처리"""
+    avg_cpa  = avgs.get("CPA")   or 0
+    avg_roas = avgs.get("ROAS")  or 0
 
-    # ── 이하 전환 있는 경우 ──
-    roas_good = roas and avg_roas > 0 and roas >= avg_roas
-    cpa_good  = cpa  and avg_cpa  > 0 and cpa  <= avg_cpa
+    roas_num   = pd.to_numeric(roas,  errors="coerce")
+    cpa_num    = pd.to_numeric(cpa,   errors="coerce")
+    conv_num   = pd.to_numeric(conv,  errors="coerce").fillna(0)
+    spend_num  = pd.to_numeric(spend, errors="coerce").fillna(0)
 
-    # 증액 권장: ROAS 높음 + CPA 낮음
-    if roas_good and cpa_good:
-        return "증액 권장"
+    roas_good = (avg_roas > 0) & roas_num.notna() & (roas_num >= avg_roas)
+    cpa_good  = (avg_cpa  > 0) & cpa_num.notna()  & (cpa_num  <= avg_cpa)
 
-    # 증액 권장: ROAS만 높아도 (ROAS 최우선)
-    if roas_good and conv >= 3:
-        return "증액 권장"
+    result = pd.Series("유지", index=conv_num.index)
 
-    # 증액 테스트: 성과 있으나 데이터 부족 (전환 1~2건, ROAS 100%↑)
-    if conv > 0 and conv <= 2 and roas and roas >= 100:
-        return "증액 테스트"
+    # 삭제 검토: 전환 없고 비용 있음
+    result = result.where(~((conv_num == 0) & (spend_num > 0)), "삭제 검토")
+    # 감액
+    result = result.where(~((conv_num > 0) & roas_num.notna() & (roas_num < 100)), "감액")
+    # 증액 테스트
+    result = result.where(~((conv_num > 0) & roas_num.notna() & (roas_num >= 100) & ~roas_good), "증액 테스트")
+    result = result.where(~((conv_num > 0) & (conv_num <= 2) & roas_num.notna() & (roas_num >= 100)), "증액 테스트")
+    # 증액 권장
+    result = result.where(~(roas_good & (conv_num >= 3)), "증액 권장")
+    result = result.where(~(roas_good & cpa_good), "증액 권장")
 
-    # 증액 테스트: 전환 있고 ROAS 손익분기 이상이나 평균 미달
-    if conv > 0 and roas and roas >= 100 and not roas_good:
-        return "증액 테스트"
-
-    # 감액: 전환 있으나 ROAS < 100% (광고비 > 매출)
-    if conv > 0 and roas and roas < 100:
-        return "감액"
-
-    return "유지"
+    return result
 
 # ────────────────────────────────────────────
 # AI 분석용 데이터 포맷
@@ -2067,7 +2062,12 @@ def show_results(adf, api_key, model):
         "ROAS":   total_rev   / total_spend * 100 if total_spend > 0 else 0,
         "광고비": total_spend / len(adf)   if len(adf)   > 0 else 0,
     }
-    _grades_q = adf.apply(lambda r: classify(r, _avgs_q), axis=1)
+    _grades_q = _classify_series(
+        adf["클릭수"], adf["전환수"],
+        adf.get("CPA",  pd.Series([None]*len(adf))),
+        adf.get("ROAS", pd.Series([None]*len(adf))),
+        adf["광고비"], _avgs_q
+    )
     _honey_n_q  = _grades_q.isin(["증액 권장", "증액 테스트"]).sum()
     _honey_pct_q = _honey_n_q / len(adf) * 100 if len(adf) > 0 else 0
 
@@ -3383,7 +3383,12 @@ def main():
                 "ROAS":   (_rev   / _spend * 100)  if _spend > 0 else None,
                 "광고비": adf["광고비"].mean(),   # 키워드별 평균 광고비 (고비용 판단용)
             }
-            adf["등급"] = adf.apply(lambda r: classify(r, avgs), axis=1)
+            adf["등급"] = _classify_series(
+                adf["클릭수"], adf["전환수"],
+                adf.get("CPA", pd.Series([None]*len(adf))),
+                adf.get("ROAS", pd.Series([None]*len(adf))),
+                adf["광고비"], avgs
+            ).values
 
         st.session_state["adf"]           = adf
         st.session_state["raw_df"]        = df        # 원본 전체 데이터
