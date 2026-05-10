@@ -1422,6 +1422,7 @@ def show_results(adf, api_key, model):
     """, unsafe_allow_html=True)
 
     # ── 즉시 실행 가능한 개선 포인트 3가지 ──
+    st.markdown('<div style="margin-top:2rem;"></div>', unsafe_allow_html=True)
     st.markdown('<div class="section-title">🎯 즉시 실행 가능한 개선 포인트 3가지</div>', unsafe_allow_html=True)
 
     _points = []
