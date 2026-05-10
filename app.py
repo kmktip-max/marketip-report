@@ -113,7 +113,7 @@ st.markdown("""
         color: #111111;
         border-left: 4px solid #28B463;
         padding: 0.35rem 0 0.35rem 0.75rem;
-        margin: 1.8rem 0 1rem 0;
+        margin: 3rem 0 1.2rem 0;
         background: #f8fdf9;
         border-radius: 0 6px 6px 0;
     }
@@ -1567,6 +1567,8 @@ def show_results(adf, api_key, model):
     with st.expander("📋 카카오톡 공유용 텍스트", expanded=False):
         st.text_area("복사해서 카카오톡에 붙여넣기", value=_kakao_text, height=280, key="kakao_copy")
         st.caption("위 텍스트를 전체 선택(Ctrl+A) 후 복사하세요.")
+
+    st.markdown('<div style="margin-bottom:1rem;"></div>', unsafe_allow_html=True)
 
     # ── 위험 신호 ──
     st.markdown('<div class="section-title">⚠️ 위험 신호 감지</div>', unsafe_allow_html=True)
