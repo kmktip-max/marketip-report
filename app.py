@@ -2417,7 +2417,6 @@ def show_results(adf, api_key, model):
                 expand_label = "🔍 크게 보기 ▲" if not st.session_state.get("chat_expanded") else "🔍 작게 보기 ▼"
                 if st.button(expand_label, use_container_width=True):
                     st.session_state["chat_expanded"] = not st.session_state.get("chat_expanded", False)
-                    st.rerun()
 
         chat_height = 820 if st.session_state.get("chat_expanded") else 460
         chat_box = st.container(height=chat_height, border=True)
@@ -2493,6 +2492,7 @@ def show_results(adf, api_key, model):
     </div>
     </a>
     """, unsafe_allow_html=True)
+
 
     # ── 다운로드 ──
     st.markdown('<div class="section-title">⬇️ 결과 다운로드</div>', unsafe_allow_html=True)
