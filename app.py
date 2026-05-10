@@ -3102,7 +3102,10 @@ def main():
         # ── 관리자 전용: 회원 승인 패널 ──
         if is_admin(_uid):
             st.markdown("### 👥 회원 관리")
-            _pending = gs_get_pending()
+            try:
+             _pending = gs_get_pending()
+            except Exception:
+             _pending = []
             if _pending:
                 st.markdown(f"**대기 중: {len(_pending)}건**")
                 for _row_num, _r in _pending:
@@ -3320,13 +3323,7 @@ def main():
             df = st.session_state["confirmed_df"]
 
     if df is None:
-        st.markdown("""
-        ---
-        **입력 가능한 데이터 항목**
-        `키워드 / 노출수 / 클릭수 / 광고비 / 전환수 / 전환매출 / 방문체류시간 / 평균노출순위`
-
-        모든 항목이 없어도 분석 가능합니다. 있는 데이터만 보내주세요.
-        """)
+        st.info("📂 분석할 광고 보고서 파일을 위에서 업로드해주세요. (새로고침 시 데이터는 다시 업로드가 필요합니다)")
         return
 
     # ── 컬럼 자동 감지 ──
