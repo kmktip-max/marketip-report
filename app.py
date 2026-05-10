@@ -1263,16 +1263,21 @@ def format_for_ai(adf, request_type, raw_df=None):
     # 원본 엑셀의 모든 컬럼 데이터를 AI에게 전달
     if raw_df is not None and not raw_df.empty:
         col_list = " / ".join(raw_df.columns.tolist())
-        lines.append(f"=== 원본 데이터 전체 ({len(raw_df.columns)}개 컬럼) ===")
+        MAX_ROWS = 300
+        raw_sample = raw_df.head(MAX_ROWS)
+        skipped = len(raw_df) - MAX_ROWS
+        lines.append(f"=== 원본 데이터 (상위 {min(MAX_ROWS, len(raw_df))}행 / 전체 {len(raw_df)}행, {len(raw_df.columns)}개 컬럼) ===")
         lines.append(f"[제공된 컬럼 목록]: {col_list}")
+        if skipped > 0:
+            lines.append(f"[참고] 토큰 제한으로 상위 {MAX_ROWS}행만 전달. 나머지 {skipped}행은 집계 요약으로 대체.")
         lines.append("")
         lines.append("[중요 지시] 위 모든 컬럼(평균클릭비용, 클릭률, 전환율, 광고수익률 등)을 빠짐없이 분석에 활용할 것. 원본에 이미 계산된 지표가 있으면 그 값을 그대로 사용할 것.")
         lines.append("")
-        lines.append(raw_df.to_string(index=False))
+        lines.append(raw_sample.to_string(index=False))
     else:
         lines.append("=== 키워드별 상세 데이터 ===")
         show_cols = [c for c in ["키워드","노출수","클릭수","CTR","CPC","광고비","전환수","전환율","CPA","ROAS","등급"] if c in adf.columns]
-        lines.append(adf[show_cols].to_string(index=False))
+        lines.append(adf[show_cols].head(300).to_string(index=False))
 
     lines.append(f"\n요청 분석: {request_type}")
     return "\n".join(lines)
