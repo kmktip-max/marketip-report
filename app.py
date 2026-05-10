@@ -1175,12 +1175,23 @@ def calculate_metrics(df, cols: dict):
 # 키워드 등급 분류
 # ────────────────────────────────────────────
 def classify(row, avgs):
-    """5단계 키워드 분류 (단일 row용 — 하위 호환)"""
-    return _classify_series(
-        pd.Series([row["클릭수"]]), pd.Series([row["전환수"]]),
-        pd.Series([row.get("CPA")]), pd.Series([row.get("ROAS")]),
-        pd.Series([row["광고비"]]), avgs
-    ).iloc[0]
+    """5단계 키워드 분류 (단일 row용)"""
+    conv  = row["전환수"]
+    cpa   = row["CPA"]  if pd.notna(row.get("CPA"))  else None
+    roas  = row["ROAS"] if pd.notna(row.get("ROAS")) else None
+    spend = row["광고비"]
+    avg_cpa  = avgs.get("CPA")   or 0
+    avg_roas = avgs.get("ROAS")  or 0
+    if conv == 0 and spend > 0:
+        return "삭제 검토"
+    roas_good = roas and avg_roas > 0 and roas >= avg_roas
+    cpa_good  = cpa  and avg_cpa  > 0 and cpa  <= avg_cpa
+    if roas_good and cpa_good:      return "증액 권장"
+    if roas_good and conv >= 3:     return "증액 권장"
+    if conv > 0 and conv <= 2 and roas and roas >= 100: return "증액 테스트"
+    if conv > 0 and roas and roas >= 100 and not roas_good: return "증액 테스트"
+    if conv > 0 and roas and roas < 100: return "감액"
+    return "유지"
 
 
 def _classify_series(clicks, conv, cpa, roas, spend, avgs):
@@ -2182,11 +2193,16 @@ def show_results(adf, api_key, model):
     # ══════════════════════════════════════════════════════════
     st.markdown('<div class="section-title">📋 즉시 실행 리스트</div>', unsafe_allow_html=True)
 
+    _act_grades = _classify_series(
+        adf["클릭수"], adf["전환수"],
+        adf["CPA"] if "CPA" in adf.columns else pd.Series([None]*len(adf), index=adf.index),
+        adf["ROAS"] if "ROAS" in adf.columns else pd.Series([None]*len(adf), index=adf.index),
+        adf["광고비"], _avgs_q
+    )
     _act_buckets = {"증액 권장": [], "증액 테스트": [], "감액": [], "삭제 검토": []}
-    for _ai, _arow in adf.iterrows():
-        _ag = classify(_arow, _avgs_q)
+    for _ag, _arow in zip(_act_grades, adf.itertuples()):
         if _ag in _act_buckets:
-            _act_buckets[_ag].append(_arow)
+            _act_buckets[_ag].append(adf.loc[_arow.Index])
 
     _ac1, _ac2, _ac3, _ac4 = st.columns(4)
 
