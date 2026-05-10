@@ -1421,6 +1421,116 @@ def show_results(adf, api_key, model):
     {_sum_html}</div>
     """, unsafe_allow_html=True)
 
+    # ── 즉시 실행 가능한 개선 포인트 3가지 ──
+    st.markdown('<div class="section-title">🎯 즉시 실행 가능한 개선 포인트 3가지</div>', unsafe_allow_html=True)
+
+    _points = []
+
+    # 포인트 1: 낭비 키워드
+    _waste = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+    _waste_amt = _waste["광고비"].sum()
+    _waste_ratio = _waste_amt / total_spend * 100 if total_spend > 0 else 0
+    if not _waste.empty:
+        _points.append({
+            "num": "1",
+            "icon": "🗑",
+            "title": "낭비 키워드 즉시 일시중지",
+            "desc": f"클릭 10회 이상 전환 없는 키워드 <b>{len(_waste)}개</b> 발견 → 일시중지 시 <b>월 약 ₩{_waste_amt:,.0f} 절약</b> 가능 (현재 광고비의 {_waste_ratio:.0f}%)",
+            "tag": "즉시 실행",
+            "tag_color": "#e53935",
+        })
+
+    # 포인트 2: 꿀통 키워드 증액
+    _honey = adf[adf["등급"].isin(["증액 권장", "증액 테스트"])] if "등급" in adf.columns else pd.DataFrame()
+    _avg_roas = (adf["전환매출"].sum() / adf["광고비"].sum() * 100) if adf["광고비"].sum() > 0 else 0
+    if not _honey.empty:
+        _honey_spend = _honey["광고비"].sum()
+        _honey_conv  = _honey["전환수"].sum()
+        _points.append({
+            "num": "2",
+            "icon": "🍯",
+            "title": "성과 키워드 입찰가 상향",
+            "desc": f"ROAS 우수 키워드 <b>{len(_honey)}개</b> 확인 → 입찰가 10~20% 상향 시 <b>전환 추가 확보</b> 가능 (현재 해당 키워드 전환 {_honey_conv:.0f}건)",
+            "tag": "수익 확대",
+            "tag_color": "#1b5e20",
+        })
+    elif total_conv > 0:
+        _points.append({
+            "num": "2",
+            "icon": "🍯",
+            "title": "전환 발생 키워드 집중 운영",
+            "desc": f"전환이 발생한 키워드에 예산 집중 배분 권장 → <b>같은 예산에서 전환 효율 향상</b> 기대",
+            "tag": "수익 확대",
+            "tag_color": "#1b5e20",
+        })
+
+    # 포인트 3: CTR 또는 전환율 개선
+    _ctr_val  = (total_click / total_imp * 100)  if total_imp   > 0 else 0
+    _cvr_val  = (total_conv  / total_click * 100) if total_click > 0 else 0
+    if _cvr_val > 0 and _cvr_val < 2:
+        _points.append({
+            "num": "3",
+            "icon": "📄",
+            "title": "랜딩페이지 전환 구조 점검",
+            "desc": f"현재 전환율 <b>{_cvr_val:.2f}%</b> — 클릭은 있으나 문의/구매로 연결이 낮음 → <b>랜딩페이지 첫 화면 및 CTA 버튼 위치 개선</b> 권장",
+            "tag": "전환율 개선",
+            "tag_color": "#e65100",
+        })
+    elif _ctr_val > 0 and _ctr_val < 1:
+        _points.append({
+            "num": "3",
+            "icon": "✏️",
+            "title": "광고 소재 A/B 테스트",
+            "desc": f"현재 CTR <b>{_ctr_val:.2f}%</b> (업종 평균 1~2% 미달) → <b>광고 제목·설명 문구 교체 테스트</b>로 클릭률 개선 가능",
+            "tag": "CTR 개선",
+            "tag_color": "#1565C0",
+        })
+    else:
+        _points.append({
+            "num": "3",
+            "icon": "⏰",
+            "title": "광고 노출 시간대 최적화",
+            "desc": f"전환이 집중된 시간대에 예산 집중 배분 권장 → <b>새벽 저입찰 전략</b> 또는 <b>고전환 시간대 증액</b>으로 ROAS 향상 가능",
+            "tag": "구조 최적화",
+            "tag_color": "#6a1b9a",
+        })
+
+    # 포인트 3개 카드 렌더링
+    for _pt in _points[:3]:
+        st.markdown(f"""
+        <div style="background:#ffffff;border:1.5px solid #e9ecef;border-radius:12px;
+        padding:1rem 1.3rem;margin-bottom:0.7rem;display:flex;gap:1rem;align-items:flex-start;">
+          <div style="background:{_pt['tag_color']};color:#fff;font-family:'Bebas Neue',cursive;
+          font-size:1.4rem;font-weight:900;width:36px;height:36px;border-radius:50%;
+          display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;">
+            {_pt['num']}
+          </div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+              <span style="font-size:0.95rem;font-weight:800;color:#111;">{_pt['icon']} {_pt['title']}</span>
+              <span style="background:{_pt['tag_color']}18;color:{_pt['tag_color']};
+              font-size:0.7rem;font-weight:700;padding:2px 8px;border-radius:100px;
+              border:1px solid {_pt['tag_color']}44;">{_pt['tag']}</span>
+            </div>
+            <div style="font-size:0.88rem;color:#444;line-height:1.7;">{_pt['desc']}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 카카오톡 공유용 텍스트 생성 + 복사 버튼
+    _kakao_lines = ["📊 [마케팁 무료 광고 점검 결과]\n"]
+    _kakao_lines.append("✅ 즉시 실행 가능한 개선 포인트 3가지\n")
+    _num_map = {"1":"1️⃣","2":"2️⃣","3":"3️⃣"}
+    for _pt in _points[:3]:
+        _clean_desc = _pt['desc'].replace("<b>","").replace("</b>","")
+        _kakao_lines.append(f"{_num_map[_pt['num']]} {_pt['title']}\n{_clean_desc}\n")
+    _kakao_lines.append("더 자세한 내용은 상담 시 안내해드립니다.\n마케팁 드림 📞")
+    _kakao_text = "\n".join(_kakao_lines)
+
+    with st.expander("📋 카카오톡 공유용 텍스트", expanded=False):
+        st.text_area("복사해서 카카오톡에 붙여넣기", value=_kakao_text, height=280, key="kakao_copy")
+        st.caption("위 텍스트를 전체 선택(Ctrl+A) 후 복사하세요.")
+
     # ── 광고 구조 진단 ──
     waste_kw   = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
     waste_spend_amt = waste_kw["광고비"].sum()
