@@ -3060,48 +3060,36 @@ def show_results(adf, api_key, model):
     buf = io.BytesIO()
     _excel_ok = True
     try:
-     segment_dfs = st.session_state.get("segment_dfs", {})
-     tbl_dl = adf.copy()
-     tbl_dl["상태"] = tbl_dl.apply(make_badge, axis=1)
-     disp_cols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl_dl.columns]
-     honey_export = tbl_dl[tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
-     waste_export  = tbl_dl[tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
-    except Exception as _ex:
-     _excel_ok = False
-     st.warning(f"엑셀 데이터 준비 중 오류: {_ex}")
+        _seg_dfs_dl = st.session_state.get("segment_dfs", {})
+        _tbl_dl = adf.copy()
+        _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
+        _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in _tbl_dl.columns]
+        _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
+        _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
 
-    if _excel_ok:
-     try:
-      with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        # ── 키워드 시트들 ──
-        sheets = [
-            ("📋 전체 키워드", tbl[disp_cols],  ["CTR","전환율","ROAS"]),
-            ("🍯 꿀통 키워드", honey_export[disp_cols] if not honey_export.empty else pd.DataFrame(columns=disp_cols), ["ROAS","전환율"]),
-            ("🚨 낭비 키워드", waste_export[disp_cols]  if not waste_export.empty  else pd.DataFrame(columns=disp_cols), ["광고비","CTR"]),
+        _sheets = [
+            ("📋 전체 키워드", _tbl_dl[_dcols], ["CTR","전환율","ROAS"]),
+            ("🍯 꿀통 키워드", _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
+            ("🚨 낭비 키워드", _waste_dl[_dcols] if not _waste_dl.empty else pd.DataFrame(columns=_dcols), ["광고비","CTR"]),
         ]
-        for sname, sdf, ccols in sheets:
-            sdf.to_excel(writer, sheet_name=sname[:31], index=False)
-            style_sheet(writer.sheets[sname[:31]], sdf, color_cols=ccols)
+        _seg_color_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
+                          "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
+                          "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
 
-        # ── 세그먼트 시트들 ──
-        seg_color_map = {
-            "요일": ["ROAS","전환수","광고비"],
-            "시간": ["ROAS","전환수","광고비"],
-            "연령": ["ROAS","전환수","광고비"],
-            "기기": ["ROAS","전환수","광고비"],
-            "성별": ["ROAS","전환수","광고비"],
-            "지역": ["ROAS","전환수","광고비"],
-        }
-        for seg_type, sdf in segment_dfs.items():
-            if sdf is None or sdf.empty:
-                continue
-            clean_name = seg_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
-            sdf.to_excel(writer, sheet_name=clean_name, index=False)
-            ccols = next((v for k,v in seg_color_map.items() if k in clean_name), [])
-            style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
-     except Exception as _ex2:
-      _excel_ok = False
-      st.warning(f"엑셀 생성 중 오류: {_ex2}")
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            for sname, sdf, ccols in _sheets:
+                sdf.to_excel(writer, sheet_name=sname[:31], index=False)
+                style_sheet(writer.sheets[sname[:31]], sdf, color_cols=ccols)
+            for seg_type, sdf in _seg_dfs_dl.items():
+                if sdf is None or sdf.empty:
+                    continue
+                clean_name = seg_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
+                sdf.to_excel(writer, sheet_name=clean_name, index=False)
+                ccols = next((v for k,v in _seg_color_map.items() if k in clean_name), [])
+                style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
+    except Exception as _ex:
+        _excel_ok = False
+        st.warning(f"엑셀 생성 오류: {_ex}")
 
     dl_col1, dl_col2 = st.columns(2)
     with dl_col1:
