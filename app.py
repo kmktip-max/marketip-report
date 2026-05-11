@@ -2944,14 +2944,21 @@ def show_results(adf, api_key, model):
                         )
 
     buf = io.BytesIO()
-    segment_dfs = st.session_state.get("segment_dfs", {})
-    tbl = adf.copy()
-    tbl["상태"] = tbl.apply(make_badge, axis=1)
-    disp_cols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl.columns]
-    honey_export = tbl[tbl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
-    waste_export  = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+    _excel_ok = True
+    try:
+     segment_dfs = st.session_state.get("segment_dfs", {})
+     tbl_dl = adf.copy()
+     tbl_dl["상태"] = tbl_dl.apply(make_badge, axis=1)
+     disp_cols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in tbl_dl.columns]
+     honey_export = tbl_dl[tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
+     waste_export  = tbl_dl[tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+    except Exception as _ex:
+     _excel_ok = False
+     st.warning(f"엑셀 데이터 준비 중 오류: {_ex}")
 
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+    if _excel_ok:
+     try:
+      with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         # ── 키워드 시트들 ──
         sheets = [
             ("📋 전체 키워드", tbl[disp_cols],  ["CTR","전환율","ROAS"]),
@@ -2978,16 +2985,22 @@ def show_results(adf, api_key, model):
             sdf.to_excel(writer, sheet_name=clean_name, index=False)
             ccols = next((v for k,v in seg_color_map.items() if k in clean_name), [])
             style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
+     except Exception as _ex2:
+      _excel_ok = False
+      st.warning(f"엑셀 생성 중 오류: {_ex2}")
 
     dl_col1, dl_col2 = st.columns(2)
     with dl_col1:
-        st.download_button(
-            "📥 엑셀 다운로드 (멀티시트)",
-            data=buf.getvalue(),
-            file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
+        if _excel_ok and buf.getvalue():
+            st.download_button(
+                "📥 엑셀 다운로드 (멀티시트)",
+                data=buf.getvalue(),
+                file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+        else:
+            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True, use_container_width=True)
     with dl_col2:
         if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary"):
             with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
