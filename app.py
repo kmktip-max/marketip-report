@@ -1352,6 +1352,355 @@ def run_ai(full_messages, api_key, model):
 
     return full, cost
 
+
+# ────────────────────────────────────────────
+# PDF 보고서 생성 (모듈 레벨)
+# ────────────────────────────────────────────
+def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
+    from fpdf import FPDF
+    import urllib.request, os, tempfile, re
+
+    # 한국어 폰트 다운로드 (캐시)
+    font_path = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
+    if not os.path.exists(font_path):
+        try:
+            urllib.request.urlretrieve(
+                "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
+                font_path
+            )
+        except Exception:
+            font_path = None
+
+    class PDF(FPDF):
+        def header(self):
+            self.set_fill_color(13, 71, 161)
+            self.rect(0, 0, 210, 12, "F")
+            self.set_font("NanumGothic" if font_path else "Helvetica", size=8)
+            self.set_text_color(255, 255, 255)
+            self.set_xy(10, 3)
+            self.cell(0, 6, "마케팁 광고 구조 분석 보고서", align="L")
+            self.set_xy(0, 3)
+            self.cell(200, 6, datetime.now().strftime("%Y.%m.%d"), align="R")
+            self.set_text_color(0, 0, 0)
+            self.ln(8)
+
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("NanumGothic" if font_path else "Helvetica", size=7)
+            self.set_text_color(150, 150, 150)
+            self.cell(0, 8, f"마케팁 · {advertiser_name} · {self.page_no()} 페이지", align="C")
+
+    pdf = PDF()
+    if font_path:
+        pdf.add_font("NanumGothic", "", font_path)
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_left_margin(12)
+    pdf.set_right_margin(12)
+    W = 186  # 사용 가능 너비
+
+    FN = "NanumGothic" if font_path else "Helvetica"
+    def kf(sz): pdf.set_font(FN, size=sz)
+
+    def section_title(txt, r=13, g=71, b=161):
+        kf(11)
+        pdf.set_fill_color(r,g,b)
+        pdf.set_text_color(255,255,255)
+        pdf.cell(W, 9, f"  {txt}", fill=True, ln=True)
+        pdf.set_text_color(17,17,17)
+        pdf.ln(3)
+
+    def divider():
+        pdf.set_draw_color(220,220,220)
+        pdf.line(12, pdf.get_y(), 198, pdf.get_y())
+        pdf.ln(3)
+
+    def safe_cell(w, h, txt, **kw):
+        try: pdf.cell(w, h, str(txt)[:30], **kw)
+        except: pdf.cell(w, h, "-", **kw)
+
+    def safe_line(txt, h=5):
+        try: pdf.multi_cell(W, h, str(txt))
+        except:
+            try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'))
+            except: pass
+
+    # 지표 계산
+    total_imp   = adf["노출수"].sum()
+    total_click = adf["클릭수"].sum()
+    total_spend = adf["광고비"].sum()
+    total_conv  = adf["전환수"].sum()
+    total_rev   = adf["전환매출"].sum()
+    ctr  = round(total_click/total_imp*100,2)  if total_imp   > 0 else 0
+    cvr  = round(total_conv/total_click*100,2) if total_click > 0 else 0
+    cpa  = round(total_spend/total_conv,0)      if total_conv  > 0 else 0
+    roas = round(total_rev/total_spend*100,2)   if total_spend > 0 else 0
+    cpc  = round(total_spend/total_click,0)     if total_click > 0 else 0
+
+    # ━━━ 표지 ━━━
+    pdf.add_page()
+    pdf.set_fill_color(13,71,161)
+    pdf.rect(0,0,210,297,"F")
+    pdf.set_fill_color(40,180,99)
+    pdf.rect(0,200,210,4,"F")
+    kf(30); pdf.set_text_color(255,255,255)
+    pdf.set_xy(15,70); pdf.multi_cell(180,14,"마케팁\n광고 구조 분석 보고서",align="C")
+    kf(14); pdf.set_xy(15,145); pdf.cell(180,10,advertiser_name,align="C")
+    kf(11); pdf.set_xy(15,162); pdf.cell(180,8,datetime.now().strftime("%Y년 %m월 %d일"),align="C")
+    kf(8); pdf.set_text_color(180,210,255)
+    pdf.set_xy(15,240); pdf.cell(180,7,"Powered by 마케팁 AI 광고 구조 분석 시스템",align="C")
+
+    # ━━━ 요약 지표 페이지 ━━━
+    pdf.add_page()
+    pdf.set_text_color(17,17,17)
+    section_title("광고 구조 핵심 지표 요약")
+
+    # 2열 카드형 지표
+    cards = [
+        ("총 광고비",    f"W{total_spend:,.0f}"),
+        ("총 노출수",    f"{total_imp:,.0f}"),
+        ("총 클릭수",    f"{total_click:,.0f}"),
+        ("총 전환수",    f"{total_conv:,.0f}건"),
+        ("총 전환매출",  f"W{total_rev:,.0f}"),
+        ("ROAS",         f"{roas}%"),
+        ("CTR (클릭률)", f"{ctr}%"),
+        ("CPC",          f"W{cpc:,.0f}"),
+        ("전환율",       f"{cvr}%"),
+        ("CPA",          f"W{cpa:,.0f}"),
+    ]
+    kf(9)
+    for i, (lbl, val) in enumerate(cards):
+        pdf.set_fill_color(232, 240, 254)
+        pdf.cell(25, 10, f"  {lbl}", border=1, fill=True)
+        pdf.set_fill_color(255, 255, 255)
+        if i % 2 == 0:
+            pdf.cell(65, 10, f"  {val}", border=1, fill=False)
+        else:
+            pdf.cell(65, 10, f"  {val}", border=1, fill=False, ln=True)
+    if len(cards) % 2 != 0:
+        pdf.ln()
+    pdf.ln(6)
+    divider()
+
+    # 위험 신호 요약
+    waste_kw = adf[(adf["클릭수"]>=50)&(adf["전환수"]==0)]
+    honey_kw = tbl[tbl["상태"].str.contains("증액권장|증액테스트", na=False)] if "상태" in tbl.columns else pd.DataFrame()
+    waste_kw2 = tbl[tbl["상태"].str.contains("삭제검토|감액", na=False)] if "상태" in tbl.columns else pd.DataFrame()
+    section_title("주요 현황 요약", 40,100,40)
+    kf(9)
+    summary_lines = [
+        f"• 분석 키워드 수: {len(adf)}개",
+        f"• 꿀통 키워드 (ROAS 우수): {len(honey_kw)}개",
+        f"• 낭비 키워드 (전환 없음 / ROAS 100% 미만): {len(waste_kw2)}개",
+        f"• 클릭 50회 이상 전환 0 키워드: {len(waste_kw)}개  (소진 광고비: W{waste_kw['광고비'].sum():,.0f})",
+    ]
+    for line in summary_lines:
+        safe_line(line, 6)
+    pdf.ln(4)
+
+    # ━━━ 핵심 요약 3줄 + 광고 구조 진단 ━━━
+    _total_imp_p   = adf["노출수"].sum()
+    _total_click_p = adf["클릭수"].sum()
+    _total_spend_p = adf["광고비"].sum()
+    _total_conv_p  = adf["전환수"].sum()
+    _total_rev_p   = adf["전환매출"].sum()
+    _roas_p  = round(_total_rev_p  / _total_spend_p * 100, 2) if _total_spend_p > 0 else 0
+    _ctr_p   = round(_total_click_p / _total_imp_p   * 100, 2) if _total_imp_p   > 0 else 0
+    _cvr_p   = round(_total_conv_p  / _total_click_p * 100, 2) if _total_click_p > 0 else 0
+    _waste_p = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+    _waste_amt_p = _waste_p["광고비"].sum()
+    _waste_ratio_p = _waste_amt_p / _total_spend_p * 100 if _total_spend_p > 0 else 0
+
+    section_title("핵심 요약 및 광고 구조 진단", 13, 71, 161)
+    kf(9)
+    sum3 = []
+    if _roas_p >= 200:
+        sum3.append(f"• ROAS {_roas_p:.0f}% — 수익 구조 양호. 꿀통 키워드 증액으로 추가 확장 가능")
+    elif _roas_p >= 100:
+        sum3.append(f"• ROAS {_roas_p:.0f}% — 손익분기 수준. 낭비 키워드 정리 후 효율 개선 필요")
+    elif _roas_p > 0:
+        sum3.append(f"• ROAS {_roas_p:.0f}% — 광고비보다 매출이 낮음. 즉시 구조 점검 필요")
+    if _waste_ratio_p >= 10:
+        sum3.append(f"• 광고비 {_waste_ratio_p:.0f}% (W{_waste_amt_p:,.0f})이 전환 없이 소진 중 — 낭비 키워드 점검 필요")
+    else:
+        sum3.append(f"• 낭비 비중 {_waste_ratio_p:.0f}% — 광고비 소진 구조 효율적")
+    if _cvr_p > 0 and _cvr_p < 2:
+        sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 낮음. 랜딩페이지 구조 점검 권장")
+    elif _cvr_p >= 2:
+        sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 구조 양호")
+    for s in sum3:
+        safe_line(s, 6)
+    pdf.ln(3)
+
+    # 즉시 실행 가능한 개선 포인트 3가지
+    section_title("즉시 실행 가능한 개선 포인트 3가지", 40,100,40)
+    kf(9)
+    _honey_p = adf[adf.get("등급", pd.Series(dtype=str)).isin(["증액 권장", "증액 테스트"])] if "등급" in adf.columns else pd.DataFrame()
+
+    pts = []
+    if not _waste_p.empty:
+        pts.append(f"1. 낭비 키워드 즉시 일시중지\n   클릭 10회 이상 전환 없는 키워드 {len(_waste_p)}개 → 일시중지 시 월 약 W{_waste_amt_p:,.0f} 절약 가능")
+    if not _honey_p.empty:
+        pts.append(f"2. 성과 키워드 입찰가 상향\n   ROAS 우수 키워드 {len(_honey_p)}개 → 입찰가 10~20% 상향 시 전환 추가 확보 기대")
+    if _ctr_p > 0 and _ctr_p < 1:
+        pts.append(f"3. 광고 소재 A/B 테스트\n   현재 CTR {_ctr_p:.2f}% (업종 평균 미달) → 광고 문구 교체 테스트 권장")
+    elif _cvr_p > 0 and _cvr_p < 2:
+        pts.append(f"3. 랜딩페이지 전환 구조 점검\n   전환율 {_cvr_p:.2f}% — 클릭은 있으나 문의/구매 연결 낮음")
+    else:
+        pts.append(f"3. 광고 노출 시간대 최적화\n   전환 집중 시간대에 예산 집중 배분 → 새벽 저입찰 전략 또는 고전환 시간대 증액 권장")
+    for pt in pts:
+        for line in pt.split("\n"):
+            safe_line(line, 6)
+        pdf.ln(2)
+    pdf.ln(2)
+
+    # ━━━ 위험 신호 감지 ━━━
+    section_title("위험 신호 감지", 183, 28, 28)
+    kf(9)
+    _alerts_pdf = []
+    _w50 = adf[(adf["클릭수"] >= 50) & (adf["전환수"] == 0)]
+    if not _w50.empty:
+        _alerts_pdf.append(f"[위험] 광고비 낭비 가능성 — 클릭 50회 이상·전환 0인 키워드 {len(_w50)}개 (W{_w50['광고비'].sum():,.0f} 소진 중)")
+    _roas_drop = adf[(adf["ROAS"].notna()) & (adf["ROAS"] < 100) & (adf["광고비"] > adf["광고비"].mean())]
+    if not _roas_drop.empty:
+        _alerts_pdf.append(f"[위험] 구조 손실 위험 — ROAS 100% 미만이면서 광고비 평균 초과 키워드 {len(_roas_drop)}개")
+    if adf["CTR"].notna().any() and adf["전환율"].notna().any():
+        _illusion = adf[(adf["CTR"] > adf["CTR"].mean() * 1.3) & (adf["전환율"] < adf["전환율"].mean() * 0.7)]
+        if not _illusion.empty:
+            _alerts_pdf.append(f"[경고] 클릭 착시 구조 — CTR 높으나 전환율 낮은 키워드 {len(_illusion)}개")
+    _spread = adf[adf["ROAS"].notna() & (adf["전환수"] > 0)]
+    if len(adf) > 0 and len(_spread) / len(adf) < 0.3:
+        _alerts_pdf.append(f"[경고] 키워드 예산 과집중 — 전환 발생 키워드가 전체의 {len(_spread)/len(adf)*100:.1f}%에 불과")
+    if not _alerts_pdf:
+        safe_line("• 주요 위험 신호가 감지되지 않았습니다.", 6)
+    else:
+        for a in _alerts_pdf:
+            safe_line(f"• {a}", 6)
+    pdf.ln(4)
+
+    # ━━━ 키워드 TOP 분석 (텍스트 테이블 — 빠른 생성) ━━━
+    pdf.add_page()
+    section_title("키워드 TOP 분석")
+    kf(9)
+
+    def _top_table(title, df, val_col, fmt_fn):
+        if df.empty: return
+        pdf.set_fill_color(232,240,254)
+        pdf.cell(W, 8, f"  {title}", border=1, fill=True, ln=True)
+        kf(8)
+        for _, row in df.head(8).iterrows():
+            kw  = str(row.get("키워드",""))[:28]
+            val = fmt_fn(row.get(val_col, 0))
+            pdf.cell(120, 6, f"  {kw}", border=1)
+            pdf.cell(W-120, 6, val, border=1, align="C", ln=True)
+        pdf.ln(4)
+
+    _ts = adf.nlargest(8,"광고비")[["키워드","광고비"]].dropna() if "광고비" in adf.columns else pd.DataFrame()
+    _tr = adf[adf["ROAS"].notna()].nlargest(8,"ROAS")[["키워드","ROAS"]].dropna() if "ROAS" in adf.columns else pd.DataFrame()
+    _tc = (adf[adf["전환율"].notna()&(adf["전환수"]>0)].nlargest(8,"전환율")[["키워드","전환율"]].dropna()
+           if "전환율" in adf.columns else pd.DataFrame())
+    _tw = (adf[(adf["전환수"]==0)&(adf["클릭수"]>0)].nlargest(8,"광고비")[["키워드","광고비"]].dropna()
+           if "전환수" in adf.columns else pd.DataFrame())
+
+    _top_table("광고비 TOP 8", _ts, "광고비",  lambda v: f"W{v:,.0f}")
+    _top_table("ROAS TOP 8",   _tr, "ROAS",     lambda v: f"{v:.0f}%")
+    _top_table("전환율 TOP 8", _tc, "전환율",   lambda v: f"{v:.2f}%")
+    _top_table("낭비 키워드 TOP 8 (전환0)", _tw, "광고비", lambda v: f"W{v:,.0f}")
+
+    # ━━━ 세그먼트 분석 (텍스트 테이블) ━━━
+    _seg_valid = {k: v for k, v in segment_dfs.items() if v is not None and not v.empty}
+    for _seg_type, _sdf in _seg_valid.items():
+        try:
+            _slabel = (_seg_type.replace("📅","").replace("⏰","").replace("👤","")
+                       .replace("📱","").replace("📍","").replace("👫","").strip())
+            pdf.add_page()
+            section_title(f"세그먼트 분석 — {_slabel}")
+            kf(8)
+            # 컬럼 헤더
+            show_cols = _sdf.columns[:6].tolist()
+            col_w = min(W // max(len(show_cols),1), 40)
+            pdf.set_fill_color(232,240,254)
+            for c in show_cols:
+                pdf.cell(col_w, 7, str(c)[:12], border=1, fill=True, align="C")
+            pdf.ln()
+            for i, (_, row) in enumerate(_sdf.head(15).iterrows()):
+                pdf.set_fill_color(248,249,250) if i%2==0 else pdf.set_fill_color(255,255,255)
+                for c in show_cols:
+                    val = str(row.get(c,""))[:12]
+                    pdf.cell(col_w, 6, val, border=1, align="C")
+                pdf.ln()
+            pdf.ln(4)
+        except Exception:
+            pass
+
+    # ━━━ 꿀통 + 낭비 키워드 (한 페이지) ━━━
+    pdf.add_page()
+    section_title("키워드 분석 결과")
+
+    show_c = [c for c in ["키워드","광고비","전환수","전환율","ROAS","상태"] if c in tbl.columns]
+    cw = [60, 28, 20, 20, 24, 26][:len(show_c)]
+
+    def kw_table(title, df, hcol):
+        kf(9)
+        pdf.set_fill_color(*hcol)
+        pdf.set_text_color(255,255,255)
+        pdf.cell(W, 8, f"  {title}", fill=True, ln=True)
+        pdf.set_text_color(17,17,17)
+        pdf.ln(1)
+        kf(8)
+        pdf.set_fill_color(232,240,254)
+        for c, w in zip(show_c, cw):
+            pdf.cell(w, 7, c, border=1, fill=True, align="C")
+        pdf.ln()
+        for i, (_, row) in enumerate(df[show_c].head(15).iterrows()):
+            if i % 2 == 0:
+                pdf.set_fill_color(248, 249, 250)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+            for c, w in zip(show_c, cw):
+                val = row[c] if pd.notna(row[c]) else "-"
+                safe_cell(w, 6, val, border=1, align="C")
+            pdf.ln()
+        pdf.ln(5)
+
+    if not honey_kw.empty: kw_table("꿀통 키워드 — ROAS 우수, 증액 검토 권장", honey_kw, (40,160,80))
+    if not waste_kw2.empty: kw_table("낭비 키워드 — 즉시 점검 필요", waste_kw2, (192,57,43))
+
+    # ━━━ AI 컨설팅 (맨 마지막) ━━━
+    ai_msgs = [m for m in chat_messages if m["role"] == "assistant"]
+    if ai_msgs:
+        # 마지막 AI 메시지만 사용 (가장 종합적)
+        last = ai_msgs[-1]["content"]
+        last = re.sub(r'\*\*(.+?)\*\*', r'\1', last)
+        last = re.sub(r'#{1,3}\s*', '', last)
+        last = re.sub(r'[-─]{3,}', '', last)
+        last = re.sub(r'\|[^\n]+\|', '', last)
+        last = re.sub(r'\n{3,}', '\n\n', last).strip()
+
+        pdf.add_page()
+        section_title("AI 광고 구조 컨설팅")
+        kf(9)
+        prev_blank = False
+        for line in last.split("\n"):
+            line = line.strip()
+            if not line:
+                if not prev_blank: pdf.ln(3)
+                prev_blank = True
+                continue
+            prev_blank = False
+            # 소제목 처리
+            if line.startswith(("1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","[","##")):
+                pdf.ln(2)
+                pdf.set_fill_color(240,244,255)
+                try: pdf.multi_cell(W, 6, f"  {line}", fill=True)
+                except: pass
+            elif line.startswith(("•","▸","-","*")):
+                pdf.set_x(16)
+                safe_line(f"  {line}", 5)
+            else:
+                safe_line(line, 5)
+
+    return bytes(pdf.output())
+
 # ────────────────────────────────────────────
 # 결과 화면
 # ────────────────────────────────────────────
@@ -2525,351 +2874,6 @@ def show_results(adf, api_key, model):
     # ── 다운로드 ──
     st.markdown('<div class="section-title">⬇️ 결과 다운로드</div>', unsafe_allow_html=True)
 
-    # ── PDF 생성 함수 ──────────────────────────────
-    def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
-        from fpdf import FPDF
-        import urllib.request, os, tempfile, re
-
-        # 한국어 폰트 다운로드 (캐시)
-        font_path = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
-        if not os.path.exists(font_path):
-            try:
-                urllib.request.urlretrieve(
-                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
-                    font_path
-                )
-            except Exception:
-                font_path = None
-
-        class PDF(FPDF):
-            def header(self):
-                self.set_fill_color(13, 71, 161)
-                self.rect(0, 0, 210, 12, "F")
-                self.set_font("NanumGothic" if font_path else "Helvetica", size=8)
-                self.set_text_color(255, 255, 255)
-                self.set_xy(10, 3)
-                self.cell(0, 6, "마케팁 광고 구조 분석 보고서", align="L")
-                self.set_xy(0, 3)
-                self.cell(200, 6, datetime.now().strftime("%Y.%m.%d"), align="R")
-                self.set_text_color(0, 0, 0)
-                self.ln(8)
-
-            def footer(self):
-                self.set_y(-12)
-                self.set_font("NanumGothic" if font_path else "Helvetica", size=7)
-                self.set_text_color(150, 150, 150)
-                self.cell(0, 8, f"마케팁 · {advertiser_name} · {self.page_no()} 페이지", align="C")
-
-        pdf = PDF()
-        if font_path:
-            pdf.add_font("NanumGothic", "", font_path)
-        pdf.set_auto_page_break(auto=True, margin=18)
-        pdf.set_left_margin(12)
-        pdf.set_right_margin(12)
-        W = 186  # 사용 가능 너비
-
-        FN = "NanumGothic" if font_path else "Helvetica"
-        def kf(sz): pdf.set_font(FN, size=sz)
-
-        def section_title(txt, r=13, g=71, b=161):
-            kf(11)
-            pdf.set_fill_color(r,g,b)
-            pdf.set_text_color(255,255,255)
-            pdf.cell(W, 9, f"  {txt}", fill=True, ln=True)
-            pdf.set_text_color(17,17,17)
-            pdf.ln(3)
-
-        def divider():
-            pdf.set_draw_color(220,220,220)
-            pdf.line(12, pdf.get_y(), 198, pdf.get_y())
-            pdf.ln(3)
-
-        def safe_cell(w, h, txt, **kw):
-            try: pdf.cell(w, h, str(txt)[:30], **kw)
-            except: pdf.cell(w, h, "-", **kw)
-
-        def safe_line(txt, h=5):
-            try: pdf.multi_cell(W, h, str(txt))
-            except:
-                try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'))
-                except: pass
-
-        # 지표 계산
-        total_imp   = adf["노출수"].sum()
-        total_click = adf["클릭수"].sum()
-        total_spend = adf["광고비"].sum()
-        total_conv  = adf["전환수"].sum()
-        total_rev   = adf["전환매출"].sum()
-        ctr  = round(total_click/total_imp*100,2)  if total_imp   > 0 else 0
-        cvr  = round(total_conv/total_click*100,2) if total_click > 0 else 0
-        cpa  = round(total_spend/total_conv,0)      if total_conv  > 0 else 0
-        roas = round(total_rev/total_spend*100,2)   if total_spend > 0 else 0
-        cpc  = round(total_spend/total_click,0)     if total_click > 0 else 0
-
-        # ━━━ 표지 ━━━
-        pdf.add_page()
-        pdf.set_fill_color(13,71,161)
-        pdf.rect(0,0,210,297,"F")
-        pdf.set_fill_color(40,180,99)
-        pdf.rect(0,200,210,4,"F")
-        kf(30); pdf.set_text_color(255,255,255)
-        pdf.set_xy(15,70); pdf.multi_cell(180,14,"마케팁\n광고 구조 분석 보고서",align="C")
-        kf(14); pdf.set_xy(15,145); pdf.cell(180,10,advertiser_name,align="C")
-        kf(11); pdf.set_xy(15,162); pdf.cell(180,8,datetime.now().strftime("%Y년 %m월 %d일"),align="C")
-        kf(8); pdf.set_text_color(180,210,255)
-        pdf.set_xy(15,240); pdf.cell(180,7,"Powered by 마케팁 AI 광고 구조 분석 시스템",align="C")
-
-        # ━━━ 요약 지표 페이지 ━━━
-        pdf.add_page()
-        pdf.set_text_color(17,17,17)
-        section_title("광고 구조 핵심 지표 요약")
-
-        # 2열 카드형 지표
-        cards = [
-            ("총 광고비",    f"W{total_spend:,.0f}"),
-            ("총 노출수",    f"{total_imp:,.0f}"),
-            ("총 클릭수",    f"{total_click:,.0f}"),
-            ("총 전환수",    f"{total_conv:,.0f}건"),
-            ("총 전환매출",  f"W{total_rev:,.0f}"),
-            ("ROAS",         f"{roas}%"),
-            ("CTR (클릭률)", f"{ctr}%"),
-            ("CPC",          f"W{cpc:,.0f}"),
-            ("전환율",       f"{cvr}%"),
-            ("CPA",          f"W{cpa:,.0f}"),
-        ]
-        kf(9)
-        for i, (lbl, val) in enumerate(cards):
-            pdf.set_fill_color(232, 240, 254)
-            pdf.cell(25, 10, f"  {lbl}", border=1, fill=True)
-            pdf.set_fill_color(255, 255, 255)
-            if i % 2 == 0:
-                pdf.cell(65, 10, f"  {val}", border=1, fill=False)
-            else:
-                pdf.cell(65, 10, f"  {val}", border=1, fill=False, ln=True)
-        if len(cards) % 2 != 0:
-            pdf.ln()
-        pdf.ln(6)
-        divider()
-
-        # 위험 신호 요약
-        waste_kw = adf[(adf["클릭수"]>=50)&(adf["전환수"]==0)]
-        honey_kw = tbl[tbl.apply(is_honey,axis=1)]
-        waste_kw2 = tbl[tbl.apply(is_waste,axis=1)]
-        section_title("주요 현황 요약", 40,100,40)
-        kf(9)
-        summary_lines = [
-            f"• 분석 키워드 수: {len(adf)}개",
-            f"• 꿀통 키워드 (ROAS 우수): {len(honey_kw)}개",
-            f"• 낭비 키워드 (전환 없음 / ROAS 100% 미만): {len(waste_kw2)}개",
-            f"• 클릭 50회 이상 전환 0 키워드: {len(waste_kw)}개  (소진 광고비: W{waste_kw['광고비'].sum():,.0f})",
-        ]
-        for line in summary_lines:
-            safe_line(line, 6)
-        pdf.ln(4)
-
-        # ━━━ 핵심 요약 3줄 + 광고 구조 진단 ━━━
-        _total_imp_p   = adf["노출수"].sum()
-        _total_click_p = adf["클릭수"].sum()
-        _total_spend_p = adf["광고비"].sum()
-        _total_conv_p  = adf["전환수"].sum()
-        _total_rev_p   = adf["전환매출"].sum()
-        _roas_p  = round(_total_rev_p  / _total_spend_p * 100, 2) if _total_spend_p > 0 else 0
-        _ctr_p   = round(_total_click_p / _total_imp_p   * 100, 2) if _total_imp_p   > 0 else 0
-        _cvr_p   = round(_total_conv_p  / _total_click_p * 100, 2) if _total_click_p > 0 else 0
-        _waste_p = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
-        _waste_amt_p = _waste_p["광고비"].sum()
-        _waste_ratio_p = _waste_amt_p / _total_spend_p * 100 if _total_spend_p > 0 else 0
-
-        section_title("핵심 요약 및 광고 구조 진단", 13, 71, 161)
-        kf(9)
-        sum3 = []
-        if _roas_p >= 200:
-            sum3.append(f"• ROAS {_roas_p:.0f}% — 수익 구조 양호. 꿀통 키워드 증액으로 추가 확장 가능")
-        elif _roas_p >= 100:
-            sum3.append(f"• ROAS {_roas_p:.0f}% — 손익분기 수준. 낭비 키워드 정리 후 효율 개선 필요")
-        elif _roas_p > 0:
-            sum3.append(f"• ROAS {_roas_p:.0f}% — 광고비보다 매출이 낮음. 즉시 구조 점검 필요")
-        if _waste_ratio_p >= 10:
-            sum3.append(f"• 광고비 {_waste_ratio_p:.0f}% (W{_waste_amt_p:,.0f})이 전환 없이 소진 중 — 낭비 키워드 점검 필요")
-        else:
-            sum3.append(f"• 낭비 비중 {_waste_ratio_p:.0f}% — 광고비 소진 구조 효율적")
-        if _cvr_p > 0 and _cvr_p < 2:
-            sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 낮음. 랜딩페이지 구조 점검 권장")
-        elif _cvr_p >= 2:
-            sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 구조 양호")
-        for s in sum3:
-            safe_line(s, 6)
-        pdf.ln(3)
-
-        # 즉시 실행 가능한 개선 포인트 3가지
-        section_title("즉시 실행 가능한 개선 포인트 3가지", 40,100,40)
-        kf(9)
-        _honey_p = adf[adf.get("등급", pd.Series(dtype=str)).isin(["증액 권장", "증액 테스트"])] if "등급" in adf.columns else pd.DataFrame()
-
-        pts = []
-        if not _waste_p.empty:
-            pts.append(f"1. 낭비 키워드 즉시 일시중지\n   클릭 10회 이상 전환 없는 키워드 {len(_waste_p)}개 → 일시중지 시 월 약 W{_waste_amt_p:,.0f} 절약 가능")
-        if not _honey_p.empty:
-            pts.append(f"2. 성과 키워드 입찰가 상향\n   ROAS 우수 키워드 {len(_honey_p)}개 → 입찰가 10~20% 상향 시 전환 추가 확보 기대")
-        if _ctr_p > 0 and _ctr_p < 1:
-            pts.append(f"3. 광고 소재 A/B 테스트\n   현재 CTR {_ctr_p:.2f}% (업종 평균 미달) → 광고 문구 교체 테스트 권장")
-        elif _cvr_p > 0 and _cvr_p < 2:
-            pts.append(f"3. 랜딩페이지 전환 구조 점검\n   전환율 {_cvr_p:.2f}% — 클릭은 있으나 문의/구매 연결 낮음")
-        else:
-            pts.append(f"3. 광고 노출 시간대 최적화\n   전환 집중 시간대에 예산 집중 배분 → 새벽 저입찰 전략 또는 고전환 시간대 증액 권장")
-        for pt in pts:
-            for line in pt.split("\n"):
-                safe_line(line, 6)
-            pdf.ln(2)
-        pdf.ln(2)
-
-        # ━━━ 위험 신호 감지 ━━━
-        section_title("위험 신호 감지", 183, 28, 28)
-        kf(9)
-        _alerts_pdf = []
-        _w50 = adf[(adf["클릭수"] >= 50) & (adf["전환수"] == 0)]
-        if not _w50.empty:
-            _alerts_pdf.append(f"[위험] 광고비 낭비 가능성 — 클릭 50회 이상·전환 0인 키워드 {len(_w50)}개 (W{_w50['광고비'].sum():,.0f} 소진 중)")
-        _roas_drop = adf[(adf["ROAS"].notna()) & (adf["ROAS"] < 100) & (adf["광고비"] > adf["광고비"].mean())]
-        if not _roas_drop.empty:
-            _alerts_pdf.append(f"[위험] 구조 손실 위험 — ROAS 100% 미만이면서 광고비 평균 초과 키워드 {len(_roas_drop)}개")
-        if adf["CTR"].notna().any() and adf["전환율"].notna().any():
-            _illusion = adf[(adf["CTR"] > adf["CTR"].mean() * 1.3) & (adf["전환율"] < adf["전환율"].mean() * 0.7)]
-            if not _illusion.empty:
-                _alerts_pdf.append(f"[경고] 클릭 착시 구조 — CTR 높으나 전환율 낮은 키워드 {len(_illusion)}개")
-        _spread = adf[adf["ROAS"].notna() & (adf["전환수"] > 0)]
-        if len(adf) > 0 and len(_spread) / len(adf) < 0.3:
-            _alerts_pdf.append(f"[경고] 키워드 예산 과집중 — 전환 발생 키워드가 전체의 {len(_spread)/len(adf)*100:.1f}%에 불과")
-        if not _alerts_pdf:
-            safe_line("• 주요 위험 신호가 감지되지 않았습니다.", 6)
-        else:
-            for a in _alerts_pdf:
-                safe_line(f"• {a}", 6)
-        pdf.ln(4)
-
-        # ━━━ 키워드 TOP 분석 (텍스트 테이블 — 빠른 생성) ━━━
-        pdf.add_page()
-        section_title("키워드 TOP 분석")
-        kf(9)
-
-        def _top_table(title, df, val_col, fmt_fn):
-            if df.empty: return
-            pdf.set_fill_color(232,240,254)
-            pdf.cell(W, 8, f"  {title}", border=1, fill=True, ln=True)
-            kf(8)
-            for _, row in df.head(8).iterrows():
-                kw  = str(row.get("키워드",""))[:28]
-                val = fmt_fn(row.get(val_col, 0))
-                pdf.cell(120, 6, f"  {kw}", border=1)
-                pdf.cell(W-120, 6, val, border=1, align="C", ln=True)
-            pdf.ln(4)
-
-        _ts = adf.nlargest(8,"광고비")[["키워드","광고비"]].dropna() if "광고비" in adf.columns else pd.DataFrame()
-        _tr = adf[adf["ROAS"].notna()].nlargest(8,"ROAS")[["키워드","ROAS"]].dropna() if "ROAS" in adf.columns else pd.DataFrame()
-        _tc = (adf[adf["전환율"].notna()&(adf["전환수"]>0)].nlargest(8,"전환율")[["키워드","전환율"]].dropna()
-               if "전환율" in adf.columns else pd.DataFrame())
-        _tw = (adf[(adf["전환수"]==0)&(adf["클릭수"]>0)].nlargest(8,"광고비")[["키워드","광고비"]].dropna()
-               if "전환수" in adf.columns else pd.DataFrame())
-
-        _top_table("광고비 TOP 8", _ts, "광고비",  lambda v: f"W{v:,.0f}")
-        _top_table("ROAS TOP 8",   _tr, "ROAS",     lambda v: f"{v:.0f}%")
-        _top_table("전환율 TOP 8", _tc, "전환율",   lambda v: f"{v:.2f}%")
-        _top_table("낭비 키워드 TOP 8 (전환0)", _tw, "광고비", lambda v: f"W{v:,.0f}")
-
-        # ━━━ 세그먼트 분석 (텍스트 테이블) ━━━
-        _seg_valid = {k: v for k, v in segment_dfs.items() if v is not None and not v.empty}
-        for _seg_type, _sdf in _seg_valid.items():
-            try:
-                _slabel = (_seg_type.replace("📅","").replace("⏰","").replace("👤","")
-                           .replace("📱","").replace("📍","").replace("👫","").strip())
-                pdf.add_page()
-                section_title(f"세그먼트 분석 — {_slabel}")
-                kf(8)
-                # 컬럼 헤더
-                show_cols = _sdf.columns[:6].tolist()
-                col_w = min(W // max(len(show_cols),1), 40)
-                pdf.set_fill_color(232,240,254)
-                for c in show_cols:
-                    pdf.cell(col_w, 7, str(c)[:12], border=1, fill=True, align="C")
-                pdf.ln()
-                for i, (_, row) in enumerate(_sdf.head(15).iterrows()):
-                    pdf.set_fill_color(248,249,250) if i%2==0 else pdf.set_fill_color(255,255,255)
-                    for c in show_cols:
-                        val = str(row.get(c,""))[:12]
-                        pdf.cell(col_w, 6, val, border=1, align="C")
-                    pdf.ln()
-                pdf.ln(4)
-            except Exception:
-                pass
-
-        # ━━━ 꿀통 + 낭비 키워드 (한 페이지) ━━━
-        pdf.add_page()
-        section_title("키워드 분석 결과")
-
-        show_c = [c for c in ["키워드","광고비","전환수","전환율","ROAS","상태"] if c in tbl.columns]
-        cw = [60, 28, 20, 20, 24, 26][:len(show_c)]
-
-        def kw_table(title, df, hcol):
-            kf(9)
-            pdf.set_fill_color(*hcol)
-            pdf.set_text_color(255,255,255)
-            pdf.cell(W, 8, f"  {title}", fill=True, ln=True)
-            pdf.set_text_color(17,17,17)
-            pdf.ln(1)
-            kf(8)
-            pdf.set_fill_color(232,240,254)
-            for c, w in zip(show_c, cw):
-                pdf.cell(w, 7, c, border=1, fill=True, align="C")
-            pdf.ln()
-            for i, (_, row) in enumerate(df[show_c].head(15).iterrows()):
-                if i % 2 == 0:
-                    pdf.set_fill_color(248, 249, 250)
-                else:
-                    pdf.set_fill_color(255, 255, 255)
-                for c, w in zip(show_c, cw):
-                    val = row[c] if pd.notna(row[c]) else "-"
-                    safe_cell(w, 6, val, border=1, align="C")
-                pdf.ln()
-            pdf.ln(5)
-
-        if not honey_kw.empty: kw_table("꿀통 키워드 — ROAS 우수, 증액 검토 권장", honey_kw, (40,160,80))
-        if not waste_kw2.empty: kw_table("낭비 키워드 — 즉시 점검 필요", waste_kw2, (192,57,43))
-
-        # ━━━ AI 컨설팅 (맨 마지막) ━━━
-        ai_msgs = [m for m in chat_messages if m["role"] == "assistant"]
-        if ai_msgs:
-            # 마지막 AI 메시지만 사용 (가장 종합적)
-            last = ai_msgs[-1]["content"]
-            last = re.sub(r'\*\*(.+?)\*\*', r'\1', last)
-            last = re.sub(r'#{1,3}\s*', '', last)
-            last = re.sub(r'[-─]{3,}', '', last)
-            last = re.sub(r'\|[^\n]+\|', '', last)
-            last = re.sub(r'\n{3,}', '\n\n', last).strip()
-
-            pdf.add_page()
-            section_title("AI 광고 구조 컨설팅")
-            kf(9)
-            prev_blank = False
-            for line in last.split("\n"):
-                line = line.strip()
-                if not line:
-                    if not prev_blank: pdf.ln(3)
-                    prev_blank = True
-                    continue
-                prev_blank = False
-                # 소제목 처리
-                if line.startswith(("1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","[","##")):
-                    pdf.ln(2)
-                    pdf.set_fill_color(240,244,255)
-                    try: pdf.multi_cell(W, 6, f"  {line}", fill=True)
-                    except: pass
-                elif line.startswith(("•","▸","-","*")):
-                    pdf.set_x(16)
-                    safe_line(f"  {line}", 5)
-                else:
-                    safe_line(line, 5)
-
-        return bytes(pdf.output())
 
     # ── 다운로드 버튼: 컬럼을 먼저 생성한 뒤 내용을 채움 ──────────────
     dl_col1, dl_col2 = st.columns(2)
