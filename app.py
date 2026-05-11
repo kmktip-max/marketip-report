@@ -1402,49 +1402,46 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
     def kf(sz): pdf.set_font(FN, size=sz)
 
     LM = 12   # left margin mm
-    W  = 186  # usable width mm (A4 210 - 2*12)
+    W  = 186  # usable width mm
 
-    def _xy(x=LM, y=None):
-        if y is None:
-            pdf.set_x(x)
-        else:
-            pdf.set_xy(x, y)
+    # ── absolute-position helpers (never trust fpdf cursor) ──────────────
+    def go(y_offset=0):
+        """Move to left margin at current_y + y_offset."""
+        pdf.set_xy(12, pdf.get_y() + y_offset)
 
     def section_title(txt, r=13, g=71, b=161):
-        _xy(LM)
+        y = pdf.get_y()
+        pdf.set_xy(12, y)
         kf(11)
         pdf.set_fill_color(r, g, b)
         pdf.set_text_color(255, 255, 255)
-        _xy(LM)
-        y0 = pdf.get_y()
-        pdf.cell(W, 9, f"  {txt}", fill=True)
-        _xy(LM, y0 + 9)
+        pdf.set_xy(12, y)
+        pdf.cell(186, 9, f"  {txt}", fill=True)
+        pdf.set_xy(12, y + 9 + 3)   # skip past cell + 3mm gap
         pdf.set_text_color(17, 17, 17)
-        pdf.ln(3)
-        _xy(LM)
 
     def divider():
-        _xy(LM)
-        pdf.set_draw_color(220, 220, 220)
         y = pdf.get_y()
-        pdf.line(LM, y, LM + W, y)
-        pdf.ln(3)
-        _xy(LM)
+        pdf.set_xy(12, y)
+        pdf.set_draw_color(220, 220, 220)
+        pdf.line(12, y, 198, y)
+        pdf.set_xy(12, y + 3)
 
     def safe_cell(w, h, txt, **kw):
         try: pdf.cell(w, h, str(txt)[:30], **kw)
         except: pdf.cell(w, h, "-", **kw)
 
     def safe_line(txt, h=5):
-        _xy(LM)
+        """Render one line of text; always starts and ends at x=12."""
+        y = pdf.get_y()
+        pdf.set_xy(12, y)
+        s = str(txt)
         try:
-            pdf.multi_cell(W, h, str(txt))
+            pdf.cell(186, h, s)
         except:
-            try:
-                pdf.multi_cell(W, h, str(txt).encode('latin-1', 'replace').decode('latin-1'))
-            except:
-                pass
-        _xy(LM)
+            try: pdf.cell(186, h, s.encode('latin-1', 'replace').decode('latin-1'))
+            except: pass
+        pdf.set_xy(12, y + h)    # manually advance y, reset x
 
     # 지표 계산
     total_imp   = adf["노출수"].sum()
