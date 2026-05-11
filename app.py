@@ -2529,11 +2529,6 @@ def show_results(adf, api_key, model):
     def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
         from fpdf import FPDF
         import urllib.request, os, tempfile, re
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        import matplotlib.font_manager as fm
-        import numpy as np
 
         # 한국어 폰트 다운로드 (캐시)
         font_path = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
@@ -2545,8 +2540,6 @@ def show_results(adf, api_key, model):
                 )
             except Exception:
                 font_path = None
-
-        mpl_font = fm.FontProperties(fname=font_path) if font_path and os.path.exists(font_path) else None
 
         class PDF(FPDF):
             def header(self):
@@ -2754,170 +2747,60 @@ def show_results(adf, api_key, model):
                 safe_line(f"• {a}", 6)
         pdf.ln(4)
 
-        # ━━━ 차트 페이지 ━━━
-        def mpl_hbar(vals, labels, title, color, ax):
-            bars = ax.barh(labels, vals, color=color, edgecolor="white", linewidth=1, height=0.6)
-            ax.set_title(title, fontproperties=mpl_font, fontsize=9, pad=6,
-                         color="#0D47A1", fontweight="bold")
-            ax.set_facecolor("#f8f9fa")
-            for sp in ["top","right","left"]: ax.spines[sp].set_visible(False)
-            ax.tick_params(axis="both", labelsize=7)
-            if mpl_font:
-                for lbl in ax.get_yticklabels(): lbl.set_fontproperties(mpl_font)
-            for bar, val in zip(bars, vals):
-                ax.text(bar.get_width()*1.01, bar.get_y()+bar.get_height()/2,
-                        f"{val:,.1f}", va="center", ha="left", fontsize=7,
-                        fontproperties=mpl_font)
-            ax.margins(x=0.25)
+        # ━━━ 키워드 TOP 분석 (텍스트 테이블 — 빠른 생성) ━━━
+        pdf.add_page()
+        section_title("키워드 TOP 분석")
+        kf(9)
 
-        try:
-            pdf.add_page()
-            section_title("키워드 시각화 분석")
+        def _top_table(title, df, val_col, fmt_fn):
+            if df.empty: return
+            pdf.set_fill_color(232,240,254)
+            pdf.cell(W, 8, f"  {title}", border=1, fill=True, ln=True)
+            kf(8)
+            for _, row in df.head(8).iterrows():
+                kw  = str(row.get("키워드",""))[:28]
+                val = fmt_fn(row.get(val_col, 0))
+                pdf.cell(120, 6, f"  {kw}", border=1)
+                pdf.cell(W-120, 6, val, border=1, align="C", ln=True)
+            pdf.ln(4)
 
-            fig, axes = plt.subplots(2, 2, figsize=(11,8))
-            fig.patch.set_facecolor("white")
-            plt.subplots_adjust(hspace=0.45, wspace=0.35)
+        _ts = adf.nlargest(8,"광고비")[["키워드","광고비"]].dropna() if "광고비" in adf.columns else pd.DataFrame()
+        _tr = adf[adf["ROAS"].notna()].nlargest(8,"ROAS")[["키워드","ROAS"]].dropna() if "ROAS" in adf.columns else pd.DataFrame()
+        _tc = (adf[adf["전환율"].notna()&(adf["전환수"]>0)].nlargest(8,"전환율")[["키워드","전환율"]].dropna()
+               if "전환율" in adf.columns else pd.DataFrame())
+        _tw = (adf[(adf["전환수"]==0)&(adf["클릭수"]>0)].nlargest(8,"광고비")[["키워드","광고비"]].dropna()
+               if "전환수" in adf.columns else pd.DataFrame())
 
-            ts = adf.nlargest(8,"광고비")[["키워드","광고비"]].dropna()
-            tr = adf[adf["ROAS"].notna()].nlargest(8,"ROAS")[["키워드","ROAS"]].dropna()
-            tc = adf[adf["전환율"].notna()&(adf["전환수"]>0)].nlargest(8,"전환율")[["키워드","전환율"]].dropna()
-            tw = adf[(adf["전환수"]==0)&(adf["클릭수"]>0)].nlargest(8,"광고비")[["키워드","광고비"]].dropna()
+        _top_table("광고비 TOP 8", _ts, "광고비",  lambda v: f"W{v:,.0f}")
+        _top_table("ROAS TOP 8",   _tr, "ROAS",     lambda v: f"{v:.0f}%")
+        _top_table("전환율 TOP 8", _tc, "전환율",   lambda v: f"{v:.2f}%")
+        _top_table("낭비 키워드 TOP 8 (전환0)", _tw, "광고비", lambda v: f"W{v:,.0f}")
 
-            if not ts.empty: mpl_hbar(ts["광고비"].values[::-1], ts["키워드"].values[::-1], "광고비 TOP 8", "#1498D7", axes[0][0])
-            if not tr.empty: mpl_hbar(tr["ROAS"].values[::-1],   tr["키워드"].values[::-1], "ROAS TOP 8",  "#28B463", axes[0][1])
-            if not tc.empty: mpl_hbar(tc["전환율"].values[::-1], tc["키워드"].values[::-1], "전환율 TOP 8","#E67E22", axes[1][0])
-            if not tw.empty: mpl_hbar(tw["광고비"].values[::-1], tw["키워드"].values[::-1], "낭비 키워드 TOP 8","#C0392B",axes[1][1])
-
-            buf_img = io.BytesIO()
-            plt.savefig(buf_img, format="png", dpi=130, bbox_inches="tight")
-            plt.close(fig)
-            buf_img.seek(0)
-            pdf.image(buf_img, x=12, w=W)
-        except Exception as e:
-            kf(9); pdf.set_text_color(150,150,150)
-            safe_line(f"차트 생성 실패: {e}")
-            pdf.set_text_color(17,17,17)
-
-        # ━━━ 세그먼트 차트 페이지 ━━━
-        _seg_colors = ["#1498D7", "#28B463", "#E67E22", "#8E44AD"]
-        _day_order = ["월요일","화요일","수요일","목요일","금요일","토요일","일요일",
-                      "월","화","수","목","금","토","일"]
-
-        def _seg_fm(sdf, kws):
-            for c in sdf.columns:
-                n = c.replace(" ","").lower()
-                if any(k in n for k in kws):
-                    if pd.to_numeric(sdf[c], errors="coerce").notna().sum() > 0:
-                        return c
-            return None
-
-        def _seg_x_col(sdf, seg_type):
-            if "요일" in seg_type:
-                return next((c for c in sdf.columns if "요일" in c.replace(" ","")), None)
-            if "시간" in seg_type:
-                return next((c for c in sdf.columns if "시간" in c.replace(" ","")), None)
-            if "연령" in seg_type:
-                return next((c for c in sdf.columns if "연령" in c.replace(" ","")), None)
-            if "기기" in seg_type:
-                return next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["기기","디바이스","pc","모바일"])), None)
-            if "성별" in seg_type:
-                return next((c for c in sdf.columns if any(k in c.replace(" ","").lower() for k in ["성별","남성","여성"])), None)
-            if "지역" in seg_type:
-                return next((c for c in sdf.columns if any(k in c.replace(" ","") for k in ["지역","시도"])), None)
-            return None
-
+        # ━━━ 세그먼트 분석 (텍스트 테이블) ━━━
         _seg_valid = {k: v for k, v in segment_dfs.items() if v is not None and not v.empty}
         for _seg_type, _sdf in _seg_valid.items():
-            _xcol = _seg_x_col(_sdf, _seg_type)
-            if not _xcol:
-                continue
-            _mets = [
-                ("전환수",   _seg_fm(_sdf, ["전환수"])),
-                ("광고비",   _seg_fm(_sdf, ["총비용","광고비","비용"])),
-                ("ROAS",     _seg_fm(_sdf, ["광고수익률","roas"])),
-                ("전환매출", _seg_fm(_sdf, ["전환매출"])),
-            ]
-            _active = [(mk, mc) for mk, mc in _mets if mc][:4]
-            if not _active:
-                continue
             try:
-                pdf.add_page()
                 _slabel = (_seg_type.replace("📅","").replace("⏰","").replace("👤","")
                            .replace("📱","").replace("📍","").replace("👫","").strip())
+                pdf.add_page()
                 section_title(f"세그먼트 분석 — {_slabel}")
-
-                _rows = (len(_active) + 1) // 2
-                _fig, _axes = plt.subplots(_rows, 2, figsize=(11, _rows * 4))
-                _fig.patch.set_facecolor("white")
-                plt.subplots_adjust(hspace=0.55, wspace=0.35)
-
-                # axes 평탄화
-                if _rows == 1:
-                    _axes_flat = list(_axes) if len(_active) > 1 else [_axes, None]
-                else:
-                    _axes_flat = [ax for row in _axes for ax in row]
-
-                for _ci, (_mk, _mc) in enumerate(_active):
-                    _ax = _axes_flat[_ci]
-                    if _ax is None:
-                        continue
-                    _tmp = _sdf[[_xcol, _mc]].copy()
-                    _tmp[_mc] = pd.to_numeric(
-                        _tmp[_mc].astype(str).str.replace(",","",regex=False),
-                        errors="coerce")
-                    _tmp = _tmp.dropna()
-                    if _tmp.empty:
-                        _ax.axis("off")
-                        continue
-
-                    # 요일 정렬
-                    if "요일" in _seg_type:
-                        _tmp[_xcol] = _tmp[_xcol].astype(str).str.strip()
-                        _omap = {d: i for i, d in enumerate(_day_order)}
-                        _tmp["_o"] = _tmp[_xcol].map(_omap).fillna(99)
-                        _tmp = _tmp.sort_values("_o").drop(columns=["_o"])
-                    # 시간대 정렬
-                    elif "시간" in _seg_type:
-                        _tmp[_xcol] = pd.to_numeric(
-                            _tmp[_xcol].astype(str).str.extract(r'(\d+)')[0],
-                            errors="coerce")
-                        _tmp = _tmp.dropna(subset=[_xcol]).sort_values(_xcol)
-                        _tmp[_xcol] = _tmp[_xcol].astype(int).apply(lambda h: f"{h}시")
-
-                    _bars = _ax.bar(
-                        _tmp[_xcol].astype(str), _tmp[_mc],
-                        color=_seg_colors[_ci % len(_seg_colors)],
-                        edgecolor="white", linewidth=1)
-                    _ax.set_title(f"{_slabel} {_mk}",
-                                  fontproperties=mpl_font, fontsize=9, pad=6,
-                                  color="#0D47A1", fontweight="bold")
-                    _ax.set_facecolor("#f8f9fa")
-                    for _sp in ["top","right"]: _ax.spines[_sp].set_visible(False)
-                    _ax.tick_params(axis="x", labelsize=6.5, rotation=40)
-                    _ax.tick_params(axis="y", labelsize=6.5)
-                    if mpl_font:
-                        for _xl in _ax.get_xticklabels():
-                            _xl.set_fontproperties(mpl_font)
-                    for _bar, _val in zip(_bars, _tmp[_mc]):
-                        _ax.text(_bar.get_x()+_bar.get_width()/2,
-                                 _bar.get_height()*1.01,
-                                 f"{_val:,.0f}", ha="center", va="bottom",
-                                 fontsize=5.5, fontproperties=mpl_font)
-
-                # 빈 축 숨김
-                for _ei in range(len(_active), len(_axes_flat)):
-                    if _axes_flat[_ei] is not None:
-                        _axes_flat[_ei].axis("off")
-
-                _buf_s = io.BytesIO()
-                plt.savefig(_buf_s, format="png", dpi=130, bbox_inches="tight")
-                plt.close(_fig)
-                _buf_s.seek(0)
-                pdf.image(_buf_s, x=12, w=W)
-            except Exception as _se:
-                kf(9); pdf.set_text_color(150,150,150)
-                safe_line(f"세그먼트 차트 생성 실패 ({_seg_type}): {_se}")
-                pdf.set_text_color(17,17,17)
+                kf(8)
+                # 컬럼 헤더
+                show_cols = _sdf.columns[:6].tolist()
+                col_w = min(W // max(len(show_cols),1), 40)
+                pdf.set_fill_color(232,240,254)
+                for c in show_cols:
+                    pdf.cell(col_w, 7, str(c)[:12], border=1, fill=True, align="C")
+                pdf.ln()
+                for i, (_, row) in enumerate(_sdf.head(15).iterrows()):
+                    pdf.set_fill_color(248,249,250) if i%2==0 else pdf.set_fill_color(255,255,255)
+                    for c in show_cols:
+                        val = str(row.get(c,""))[:12]
+                        pdf.cell(col_w, 6, val, border=1, align="C")
+                    pdf.ln()
+                pdf.ln(4)
+            except Exception:
+                pass
 
         # ━━━ 꿀통 + 낭비 키워드 (한 페이지) ━━━
         pdf.add_page()
@@ -3064,8 +2947,9 @@ def show_results(adf, api_key, model):
                 key="dl_excel_btn",
             )
         except Exception as _xl_err:
-            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True,
+            st.button("📥 엑셀 다운로드 (오류)", disabled=True,
                       use_container_width=True, key="dl_excel_disabled")
+            st.caption(f"엑셀 오류: {type(_xl_err).__name__}: {_xl_err}")
 
     # PDF 다운로드 (col2 내부에서 독립 try-except)
     with dl_col2:
@@ -3105,14 +2989,6 @@ def show_results(adf, api_key, model):
             st.button("📄 PDF 보고서 생성", disabled=True,
                       use_container_width=True, key="dl_pdf_disabled")
 
-    # 화면 그대로 저장 안내
-    st.markdown("""
-    <div style="margin-top:1rem;padding:0.8rem 1rem;background:#f8f9fa;
-    border-radius:8px;font-size:0.85rem;color:#666;text-align:center;">
-    🖨️ <b>화면 그대로 저장</b>하려면 브라우저에서
-    <b>Ctrl+P → PDF로 저장</b> 선택하세요 (사이드바 자동 제외)
-    </div>
-    """, unsafe_allow_html=True)
 
 # ────────────────────────────────────────────
 # 메인
