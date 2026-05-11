@@ -1496,13 +1496,13 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
         x_lbl = LM + col * 90          # col0→12, col1→102
         x_val = x_lbl + 25             # col0→37, col1→127
         pdf.set_fill_color(232, 240, 254)
-        _xy(x_lbl, y)
+        pdf.set_xy(x_lbl, y)
         pdf.cell(25, row_h, f"  {lbl}", border=1, fill=True)
         pdf.set_fill_color(255, 255, 255)
-        _xy(x_val, y)
+        pdf.set_xy(x_val, y)
         pdf.cell(65, row_h, f"  {val}", border=1)
     rows_used = (len(cards) + 1) // 2
-    _xy(LM, cards_y0 + rows_used * row_h + 6)
+    pdf.set_xy(12, cards_y0 + rows_used * row_h + 6)
     divider()
 
     # 위험 신호 요약
