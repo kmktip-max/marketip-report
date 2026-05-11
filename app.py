@@ -2696,6 +2696,62 @@ def show_results(adf, api_key, model):
             safe_line(line, 6)
         pdf.ln(4)
 
+        # ━━━ 핵심 요약 3줄 + 광고 구조 진단 ━━━
+        _total_imp_p   = adf["노출수"].sum()
+        _total_click_p = adf["클릭수"].sum()
+        _total_spend_p = adf["광고비"].sum()
+        _total_conv_p  = adf["전환수"].sum()
+        _total_rev_p   = adf["전환매출"].sum()
+        _roas_p  = round(_total_rev_p  / _total_spend_p * 100, 2) if _total_spend_p > 0 else 0
+        _ctr_p   = round(_total_click_p / _total_imp_p   * 100, 2) if _total_imp_p   > 0 else 0
+        _cvr_p   = round(_total_conv_p  / _total_click_p * 100, 2) if _total_click_p > 0 else 0
+        _waste_p = adf[(adf["클릭수"] >= 10) & (adf["전환수"] == 0)]
+        _waste_amt_p = _waste_p["광고비"].sum()
+        _waste_ratio_p = _waste_amt_p / _total_spend_p * 100 if _total_spend_p > 0 else 0
+
+        section_title("핵심 요약 및 광고 구조 진단", 13, 71, 161)
+        kf(9)
+        sum3 = []
+        if _roas_p >= 200:
+            sum3.append(f"• ROAS {_roas_p:.0f}% — 수익 구조 양호. 꿀통 키워드 증액으로 추가 확장 가능")
+        elif _roas_p >= 100:
+            sum3.append(f"• ROAS {_roas_p:.0f}% — 손익분기 수준. 낭비 키워드 정리 후 효율 개선 필요")
+        elif _roas_p > 0:
+            sum3.append(f"• ROAS {_roas_p:.0f}% — 광고비보다 매출이 낮음. 즉시 구조 점검 필요")
+        if _waste_ratio_p >= 10:
+            sum3.append(f"• 광고비 {_waste_ratio_p:.0f}% (W{_waste_amt_p:,.0f})이 전환 없이 소진 중 — 낭비 키워드 점검 필요")
+        else:
+            sum3.append(f"• 낭비 비중 {_waste_ratio_p:.0f}% — 광고비 소진 구조 효율적")
+        if _cvr_p > 0 and _cvr_p < 2:
+            sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 낮음. 랜딩페이지 구조 점검 권장")
+        elif _cvr_p >= 2:
+            sum3.append(f"• 전환율 {_cvr_p:.2f}% — 클릭 대비 전환 구조 양호")
+        for s in sum3:
+            safe_line(s, 6)
+        pdf.ln(3)
+
+        # 즉시 실행 가능한 개선 포인트 3가지
+        section_title("즉시 실행 가능한 개선 포인트 3가지", 40,100,40)
+        kf(9)
+        _honey_p = adf[adf.get("등급", pd.Series(dtype=str)).isin(["증액 권장", "증액 테스트"])] if "등급" in adf.columns else pd.DataFrame()
+
+        pts = []
+        if not _waste_p.empty:
+            pts.append(f"1. 낭비 키워드 즉시 일시중지\n   클릭 10회 이상 전환 없는 키워드 {len(_waste_p)}개 → 일시중지 시 월 약 W{_waste_amt_p:,.0f} 절약 가능")
+        if not _honey_p.empty:
+            pts.append(f"2. 성과 키워드 입찰가 상향\n   ROAS 우수 키워드 {len(_honey_p)}개 → 입찰가 10~20% 상향 시 전환 추가 확보 기대")
+        if _ctr_p > 0 and _ctr_p < 1:
+            pts.append(f"3. 광고 소재 A/B 테스트\n   현재 CTR {_ctr_p:.2f}% (업종 평균 미달) → 광고 문구 교체 테스트 권장")
+        elif _cvr_p > 0 and _cvr_p < 2:
+            pts.append(f"3. 랜딩페이지 전환 구조 점검\n   전환율 {_cvr_p:.2f}% — 클릭은 있으나 문의/구매 연결 낮음")
+        else:
+            pts.append(f"3. 광고 노출 시간대 최적화\n   전환 집중 시간대에 예산 집중 배분 → 새벽 저입찰 전략 또는 고전환 시간대 증액 권장")
+        for pt in pts:
+            for line in pt.split("\n"):
+                safe_line(line, 6)
+            pdf.ln(2)
+        pdf.ln(2)
+
         # ━━━ 차트 페이지 ━━━
         def mpl_hbar(vals, labels, title, color, ax):
             bars = ax.barh(labels, vals, color=color, edgecolor="white", linewidth=1, height=0.6)
