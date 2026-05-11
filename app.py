@@ -2752,6 +2752,30 @@ def show_results(adf, api_key, model):
             pdf.ln(2)
         pdf.ln(2)
 
+        # ━━━ 위험 신호 감지 ━━━
+        section_title("위험 신호 감지", 183, 28, 28)
+        kf(9)
+        _alerts_pdf = []
+        _w50 = adf[(adf["클릭수"] >= 50) & (adf["전환수"] == 0)]
+        if not _w50.empty:
+            _alerts_pdf.append(f"[위험] 광고비 낭비 가능성 — 클릭 50회 이상·전환 0인 키워드 {len(_w50)}개 (W{_w50['광고비'].sum():,.0f} 소진 중)")
+        _roas_drop = adf[(adf["ROAS"].notna()) & (adf["ROAS"] < 100) & (adf["광고비"] > adf["광고비"].mean())]
+        if not _roas_drop.empty:
+            _alerts_pdf.append(f"[위험] 구조 손실 위험 — ROAS 100% 미만이면서 광고비 평균 초과 키워드 {len(_roas_drop)}개")
+        if adf["CTR"].notna().any() and adf["전환율"].notna().any():
+            _illusion = adf[(adf["CTR"] > adf["CTR"].mean() * 1.3) & (adf["전환율"] < adf["전환율"].mean() * 0.7)]
+            if not _illusion.empty:
+                _alerts_pdf.append(f"[경고] 클릭 착시 구조 — CTR 높으나 전환율 낮은 키워드 {len(_illusion)}개")
+        _spread = adf[adf["ROAS"].notna() & (adf["전환수"] > 0)]
+        if len(adf) > 0 and len(_spread) / len(adf) < 0.3:
+            _alerts_pdf.append(f"[경고] 키워드 예산 과집중 — 전환 발생 키워드가 전체의 {len(_spread)/len(adf)*100:.1f}%에 불과")
+        if not _alerts_pdf:
+            safe_line("• 주요 위험 신호가 감지되지 않았습니다.", 6)
+        else:
+            for a in _alerts_pdf:
+                safe_line(f"• {a}", 6)
+        pdf.ln(4)
+
         # ━━━ 차트 페이지 ━━━
         def mpl_hbar(vals, labels, title, color, ax):
             bars = ax.barh(labels, vals, color=color, edgecolor="white", linewidth=1, height=0.6)
