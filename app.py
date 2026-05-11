@@ -1401,32 +1401,43 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
     FN = "NanumGothic" if font_path else "Helvetica"
     def kf(sz): pdf.set_font(FN, size=sz)
 
+    LM = 12   # left margin (mm)
+    RM = 12   # right margin (mm)
+    PW = 210  # A4 page width (mm)
+
+    def reset_x():
+        pdf.set_x(LM)
+
     def section_title(txt, r=13, g=71, b=161):
-        pdf.set_x(pdf.l_margin)  # always start at left margin
+        reset_x()
         kf(11)
-        pdf.set_fill_color(r,g,b)
-        pdf.set_text_color(255,255,255)
-        pdf.cell(W, 9, f"  {txt}", fill=True, ln=True)
-        pdf.set_x(pdf.l_margin)
-        pdf.set_text_color(17,17,17)
+        pdf.set_fill_color(r, g, b)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_x(LM)
+        pdf.cell(W, 9, f"  {txt}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(17, 17, 17)
         pdf.ln(3)
+        reset_x()
 
     def divider():
-        pdf.set_x(pdf.l_margin)
-        pdf.set_draw_color(220,220,220)
-        pdf.line(12, pdf.get_y(), 198, pdf.get_y())
+        reset_x()
+        pdf.set_draw_color(220, 220, 220)
+        pdf.line(LM, pdf.get_y(), PW - RM, pdf.get_y())
         pdf.ln(3)
+        reset_x()
 
     def safe_cell(w, h, txt, **kw):
         try: pdf.cell(w, h, str(txt)[:30], **kw)
         except: pdf.cell(w, h, "-", **kw)
 
     def safe_line(txt, h=5):
-        pdf.set_x(pdf.l_margin)  # always start at left margin
-        try: pdf.multi_cell(W, h, str(txt))
+        reset_x()
+        try: pdf.multi_cell(W, h, str(txt), new_x="LMARGIN", new_y="NEXT")
         except:
-            try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'))
+            try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'),
+                                new_x="LMARGIN", new_y="NEXT")
             except: pass
+        reset_x()
 
     # 지표 계산
     total_imp   = adf["노출수"].sum()
@@ -1473,16 +1484,20 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
     ]
     kf(9)
     for i, (lbl, val) in enumerate(cards):
+        if i % 2 == 0:
+            pdf.set_x(LM)          # start of new row
         pdf.set_fill_color(232, 240, 254)
         pdf.cell(25, 10, f"  {lbl}", border=1, fill=True)
         pdf.set_fill_color(255, 255, 255)
         if i % 2 == 0:
             pdf.cell(65, 10, f"  {val}", border=1, fill=False)
         else:
-            pdf.cell(65, 10, f"  {val}", border=1, fill=False, ln=True)
+            pdf.cell(65, 10, f"  {val}", border=1, fill=False,
+                     new_x="LMARGIN", new_y="NEXT")
     if len(cards) % 2 != 0:
-        pdf.ln()
-    pdf.set_x(pdf.l_margin)  # reset x after 2-col table
+        pdf.set_x(LM)
+        pdf.ln(10)
+    pdf.set_x(LM)
     pdf.ln(6)
     divider()
 
