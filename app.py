@@ -118,6 +118,18 @@ st.markdown("""
         border-radius: 0 6px 6px 0;
     }
 
+    /* ── 인쇄 시 사이드바·헤더·툴바 숨김 ── */
+    @media print {
+        section[data-testid="stSidebar"] { display: none !important; }
+        header[data-testid="stHeader"]   { display: none !important; }
+        [data-testid="stToolbar"]        { display: none !important; }
+        .stDeployButton                  { display: none !important; }
+        #stDecoration                    { display: none !important; }
+        .mobile-only-btn                 { display: none !important; }
+        footer                           { display: none !important; }
+        [data-testid="stStatusWidget"]   { display: none !important; }
+    }
+
     /* ── 경고/위험 박스 ── */
     .alert-danger {
         background: #fff5f5;
@@ -2512,6 +2524,28 @@ def show_results(adf, api_key, model):
 
     # ── 다운로드 ──
     st.markdown('<div class="section-title">⬇️ 결과 다운로드</div>', unsafe_allow_html=True)
+
+    # 화면 그대로 PDF 저장 버튼 (브라우저 인쇄 활용)
+    import streamlit.components.v1 as _components
+    _components.html("""
+    <style>
+      .print-btn {
+        background: #0D47A1; color: #fff; border: none;
+        padding: 12px 28px; border-radius: 8px; font-size: 15px;
+        font-weight: 700; cursor: pointer; width: 100%;
+        font-family: 'Noto Sans KR', sans-serif;
+      }
+      .print-btn:hover { background: #1565C0; }
+    </style>
+    <button class="print-btn" onclick="window.parent.print()">
+      🖨️ 화면 그대로 PDF 저장 (사이드바 제외)
+    </button>
+    <p style="font-size:12px;color:#888;margin-top:6px;text-align:center;">
+      클릭 후 인쇄 창에서 "PDF로 저장" 선택하세요
+    </p>
+    """, height=80)
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     # ── PDF 생성 함수 ──────────────────────────────
     def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
