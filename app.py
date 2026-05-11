@@ -1401,43 +1401,50 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
     FN = "NanumGothic" if font_path else "Helvetica"
     def kf(sz): pdf.set_font(FN, size=sz)
 
-    LM = 12   # left margin (mm)
-    RM = 12   # right margin (mm)
-    PW = 210  # A4 page width (mm)
+    LM = 12   # left margin mm
+    W  = 186  # usable width mm (A4 210 - 2*12)
 
-    def reset_x():
-        pdf.set_x(LM)
+    def _xy(x=LM, y=None):
+        if y is None:
+            pdf.set_x(x)
+        else:
+            pdf.set_xy(x, y)
 
     def section_title(txt, r=13, g=71, b=161):
-        reset_x()
+        _xy(LM)
         kf(11)
         pdf.set_fill_color(r, g, b)
         pdf.set_text_color(255, 255, 255)
-        pdf.set_x(LM)
-        pdf.cell(W, 9, f"  {txt}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        _xy(LM)
+        y0 = pdf.get_y()
+        pdf.cell(W, 9, f"  {txt}", fill=True)
+        _xy(LM, y0 + 9)
         pdf.set_text_color(17, 17, 17)
         pdf.ln(3)
-        reset_x()
+        _xy(LM)
 
     def divider():
-        reset_x()
+        _xy(LM)
         pdf.set_draw_color(220, 220, 220)
-        pdf.line(LM, pdf.get_y(), PW - RM, pdf.get_y())
+        y = pdf.get_y()
+        pdf.line(LM, y, LM + W, y)
         pdf.ln(3)
-        reset_x()
+        _xy(LM)
 
     def safe_cell(w, h, txt, **kw):
         try: pdf.cell(w, h, str(txt)[:30], **kw)
         except: pdf.cell(w, h, "-", **kw)
 
     def safe_line(txt, h=5):
-        reset_x()
-        try: pdf.multi_cell(W, h, str(txt), new_x="LMARGIN", new_y="NEXT")
+        _xy(LM)
+        try:
+            pdf.multi_cell(W, h, str(txt))
         except:
-            try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'),
-                                new_x="LMARGIN", new_y="NEXT")
-            except: pass
-        reset_x()
+            try:
+                pdf.multi_cell(W, h, str(txt).encode('latin-1', 'replace').decode('latin-1'))
+            except:
+                pass
+        _xy(LM)
 
     # 지표 계산
     total_imp   = adf["노출수"].sum()
@@ -1483,22 +1490,22 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
         ("CPA",          f"W{cpa:,.0f}"),
     ]
     kf(9)
+    row_h = 10
+    cards_y0 = pdf.get_y()
     for i, (lbl, val) in enumerate(cards):
-        if i % 2 == 0:
-            pdf.set_x(LM)          # start of new row
+        row = i // 2
+        col = i % 2
+        y = cards_y0 + row * row_h
+        x_lbl = LM + col * 90          # col0→12, col1→102
+        x_val = x_lbl + 25             # col0→37, col1→127
         pdf.set_fill_color(232, 240, 254)
-        pdf.cell(25, 10, f"  {lbl}", border=1, fill=True)
+        _xy(x_lbl, y)
+        pdf.cell(25, row_h, f"  {lbl}", border=1, fill=True)
         pdf.set_fill_color(255, 255, 255)
-        if i % 2 == 0:
-            pdf.cell(65, 10, f"  {val}", border=1, fill=False)
-        else:
-            pdf.cell(65, 10, f"  {val}", border=1, fill=False,
-                     new_x="LMARGIN", new_y="NEXT")
-    if len(cards) % 2 != 0:
-        pdf.set_x(LM)
-        pdf.ln(10)
-    pdf.set_x(LM)
-    pdf.ln(6)
+        _xy(x_val, y)
+        pdf.cell(65, row_h, f"  {val}", border=1)
+    rows_used = (len(cards) + 1) // 2
+    _xy(LM, cards_y0 + rows_used * row_h + 6)
     divider()
 
     # 위험 신호 요약
