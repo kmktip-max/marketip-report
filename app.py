@@ -2525,28 +2525,6 @@ def show_results(adf, api_key, model):
     # ── 다운로드 ──
     st.markdown('<div class="section-title">⬇️ 결과 다운로드</div>', unsafe_allow_html=True)
 
-    # 화면 그대로 PDF 저장 버튼 (브라우저 인쇄 활용)
-    import streamlit.components.v1 as _components
-    _components.html("""
-    <style>
-      .print-btn {
-        background: #0D47A1; color: #fff; border: none;
-        padding: 12px 28px; border-radius: 8px; font-size: 15px;
-        font-weight: 700; cursor: pointer; width: 100%;
-        font-family: 'Noto Sans KR', sans-serif;
-      }
-      .print-btn:hover { background: #1565C0; }
-    </style>
-    <button class="print-btn" onclick="window.parent.print()">
-      🖨️ 화면 그대로 PDF 저장 (사이드바 제외)
-    </button>
-    <p style="font-size:12px;color:#888;margin-top:6px;text-align:center;">
-      클릭 후 인쇄 창에서 "PDF로 저장" 선택하세요
-    </p>
-    """, height=80)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
     # ── PDF 생성 함수 ──────────────────────────────
     def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
         from fpdf import FPDF
@@ -3124,6 +3102,15 @@ def show_results(adf, api_key, model):
                     )
                 except Exception as e:
                     st.error(f"PDF 생성 실패: {e}")
+
+    # 화면 그대로 저장 안내
+    st.markdown("""
+    <div style="margin-top:1rem;padding:0.8rem 1rem;background:#f8f9fa;
+    border-radius:8px;font-size:0.85rem;color:#666;text-align:center;">
+    🖨️ <b>화면 그대로 저장</b>하려면 브라우저에서
+    <b>Ctrl+P → PDF로 저장</b> 선택하세요 (사이드바 자동 제외)
+    </div>
+    """, unsafe_allow_html=True)
 
 # ────────────────────────────────────────────
 # 메인
