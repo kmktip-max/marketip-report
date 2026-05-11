@@ -2988,63 +2988,54 @@ def show_results(adf, api_key, model):
 
         return bytes(pdf.output())
 
-    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-    from openpyxl.formatting.rule import ColorScaleRule
-    from openpyxl.utils import get_column_letter
+    # ── 엑셀 생성 (항상 버튼이 표시되도록 try-except로 완전히 감쌈) ──
+    buf = io.BytesIO()
+    _excel_ok = False
+    try:
+        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+        from openpyxl.formatting.rule import ColorScaleRule
+        from openpyxl.utils import get_column_letter
 
-    def style_sheet(ws, df, color_cols=None):
-        """시트에 헤더 스타일 + 조건부 색상 서식 적용"""
-        # 헤더 스타일
-        hdr_fill = PatternFill("solid", fgColor="0D47A1")
-        hdr_font = Font(color="FFFFFF", bold=True, size=10)
-        thin = Side(style="thin", color="DDDDDD")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        for cell in ws[1]:
-            cell.fill = hdr_fill
-            cell.font = hdr_font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = border
-
-        # 데이터 행 교번 색상
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=2):
-            bg = "F8F9FA" if row_idx % 2 == 0 else "FFFFFF"
-            for cell in row:
-                cell.fill = PatternFill("solid", fgColor=bg)
+        def style_sheet(ws, df, color_cols=None):
+            hdr_fill = PatternFill("solid", fgColor="0D47A1")
+            hdr_font = Font(color="FFFFFF", bold=True, size=10)
+            thin = Side(style="thin", color="DDDDDD")
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            for cell in ws[1]:
+                cell.fill = hdr_fill
+                cell.font = hdr_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = border
+            for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=2):
+                bg = "F8F9FA" if row_idx % 2 == 0 else "FFFFFF"
+                for cell in row:
+                    cell.fill = PatternFill("solid", fgColor=bg)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = border
+            for col in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col), default=8)
+                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 4, 30)
+            if color_cols and df is not None:
+                rule = ColorScaleRule(
+                    start_type="min",  start_color="FF0000",
+                    mid_type="percentile", mid_value=50, mid_color="00FFFF",
+                    end_type="max",   end_color="00FF00",
+                )
+                for col_name in color_cols:
+                    if col_name in df.columns:
+                        col_idx = df.columns.tolist().index(col_name) + 1
+                        col_letter = get_column_letter(col_idx)
+                        if ws.max_row > 2:
+                            ws.conditional_formatting.add(
+                                f"{col_letter}2:{col_letter}{ws.max_row}", rule
+                            )
 
-        # 컬럼 너비 자동 조정
-        for col in ws.columns:
-            max_len = max((len(str(c.value or "")) for c in col), default=8)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 4, 30)
-
-        # 조건부 색상 서식 (빨강→청록→초록)
-        if color_cols and df is not None:
-            rule = ColorScaleRule(
-                start_type="min",  start_color="FF0000",
-                mid_type="percentile", mid_value=50, mid_color="00FFFF",
-                end_type="max",   end_color="00FF00",
-            )
-            for col_name in color_cols:
-                if col_name in df.columns:
-                    col_idx = df.columns.tolist().index(col_name) + 1
-                    col_letter = get_column_letter(col_idx)
-                    if ws.max_row > 2:
-                        ws.conditional_formatting.add(
-                            f"{col_letter}2:{col_letter}{ws.max_row}", rule
-                        )
-
-    buf = io.BytesIO()
-    _excel_ok = True
-    try:
         _seg_dfs_dl = st.session_state.get("segment_dfs", {})
         _tbl_dl = adf.copy()
         _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
         _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in _tbl_dl.columns]
         _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
         _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
-
         _sheets = [
             ("📋 전체 키워드", _tbl_dl[_dcols], ["CTR","전환율","ROAS"]),
             ("🍯 꿀통 키워드", _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
@@ -3053,7 +3044,6 @@ def show_results(adf, api_key, model):
         _seg_color_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
                           "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
                           "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
-
         with pd.ExcelWriter(buf, engine="openpyxl") as writer:
             for sname, sdf, ccols in _sheets:
                 sdf.to_excel(writer, sheet_name=sname[:31], index=False)
@@ -3065,8 +3055,9 @@ def show_results(adf, api_key, model):
                 sdf.to_excel(writer, sheet_name=clean_name, index=False)
                 ccols = next((v for k,v in _seg_color_map.items() if k in clean_name), [])
                 style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
+        _excel_ok = True
     except Exception as _ex:
-        _excel_ok = False
+        buf = io.BytesIO()
         st.warning(f"엑셀 생성 오류: {_ex}")
 
     dl_col1, dl_col2 = st.columns(2)
@@ -3078,11 +3069,12 @@ def show_results(adf, api_key, model):
                 file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
+                key="dl_excel_btn",
             )
         else:
-            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True, use_container_width=True)
+            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True, use_container_width=True, key="dl_excel_disabled")
     with dl_col2:
-        if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary"):
+        if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary", key="dl_pdf_btn"):
             with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
                 try:
                     tbl_pdf = adf.copy()
@@ -3099,6 +3091,7 @@ def show_results(adf, api_key, model):
                         file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf",
                         use_container_width=True,
+                        key="dl_pdf_download",
                     )
                 except Exception as e:
                     st.error(f"PDF 생성 실패: {e}")
