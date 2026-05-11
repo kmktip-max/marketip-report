@@ -2988,122 +2988,122 @@ def show_results(adf, api_key, model):
 
         return bytes(pdf.output())
 
-    # ── 엑셀 생성 (항상 버튼이 표시되도록 try-except로 완전히 감쌈) ──
-    buf = io.BytesIO()
-    _excel_ok = False
-    try:
-        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-        from openpyxl.formatting.rule import ColorScaleRule
-        from openpyxl.utils import get_column_letter
-
-        def style_sheet(ws, df, color_cols=None):
-            hdr_fill = PatternFill("solid", fgColor="0D47A1")
-            hdr_font = Font(color="FFFFFF", bold=True, size=10)
-            thin = Side(style="thin", color="DDDDDD")
-            border = Border(left=thin, right=thin, top=thin, bottom=thin)
-            for cell in ws[1]:
-                cell.fill = hdr_fill
-                cell.font = hdr_font
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = border
-            for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=2):
-                bg = "F8F9FA" if row_idx % 2 == 0 else "FFFFFF"
-                for cell in row:
-                    cell.fill = PatternFill("solid", fgColor=bg)
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    cell.border = border
-            for col in ws.columns:
-                max_len = max((len(str(c.value or "")) for c in col), default=8)
-                ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 4, 30)
-            if color_cols and df is not None:
-                rule = ColorScaleRule(
-                    start_type="min",  start_color="FF0000",
-                    mid_type="percentile", mid_value=50, mid_color="00FFFF",
-                    end_type="max",   end_color="00FF00",
-                )
-                for col_name in color_cols:
-                    if col_name in df.columns:
-                        col_idx = df.columns.tolist().index(col_name) + 1
-                        col_letter = get_column_letter(col_idx)
-                        if ws.max_row > 2:
-                            ws.conditional_formatting.add(
-                                f"{col_letter}2:{col_letter}{ws.max_row}", rule
-                            )
-
-        _seg_dfs_dl = st.session_state.get("segment_dfs", {})
-        _tbl_dl = adf.copy()
-        _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
-        _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in _tbl_dl.columns]
-        _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
-        _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
-        _sheets = [
-            ("📋 전체 키워드", _tbl_dl[_dcols], ["CTR","전환율","ROAS"]),
-            ("🍯 꿀통 키워드", _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
-            ("🚨 낭비 키워드", _waste_dl[_dcols] if not _waste_dl.empty else pd.DataFrame(columns=_dcols), ["광고비","CTR"]),
-        ]
-        _seg_color_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
-                          "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
-                          "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
-        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-            for sname, sdf, ccols in _sheets:
-                sdf.to_excel(writer, sheet_name=sname[:31], index=False)
-                style_sheet(writer.sheets[sname[:31]], sdf, color_cols=ccols)
-            for seg_type, sdf in _seg_dfs_dl.items():
-                if sdf is None or sdf.empty:
-                    continue
-                clean_name = seg_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
-                sdf.to_excel(writer, sheet_name=clean_name, index=False)
-                ccols = next((v for k,v in _seg_color_map.items() if k in clean_name), [])
-                style_sheet(writer.sheets[clean_name], sdf, color_cols=ccols)
-        _excel_ok = True
-    except Exception as _ex:
-        buf = io.BytesIO()
-        st.warning(f"엑셀 생성 오류: {_ex}")
-
+    # ── 다운로드 버튼: 컬럼을 먼저 생성한 뒤 내용을 채움 ──────────────
     dl_col1, dl_col2 = st.columns(2)
+
+    # 엑셀 다운로드 (col1 내부에서 독립 try-except)
     with dl_col1:
-        if _excel_ok and buf.getvalue():
+        try:
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.formatting.rule import ColorScaleRule
+            from openpyxl.utils import get_column_letter
+
+            def _style_ws(ws, df, color_cols=None):
+                hdr_fill = PatternFill("solid", fgColor="0D47A1")
+                hdr_font = Font(color="FFFFFF", bold=True, size=10)
+                thin = Side(style="thin", color="DDDDDD")
+                bdr  = Border(left=thin, right=thin, top=thin, bottom=thin)
+                for cell in ws[1]:
+                    cell.fill = hdr_fill; cell.font = hdr_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = bdr
+                for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), 2):
+                    bg = "F8F9FA" if ri % 2 == 0 else "FFFFFF"
+                    for cell in row:
+                        cell.fill = PatternFill("solid", fgColor=bg)
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                        cell.border = bdr
+                for col in ws.columns:
+                    ml = max((len(str(c.value or "")) for c in col), default=8)
+                    ws.column_dimensions[get_column_letter(col[0].column)].width = min(ml + 4, 30)
+                if color_cols and df is not None:
+                    rule = ColorScaleRule(
+                        start_type="min", start_color="FF0000",
+                        mid_type="percentile", mid_value=50, mid_color="00FFFF",
+                        end_type="max", end_color="00FF00",
+                    )
+                    for cn in color_cols:
+                        if cn in df.columns:
+                            ci = df.columns.tolist().index(cn) + 1
+                            cl = get_column_letter(ci)
+                            if ws.max_row > 2:
+                                ws.conditional_formatting.add(f"{cl}2:{cl}{ws.max_row}", rule)
+
+            _seg_dfs_dl = st.session_state.get("segment_dfs", {})
+            _tbl_dl = adf.copy()
+            _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
+            _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in _tbl_dl.columns]
+            _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
+            _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+            _sheets = [
+                ("전체 키워드",  _tbl_dl[_dcols], ["CTR","전환율","ROAS"]),
+                ("꿀통 키워드",  _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
+                ("낭비 키워드",  _waste_dl[_dcols] if not _waste_dl.empty else pd.DataFrame(columns=_dcols), ["광고비","CTR"]),
+            ]
+            _sc_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
+                       "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
+                       "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
+            _xbuf = io.BytesIO()
+            with pd.ExcelWriter(_xbuf, engine="openpyxl") as _xw:
+                for sn, sdf, cc in _sheets:
+                    sdf.to_excel(_xw, sheet_name=sn[:31], index=False)
+                    _style_ws(_xw.sheets[sn[:31]], sdf, color_cols=cc)
+                for st_type, st_sdf in _seg_dfs_dl.items():
+                    if st_sdf is None or st_sdf.empty:
+                        continue
+                    cn = st_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
+                    st_sdf.to_excel(_xw, sheet_name=cn, index=False)
+                    cc2 = next((v for k,v in _sc_map.items() if k in cn), [])
+                    _style_ws(_xw.sheets[cn], st_sdf, color_cols=cc2)
             st.download_button(
                 "📥 엑셀 다운로드 (멀티시트)",
-                data=buf.getvalue(),
+                data=_xbuf.getvalue(),
                 file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 key="dl_excel_btn",
             )
-        else:
-            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True, use_container_width=True, key="dl_excel_disabled")
+        except Exception as _xl_err:
+            st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True,
+                      use_container_width=True, key="dl_excel_disabled")
+
+    # PDF 다운로드 (col2 내부에서 독립 try-except)
     with dl_col2:
-        _pdf_bytes = st.session_state.get("pdf_bytes")
-        if _pdf_bytes:
-            st.download_button(
-                "⬇️ PDF 보고서 다운로드",
-                data=_pdf_bytes,
-                file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-                type="primary",
-                key="dl_pdf_download",
-            )
-            if st.button("🔄 PDF 재생성", key="dl_pdf_regen", use_container_width=True):
-                st.session_state.pop("pdf_bytes", None)
-                st.rerun()
-        else:
-            if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary", key="dl_pdf_btn"):
-                with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
-                    try:
-                        tbl_pdf = adf.copy()
-                        tbl_pdf["상태"] = tbl_pdf.apply(make_badge, axis=1)
-                        _generated = build_pdf(
-                            adf, tbl_pdf,
-                            st.session_state.get("chat_messages", []),
-                            st.session_state.get("segment_dfs", {}),
-                            st.session_state.get("advertiser_name", "광고주"),
-                        )
-                        st.session_state["pdf_bytes"] = _generated
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"PDF 생성 실패: {e}")
+        try:
+            _pdf_bytes = st.session_state.get("pdf_bytes")
+            if _pdf_bytes:
+                st.download_button(
+                    "⬇️ PDF 보고서 다운로드",
+                    data=_pdf_bytes,
+                    file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary",
+                    key="dl_pdf_download",
+                )
+                if st.button("🔄 PDF 재생성", key="dl_pdf_regen", use_container_width=True):
+                    st.session_state.pop("pdf_bytes", None)
+                    st.rerun()
+            else:
+                if st.button("📄 PDF 보고서 생성", use_container_width=True,
+                             type="primary", key="dl_pdf_btn"):
+                    with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
+                        try:
+                            tbl_pdf = adf.copy()
+                            tbl_pdf["상태"] = tbl_pdf.apply(make_badge, axis=1)
+                            _gen = build_pdf(
+                                adf, tbl_pdf,
+                                st.session_state.get("chat_messages", []),
+                                st.session_state.get("segment_dfs", {}),
+                                st.session_state.get("advertiser_name", "광고주"),
+                            )
+                            st.session_state["pdf_bytes"] = _gen
+                            st.rerun()
+                        except Exception as _pe:
+                            st.error(f"PDF 생성 실패: {_pe}")
+        except Exception as _col2_err:
+            st.button("📄 PDF 보고서 생성", disabled=True,
+                      use_container_width=True, key="dl_pdf_disabled")
 
     # 화면 그대로 저장 안내
     st.markdown("""
