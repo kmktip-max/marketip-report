@@ -1402,14 +1402,17 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
     def kf(sz): pdf.set_font(FN, size=sz)
 
     def section_title(txt, r=13, g=71, b=161):
+        pdf.set_x(pdf.l_margin)  # always start at left margin
         kf(11)
         pdf.set_fill_color(r,g,b)
         pdf.set_text_color(255,255,255)
         pdf.cell(W, 9, f"  {txt}", fill=True, ln=True)
+        pdf.set_x(pdf.l_margin)
         pdf.set_text_color(17,17,17)
         pdf.ln(3)
 
     def divider():
+        pdf.set_x(pdf.l_margin)
         pdf.set_draw_color(220,220,220)
         pdf.line(12, pdf.get_y(), 198, pdf.get_y())
         pdf.ln(3)
@@ -1419,6 +1422,7 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
         except: pdf.cell(w, h, "-", **kw)
 
     def safe_line(txt, h=5):
+        pdf.set_x(pdf.l_margin)  # always start at left margin
         try: pdf.multi_cell(W, h, str(txt))
         except:
             try: pdf.multi_cell(W, h, str(txt).encode('latin-1','replace').decode('latin-1'))
@@ -1478,6 +1482,7 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):
             pdf.cell(65, 10, f"  {val}", border=1, fill=False, ln=True)
     if len(cards) % 2 != 0:
         pdf.ln()
+    pdf.set_x(pdf.l_margin)  # reset x after 2-col table
     pdf.ln(6)
     divider()
 
