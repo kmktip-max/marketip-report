@@ -3074,27 +3074,36 @@ def show_results(adf, api_key, model):
         else:
             st.button("📥 엑셀 다운로드 (준비 중...)", disabled=True, use_container_width=True, key="dl_excel_disabled")
     with dl_col2:
-        if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary", key="dl_pdf_btn"):
-            with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
-                try:
-                    tbl_pdf = adf.copy()
-                    tbl_pdf["상태"] = tbl_pdf.apply(make_badge, axis=1)
-                    pdf_bytes = build_pdf(
-                        adf, tbl_pdf,
-                        st.session_state.get("chat_messages", []),
-                        st.session_state.get("segment_dfs", {}),
-                        st.session_state.get("advertiser_name", "광고주"),
-                    )
-                    st.download_button(
-                        "⬇️ PDF 다운로드",
-                        data=pdf_bytes,
-                        file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                        key="dl_pdf_download",
-                    )
-                except Exception as e:
-                    st.error(f"PDF 생성 실패: {e}")
+        _pdf_bytes = st.session_state.get("pdf_bytes")
+        if _pdf_bytes:
+            st.download_button(
+                "⬇️ PDF 보고서 다운로드",
+                data=_pdf_bytes,
+                file_name=f"마케팁_광고보고서_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                type="primary",
+                key="dl_pdf_download",
+            )
+            if st.button("🔄 PDF 재생성", key="dl_pdf_regen", use_container_width=True):
+                st.session_state.pop("pdf_bytes", None)
+                st.rerun()
+        else:
+            if st.button("📄 PDF 보고서 생성", use_container_width=True, type="primary", key="dl_pdf_btn"):
+                with st.spinner("PDF 보고서 생성 중... (10~20초 소요)"):
+                    try:
+                        tbl_pdf = adf.copy()
+                        tbl_pdf["상태"] = tbl_pdf.apply(make_badge, axis=1)
+                        _generated = build_pdf(
+                            adf, tbl_pdf,
+                            st.session_state.get("chat_messages", []),
+                            st.session_state.get("segment_dfs", {}),
+                            st.session_state.get("advertiser_name", "광고주"),
+                        )
+                        st.session_state["pdf_bytes"] = _generated
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"PDF 생성 실패: {e}")
 
     # 화면 그대로 저장 안내
     st.markdown("""
@@ -3505,6 +3514,7 @@ def main():
         st.session_state["last_df_hash"]  = df_hash
         st.session_state["chat_messages"] = []
         st.session_state["chat_api"]      = []
+        st.session_state.pop("pdf_bytes", None)   # 새 파일 업로드 시 PDF 초기화
         st.rerun()
 
     # 결과 표시
