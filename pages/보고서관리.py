@@ -17,7 +17,13 @@ load_dotenv()
 
 st.set_page_config(page_title="보고서 관리", page_icon="📊", layout="wide")
 
-ADMIN_PW = os.getenv("ADMIN_PASSWORD", "marketip2024!")
+def get_secret(key, default=""):
+    try:
+        return st.secrets[key]
+    except:
+        return os.getenv(key, default)
+
+ADMIN_PW = get_secret("ADMIN_PASSWORD", "mktip")
 CLIENTS_FILE = os.path.join(ROOT, "clients.json")
 HISTORY_FILE = os.path.join(ROOT, "report_history.json")
 
@@ -159,10 +165,10 @@ with tab2:
         st.divider()
         if st.button("🚀 보고서 발송 시작", type="primary", use_container_width=True, disabled=not selected):
             smtp_cfg = {
-                "smtp_user": os.getenv("SMTP_USER", ""),
-                "smtp_password": os.getenv("SMTP_PASSWORD", ""),
-                "smtp_host": os.getenv("SMTP_HOST", "smtp.naver.com"),
-                "smtp_port": int(os.getenv("SMTP_PORT", "465")),
+                "smtp_user": get_secret("SMTP_USER", ""),
+                "smtp_password": get_secret("SMTP_PASSWORD", ""),
+                "smtp_host": get_secret("SMTP_HOST", "smtp.naver.com"),
+                "smtp_port": int(get_secret("SMTP_PORT", "465")),
             }
 
             if not smtp_cfg["smtp_user"]:
@@ -245,7 +251,7 @@ with tab3:
 with tab4:
     st.subheader("⚙️ 이메일 발송 설정")
 
-    current_user = os.getenv("SMTP_USER", "미설정")
+    current_user = get_secret("SMTP_USER", "미설정")
     if current_user != "미설정":
         st.success(f"✅ 현재 발송 계정: {current_user}")
     else:
@@ -266,9 +272,9 @@ ADMIN_PASSWORD = "관리자비밀번호"
 
     st.divider()
     st.subheader("📧 테스트 이메일 발송")
-    test_to = st.text_input("테스트 수신 이메일", value=os.getenv("SMTP_USER", ""))
+    test_to = st.text_input("테스트 수신 이메일", value=get_secret("SMTP_USER", ""))
     if st.button("테스트 발송"):
-        smtp_user = os.getenv("SMTP_USER", "")
+        smtp_user = get_secret("SMTP_USER", "")
         if not smtp_user:
             st.error(".env 파일 또는 Secrets에 SMTP_USER를 설정해주세요.")
         else:
@@ -281,9 +287,9 @@ ADMIN_PASSWORD = "관리자비밀번호"
                     until="2026-01-07",
                     html_body="<h2>✅ 테스트 이메일입니다. 발송 시스템이 정상 작동 중입니다.</h2>",
                     smtp_user=smtp_user,
-                    smtp_password=os.getenv("SMTP_PASSWORD", ""),
-                    smtp_host=os.getenv("SMTP_HOST", "smtp.naver.com"),
-                    smtp_port=int(os.getenv("SMTP_PORT", "465")),
+                    smtp_password=get_secret("SMTP_PASSWORD", ""),
+                    smtp_host=get_secret("SMTP_HOST", "smtp.naver.com"),
+                    smtp_port=int(get_secret("SMTP_PORT", "465")),
                 )
                 st.success(f"✅ {test_to} 로 테스트 이메일 발송 성공!")
             except Exception as e:
