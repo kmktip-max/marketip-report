@@ -3,5 +3,5 @@ headless = true
 port = 8501
 
 [client]
-showSidebarNavigation = false
+showSidebarNavigation = true
 toolbarMode = "minimal"
