@@ -12,6 +12,7 @@ sys.path.insert(0, ROOT)
 from report_engine.naver_api import NaverAdAPI
 from report_engine.emailer import send_report
 from report_engine.report_html import generate_html
+from report_engine.storage import load_clients, save_clients
 
 load_dotenv()
 
@@ -26,7 +27,6 @@ def get_secret(key, default=""):
     return os.getenv(key, default)
 
 ADMIN_PW = get_secret("ADMIN_PASSWORD", "mktip")
-CLIENTS_FILE = os.path.join(ROOT, "clients.json")
 HISTORY_FILE = os.path.join(ROOT, "report_history.json")
 
 
@@ -50,17 +50,7 @@ if not check_admin():
     st.stop()
 
 
-# ── 데이터 로드/저장 ─────────────────────────────────────────────────
-def load_clients():
-    if os.path.exists(CLIENTS_FILE):
-        with open(CLIENTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-def save_clients(clients):
-    with open(CLIENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(clients, f, ensure_ascii=False, indent=2)
-
+# ── 히스토리 로드/저장 ───────────────────────────────────────────────
 def load_history():
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
