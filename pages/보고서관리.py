@@ -253,6 +253,12 @@ with tab3:
 with tab4:
     st.subheader("⚙️ 이메일 발송 설정")
 
+    # 디버그
+    try:
+        st.write("secrets keys:", list(st.secrets.keys()))
+    except Exception as e:
+        st.write("secrets 오류:", e)
+
     current_user = get_secret("SMTP_USER", "미설정")
     if current_user != "미설정":
         st.success(f"✅ 현재 발송 계정: {current_user}")
