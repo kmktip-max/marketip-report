@@ -19,9 +19,11 @@ st.set_page_config(page_title="보고서 관리", page_icon="📊", layout="wide
 
 def get_secret(key, default=""):
     try:
-        return st.secrets[key]
-    except:
-        return os.getenv(key, default)
+        if hasattr(st, "secrets") and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+    return os.getenv(key, default)
 
 ADMIN_PW = get_secret("ADMIN_PASSWORD", "mktip")
 CLIENTS_FILE = os.path.join(ROOT, "clients.json")
