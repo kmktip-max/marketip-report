@@ -167,8 +167,8 @@ with tab2:
         st.divider()
         if st.button("🚀 보고서 발송 시작", type="primary", use_container_width=True, disabled=not selected):
             smtp_cfg = {
-                "smtp_user": get_secret("SMTP_USER", ""),
-                "smtp_password": get_secret("SMTP_PASSWORD", ""),
+                "smtp_user": get_secret("GMAIL_USER", ""),
+                "smtp_password": get_secret("GMAIL_APP_PASSWORD", ""),
                 "smtp_host": get_secret("SMTP_HOST", "smtp.naver.com"),
                 "smtp_port": int(get_secret("SMTP_PORT", "465")),
             }
@@ -253,13 +253,7 @@ with tab3:
 with tab4:
     st.subheader("⚙️ 이메일 발송 설정")
 
-    # 디버그
-    try:
-        st.write("secrets keys:", list(st.secrets.keys()))
-    except Exception as e:
-        st.write("secrets 오류:", e)
-
-    current_user = get_secret("SMTP_USER", "미설정")
+    current_user = get_secret("GMAIL_USER", "미설정")
     if current_user != "미설정":
         st.success(f"✅ 현재 발송 계정: {current_user}")
     else:
@@ -271,8 +265,8 @@ with tab4:
 2. 아래 내용 입력 후 저장
 """)
     st.code("""
-SMTP_USER = "발송계정@naver.com"
-SMTP_PASSWORD = "네이버앱비밀번호12자리"
+GMAIL_USER = "발송계정@naver.com"
+GMAIL_APP_PASSWORD = "네이버앱비밀번호12자리"
 SMTP_HOST = "smtp.naver.com"
 SMTP_PORT = "465"
 ADMIN_PASSWORD = "관리자비밀번호"
@@ -280,9 +274,9 @@ ADMIN_PASSWORD = "관리자비밀번호"
 
     st.divider()
     st.subheader("📧 테스트 이메일 발송")
-    test_to = st.text_input("테스트 수신 이메일", value=get_secret("SMTP_USER", ""))
+    test_to = st.text_input("테스트 수신 이메일", value=get_secret("GMAIL_USER", ""))
     if st.button("테스트 발송"):
-        smtp_user = get_secret("SMTP_USER", "")
+        smtp_user = get_secret("GMAIL_USER", "")
         if not smtp_user:
             st.error(".env 파일 또는 Secrets에 SMTP_USER를 설정해주세요.")
         else:
@@ -295,7 +289,7 @@ ADMIN_PASSWORD = "관리자비밀번호"
                     until="2026-01-07",
                     html_body="<h2>✅ 테스트 이메일입니다. 발송 시스템이 정상 작동 중입니다.</h2>",
                     smtp_user=smtp_user,
-                    smtp_password=get_secret("SMTP_PASSWORD", ""),
+                    smtp_password=get_secret("GMAIL_APP_PASSWORD", ""),
                     smtp_host=get_secret("SMTP_HOST", "smtp.naver.com"),
                     smtp_port=int(get_secret("SMTP_PORT", "465")),
                 )
