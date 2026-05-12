@@ -64,9 +64,9 @@ class NaverAdAPI:
                 continue
         return all_ag
 
-    def get_keywords(self, adgroup_ids):
+    def get_keywords(self, adgroup_ids, max_adgroups=20):
         all_kw = []
-        for ag_id in adgroup_ids:
+        for ag_id in adgroup_ids[:max_adgroups]:
             try:
                 r = self._get("/ncc/keywords", {"nccAdgroupId": ag_id})
                 if isinstance(r, list):

@@ -186,16 +186,9 @@ with tab2:
                         api = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
                         data = api.fetch_report(period_key)
 
-                        if not data["keywords"]:
-                            st.warning(f"⚠️ **{client['name']}**: 키워드 통계 데이터 없음 (발송 건너뜀)")
-                            history.append({
-                                "client": client["name"],
-                                "period": period_key,
-                                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                "status": "데이터 없음",
-                            })
-                        else:
-                            html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+                        # 통계 없어도 캠페인/키워드 현황 보고서 발송
+                        html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+                        if True:
                             send_report(
                                 to_email=client["email"],
                                 client_name=client["name"],
