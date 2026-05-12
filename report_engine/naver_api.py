@@ -78,7 +78,7 @@ class NaverAdAPI:
     def get_stats(self, entity_ids, since, until):
         """통계 조회 - 여러 파라미터 형식 시도"""
         tr = json.dumps({"since": since, "until": until})
-        fields = json.dumps(["impCount", "clkCnt", "salesAmt", "convCnt", "ctr", "avgCpc", "ror", "cpa", "cost"])
+        fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"])
 
         all_stats = []
         for i in range(0, len(entity_ids), 20):
@@ -113,13 +113,13 @@ class NaverAdAPI:
         rows = []
         for s in stats:
             kid = s.get("id", "")
-            cost = int(s.get("cost", 0))
-            revenue = int(s.get("salesAmt", 0))
             clicks = int(s.get("clkCnt", 0))
-            impressions = int(s.get("impCount", 0))
-            conversions = int(s.get("convCnt", 0))
+            impressions = int(s.get("impCnt", 0))
+            conversions = int(s.get("ccnt", 0))
+            revenue = int(s.get("salesAmt", 0))
             roas = round(s.get("ror", 0), 1)
-            cpa = int(s.get("cpa", 0)) if s.get("cpa") else (cost // conversions if conversions else 0)
+            cpa = int(s.get("cpConv", 0))
+            cost = cpa * conversions if conversions else 0
             rows.append({
                 "keyword": kw_map.get(kid, kid),
                 "cost": cost,
