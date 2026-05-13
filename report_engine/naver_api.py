@@ -130,6 +130,7 @@ class NaverAdAPI:
                 "roas": roas,
                 "cpa": cpa,
                 "ctr": round(s.get("ctr", 0), 2),
+                "avg_rnk": round(s.get("avgRnk", 0), 1),
             })
 
         return {
