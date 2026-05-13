@@ -56,16 +56,16 @@ body{font-family:'Malgun Gothic',sans-serif;font-size:13px;color:#222;background
 <div class="section">
 <div class="section-bar">종합 성과 요약</div>
 <div class="kpi-row">
-  <div class="kpi"><div class="kpi-label">총 비용 (VAT포함)</div><div class="kpi-val">{{ total_cost_str }}</div></div>
   <div class="kpi"><div class="kpi-label">총 클릭수</div><div class="kpi-val">{{ total_clicks_str }}</div></div>
-  <div class="kpi"><div class="kpi-label">총 전환수</div><div class="kpi-val">{{ total_conv_str }}</div></div>
+  <div class="kpi"><div class="kpi-label">총 노출수</div><div class="kpi-val">{{ total_impressions_str }}</div></div>
+  <div class="kpi"><div class="kpi-label">평균 CTR</div><div class="kpi-val">{{ avg_ctr_str }}</div></div>
   <div class="kpi"><div class="kpi-label">총 전환매출</div><div class="kpi-val">{{ total_revenue_str }}</div></div>
-  <div class="kpi"><div class="kpi-label">평균 전환당비용</div><div class="kpi-val">{{ avg_cpa_str }}</div></div>
+  <div class="kpi"><div class="kpi-label">평균 노출순위</div><div class="kpi-val">{{ avg_rnk_str }}</div></div>
 </div>
 </div>
 
 <div class="section">
-<div class="section-bar">비용 순위 키워드 TOP10</div>
+<div class="section-bar">클릭수 순위 키워드 TOP10</div>
 <div class="chart-wrap"><canvas id="costBar"></canvas></div>
 </div>
 
@@ -159,13 +159,14 @@ def generate_html(data, client_name, report_date):
     kws = data["keywords"]
     since, until = data["since"], data["until"]
 
-    total_cost = int(sum(k["cost"] for k in kws) * 1.1)
     total_clicks = sum(k["clicks"] for k in kws)
+    total_impressions = sum(k["impressions"] for k in kws)
     total_conv = sum(k["conversions"] for k in kws)
     total_revenue = sum(k["revenue"] for k in kws)
-    avg_cpa = total_cost // total_conv if total_conv else 0
+    avg_ctr = round(sum(k["ctr"] for k in kws) / len(kws), 2) if kws else 0
+    avg_rnk = round(sum(k.get("roas", 0) for k in kws) / len(kws), 1) if kws else 0
 
-    by_cost = sorted(kws, key=lambda x: x["cost"], reverse=True)
+    by_clicks = sorted(kws, key=lambda x: x["clicks"], reverse=True)
     roas_top10 = sorted([k for k in kws if k["roas"] > 0], key=lambda x: x["roas"], reverse=True)[:10]
     cpa_top10 = sorted([k for k in kws if k["cpa"] > 0], key=lambda x: x["cpa"])[:10]
 
@@ -174,16 +175,18 @@ def generate_html(data, client_name, report_date):
         "since": since, "until": until,
         "report_date": report_date,
         "total_keywords": len(kws),
-        "total_cost_str": _fmt(total_cost),
         "total_clicks_str": f"{total_clicks:,}회",
+        "total_impressions_str": f"{total_impressions:,}회",
         "total_conv_str": f"{total_conv:,}건",
-        "total_revenue_str": _fmt(total_revenue),
-        "avg_cpa_str": f"{avg_cpa:,}원",
+        "total_revenue_str": _fmt(total_revenue) if total_revenue > 0 else "미집계",
+        "avg_ctr_str": f"{avg_ctr}%",
+        "avg_rnk_str": f"{avg_rnk}위",
+        "avg_cpa_str": "미집계",
         "roas_top10": roas_top10,
         "roas_top10_conv": sum(k["conversions"] for k in roas_top10),
         "roas_top10_cost": sum(k["cost"] for k in roas_top10),
         "cpa_top10": cpa_top10,
-        "cost_top": by_cost[:10],
-        "cost_chart_json": json.dumps([{"k": k["keyword"], "v": k["cost"]} for k in by_cost[:10]]),
+        "cost_top": by_clicks[:10],
+        "cost_chart_json": json.dumps([{"k": k["keyword"], "v": k["clicks"]} for k in by_clicks[:10]]),
     }
     return Template(TEMPLATE).render(**ctx)

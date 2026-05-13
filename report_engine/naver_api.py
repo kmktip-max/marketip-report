@@ -64,7 +64,7 @@ class NaverAdAPI:
                 continue
         return all_ag
 
-    def get_keywords(self, adgroup_ids, max_adgroups=20):
+    def get_keywords(self, adgroup_ids, max_adgroups=79):
         all_kw = []
         for ag_id in adgroup_ids[:max_adgroups]:
             try:
