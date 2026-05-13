@@ -1,6 +1,8 @@
 import smtplib
 import os
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.header import Header
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,20 +22,21 @@ def send_report(to_email, client_name, period, since, until, html_body,
 
     period_label = "주간" if period == "weekly" else "월간"
     subject = f"[광고 성과 보고서] {client_name} | {period_label} ({since} ~ {until})"
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = user
+    msg["To"] = to_email
+
     plain = (
         f"안녕하세요, {client_name} 담당자님.\n\n"
-        f"{period_label} 광고 성과 보고서({since} ~ {until})를 보내드립니다.\n"
-        "HTML 형식의 보고서를 확인해 주세요.\n\n"
+        f"{period_label} 광고 성과 보고서({since} ~ {until})를 보내드립니다.\n\n"
         "감사합니다.\nadmarketip"
     )
 
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = user
-    msg["To"] = to_email
-    msg.set_content(plain, charset="utf-8")
-    msg.add_alternative(html_body, subtype="html", charset="utf-8")
+    msg.attach(MIMEText(plain, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     with smtplib.SMTP_SSL(host, port, local_hostname="localhost") as smtp:
         smtp.login(user, password)
-        smtp.send_message(msg)
+        smtp.sendmail(user, to_email, msg.as_bytes().decode("utf-8", errors="replace"))
