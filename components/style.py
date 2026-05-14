@@ -167,17 +167,24 @@ PAYBACK_CSS = """
   padding-left: 4rem !important;
   padding-right: 4rem !important;
 }
-/* Streamlit 컬럼 흰 박스 제거 */
-[data-testid="stColumn"] {
+/* Streamlit 컬럼·블록 흰 박스 완전 제거 */
+[data-testid="stColumn"],
+[data-testid="stHorizontalBlock"] > div,
+[data-testid="stVerticalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="stElementContainer"] {
   background: transparent !important;
   box-shadow: none !important;
   border: none !important;
-  padding: 0 !important;
 }
-/* 계정 헤더 행 수직 정렬 */
+/* 계정 헤더 수직 정렬 */
 [data-testid="stHorizontalBlock"]:has(.sec-ttl) {
   align-items: center !important;
-  margin: 28px 0 12px !important;
+  margin: 28px 0 8px !important;
+}
+[data-testid="stHorizontalBlock"]:has(.sec-ttl) [data-testid="stColumn"]:first-child {
+  display: flex;
+  align-items: center;
 }
 
 /* ── typography ── */

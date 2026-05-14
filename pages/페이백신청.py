@@ -216,7 +216,7 @@ accounts = load_accounts()
 col_title, col_btn = st.columns([4, 1])
 with col_title:
     st.markdown(
-        f'<div class="sec-ttl" style="line-height:2.2;">내 네이버 광고 계정'
+        f'<div class="sec-ttl">내 네이버 광고 계정'
         f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
         unsafe_allow_html=True
     )
