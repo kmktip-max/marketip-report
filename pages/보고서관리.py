@@ -182,6 +182,31 @@ with tab2:
                     try:
                         api = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
                         data = api.fetch_report(period_key)
+                        kws = data["keywords"]
+
+                        # ── 디버그 요약 ──────────────────────────────
+                        total_clicks = sum(k["clicks"]      for k in kws)
+                        total_imps   = sum(k["impressions"] for k in kws)
+                        total_convs  = sum(k["conversions"] for k in kws)
+                        total_rev    = sum(k["revenue"]     for k in kws)
+                        total_cost   = sum(k["cost"]        for k in kws)
+
+                        with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=False):
+                            st.caption(f"사용 컬럼: clicks(clkCnt), impressions(impCnt), conversions(ccnt), revenue(salesAmt), cost(cpConv×ccnt), ctr, cpa, roas, avg_rnk")
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            col1.metric("클릭수",   f"{total_clicks:,}회")
+                            col2.metric("노출수",   f"{total_imps:,}회")
+                            col3.metric("전환수",   f"{total_convs:,}건")
+                            col4.metric("전환매출", f"{total_rev:,}원")
+                            col5.metric("추정비용", f"{total_cost:,}원")
+
+                            if kws:
+                                import pandas as pd
+                                df_prev = pd.DataFrame(kws[:5])[
+                                    ["keyword","clicks","impressions","conversions","revenue","cost","ctr","cpa","roas"]
+                                ]
+                                st.dataframe(df_prev, use_container_width=True)
+
                         html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
                         results.append({
                             "client": client,
@@ -189,7 +214,7 @@ with tab2:
                             "html": html,
                             "status": "ok"
                         })
-                        st.success(f"✅ {client['name']} 데이터 수집 완료 (키워드 {data['total_keywords']}개)")
+                        st.success(f"✅ {client['name']} 완료 — 키워드 {data['total_keywords']}개 | 클릭 {total_clicks:,}회 | 노출 {total_imps:,}회")
                     except Exception as e:
                         results.append({
                             "client": client,

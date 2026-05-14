@@ -112,25 +112,38 @@ class NaverAdAPI:
 
         rows = []
         for s in stats:
-            kid = s.get("id", "")
-            clicks = int(s.get("clkCnt", 0))
-            impressions = int(s.get("impCnt", 0))
-            conversions = int(s.get("ccnt", 0))
-            revenue = int(s.get("salesAmt", 0))
-            roas = round(s.get("ror", 0), 1)
-            cpa = int(s.get("cpConv", 0))
-            cost = cpa * conversions if conversions else 0
+            kid       = s.get("id", "")
+            clicks    = int(s.get("clkCnt", 0))
+            imps      = int(s.get("impCnt", 0))
+            convs     = int(s.get("ccnt", 0))
+            revenue   = int(s.get("salesAmt", 0))
+            cpconv    = float(s.get("cpConv", 0))
+            api_ror   = float(s.get("ror", 0))
+
+            # 비용: API가 cost 필드 미제공 → cpConv * ccnt 근사
+            cost = int(cpconv * convs) if convs > 0 else 0
+
+            # 파생 지표 — 분모 0 방지
+            ctr  = round(clicks / imps * 100, 2) if imps > 0 else 0
+            cpc  = round(cost / clicks) if clicks > 0 and cost > 0 else 0
+            cvr  = round(convs / clicks * 100, 2) if clicks > 0 else 0
+            cpa  = round(cost / convs) if convs > 0 and cost > 0 else 0
+            roas = round(revenue / cost * 100, 1) if cost > 0 and revenue > 0 else \
+                   round(api_ror, 1)
+
             rows.append({
-                "keyword": kw_map.get(kid, kid),
-                "cost": cost,
-                "clicks": clicks,
-                "impressions": impressions,
-                "conversions": conversions,
-                "revenue": revenue,
-                "roas": roas,
-                "cpa": cpa,
-                "ctr": round(s.get("ctr", 0), 2),
-                "avg_rnk": round(s.get("avgRnk", 0), 1),
+                "keyword":     kw_map.get(kid, kid),
+                "clicks":      clicks,
+                "impressions": imps,
+                "conversions": convs,
+                "revenue":     revenue,
+                "cost":        cost,
+                "ctr":         ctr,
+                "cpc":         cpc,
+                "cvr":         cvr,
+                "cpa":         cpa,
+                "roas":        roas,
+                "avg_rnk":     round(s.get("avgRnk", 0), 1),
             })
 
         return {
