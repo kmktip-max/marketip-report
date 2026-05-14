@@ -68,13 +68,16 @@ def get_mapping(cid, ano):
             return m
     return None
 
-def upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own):
+def upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own,
+                   direct_mode=False, direct_rate=0.0):
     data = load_mapping()
     k = _mk(cid, ano)
     entry = {"customer_id": str(cid), "ad_account_no": str(ano),
              "account_id": aid, "account_name": name, "display_name": disp,
              "freelancer": fl, "freelancer_rate": fr, "rebate_rate": rr,
-             "is_owner_managed": is_own}
+             "is_owner_managed": is_own,
+             "direct_commission_mode": direct_mode,
+             "direct_commission_rate": direct_rate}
     for m in data:
         if _mk(m.get("customer_id",""), m.get("ad_account_no","")) == k:
             m.update(entry)
@@ -284,38 +287,52 @@ def parse_excel(f):
     return df_g, None, df, debug
 
 # ── 정산 계산 ─────────────────────────────────────────────────────────────────
-def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own):
+def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
+         direct_mode=False, direct_rate_pct=0.0):
     """
-    ad_supply    : 광고비 공급가 (프리랜서 지급 기준)
-    ad_total     : 광고비 합계금액 VAT포함 (리베이트 기준)
-    comm_supply  : 수수료 공급가 (대표 수익 기준)
-    fr_pct       : 프리랜서 기본 정산율 (%)
-    rr_pct       : 리베이트율 (%)
+    ad_supply        : 광고비 공급가 (프리랜서 지급 기준)
+    ad_total         : 광고비 합계금액 VAT포함 (리베이트 기준)
+    comm_supply      : 수수료 공급가 (네이버 구조에서 대표 수익 기준)
+    fr_pct           : 프리랜서 기본 정산율 (%)
+    rr_pct           : 리베이트율 (%)
+    direct_mode      : 광고주 직접 수수료 구조 (구글 등)
+    direct_rate_pct  : 광고주 직접 수수료율 (%)
     """
     fr  = fr_pct / 100
     rr  = rr_pct / 100
     eff = max(fr - rr, 0)
+    rebate = round(ad_total * rr)   # 리베이트: VAT포함 합계 기준
 
-    rebate = round(ad_total * rr)       # 리베이트: VAT포함 합계 기준
-
-    if is_own:
-        return {"eff_pct": 0.0,
-                "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
+    if direct_mode:
+        # ── 구글 광고 구조: 광고주 직접 수수료 기반 ────────────────────
+        dr = direct_rate_pct / 100
+        direct_comm = round(ad_supply * dr)     # 광고주 직접 수수료 금액
+        if is_own:
+            return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
+                    "rebate": rebate, "owner": direct_comm - rebate,
+                    "direct_comm": direct_comm, "warn": False, "direct": True}
+        fl_gross = round(ad_supply * eff)
+        fl_tax   = round(fl_gross * 0.033)
+        fl_net   = round(fl_gross * 0.967)
+        return {"eff_pct": round(eff * 100, 2),
+                "fl_gross": fl_gross, "fl_tax": fl_tax, "fl_net": fl_net,
                 "rebate": rebate,
-                "owner": round(comm_supply - rebate),
-                "warn": False}
-
-    fl_gross = round(ad_supply * eff)
-    fl_tax   = round(fl_gross * 0.033)
-    fl_net   = round(fl_gross * 0.967)
-
-    return {"eff_pct": round(eff * 100, 2),
-            "fl_gross": fl_gross,
-            "fl_tax":   fl_tax,
-            "fl_net":   fl_net,
-            "rebate":   rebate,
-            "owner":    round(comm_supply - fl_gross - rebate),
-            "warn":     (fr - rr) < 0}
+                "owner": direct_comm - fl_gross - rebate,
+                "direct_comm": direct_comm, "warn": (fr - rr) < 0, "direct": True}
+    else:
+        # ── 네이버 구조: 상위대행사 수수료 공급가 기반 ──────────────────
+        if is_own:
+            return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
+                    "rebate": rebate, "owner": round(comm_supply - rebate),
+                    "direct_comm": 0, "warn": False, "direct": False}
+        fl_gross = round(ad_supply * eff)
+        fl_tax   = round(fl_gross * 0.033)
+        fl_net   = round(fl_gross * 0.967)
+        return {"eff_pct": round(eff * 100, 2),
+                "fl_gross": fl_gross, "fl_tax": fl_tax, "fl_net": fl_net,
+                "rebate": rebate,
+                "owner": round(comm_supply - fl_gross - rebate),
+                "direct_comm": 0, "warn": (fr - rr) < 0, "direct": False}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # UI
@@ -423,18 +440,39 @@ with t_cl:
                                          float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{wk}")
                     rr = st.number_input("리베이트율(%)", 0.0, 100.0,
                                          float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{wk}")
+                    st.markdown("---")
+                    direct_mode = st.checkbox("💡 광고주 직접 수수료 구조 (구글 등)",
+                                              ex.get("direct_commission_mode", False),
+                                              key=f"dm_{wk}")
+                    direct_rate = 0.0
+                    if direct_mode:
+                        direct_rate = st.number_input("광고주 직접 수수료율(%)", 0.0, 100.0,
+                                                      float(ex.get("direct_commission_rate", 0)),
+                                                      step=0.5, key=f"dr_{wk}")
 
                 # ── 우측: 계산 결과 ──────────────────────────────────────
                 with rc:
-                    r = calc(ad_s, ad_t, cm_s, fr, rr, is_own)
-                    data_rows = [
-                        ("광고비 공급가",   w(ad_s)),
-                        ("광고비 VAT",      w(ad_v)),
-                        ("광고비 합계",     w(ad_t)),
-                        ("상위 수수료율",   pct(cr_pct)),
-                        ("수수료 공급가",   w(cm_s)),
-                        ("수수료 VAT",      w(cm_v)),
-                        ("수수료 합계",     w(cm_t)),
+                    r = calc(ad_s, ad_t, cm_s, fr, rr, is_own, direct_mode, direct_rate)
+
+                    data_rows = [("광고비 공급가", w(ad_s)),
+                                 ("광고비 VAT",   w(ad_v)),
+                                 ("광고비 합계",  w(ad_t))]
+
+                    if direct_mode:
+                        data_rows += [
+                            ("───","───"),
+                            ("광고주 직접 수수료율",  pct(direct_rate)),
+                            ("광고주 직접 수수료 금액", w(r["direct_comm"])),
+                        ]
+                    else:
+                        data_rows += [
+                            ("상위 수수료율",  pct(cr_pct)),
+                            ("수수료 공급가",  w(cm_s)),
+                            ("수수료 VAT",     w(cm_v)),
+                            ("수수료 합계",    w(cm_t)),
+                        ]
+
+                    data_rows += [
                         ("───","───"),
                         ("프리랜서 정산율", pct(fr)),
                         ("리베이트율",      pct(rr)),
@@ -443,10 +481,11 @@ with t_cl:
                         ("프리랜서 공제전 지급액",  w(r["fl_gross"])),
                         ("프리랜서 3.3% 공제액",    w(r["fl_tax"])),
                         ("프리랜서 공제후 실수령액", w(r["fl_net"])),
-                        ("리베이트 지급액",  w(r["rebate"])),
+                        ("리베이트 지급액",          w(r["rebate"])),
                         ("───","───"),
-                        ("대표 수익",       w(r["owner"])),
+                        ("대표 수익",                w(r["owner"])),
                     ]
+
                     tbl = "| 항목 | 금액 |\n|---|---:|\n"
                     for k, v in data_rows:
                         tbl += f"| {k} | {v} |\n"
@@ -454,7 +493,8 @@ with t_cl:
                     if r["warn"]: st.error("⚠️ 실지급률이 음수입니다!")
 
                 if st.button("💾 저장", key=f"sv_{wk}", type="primary"):
-                    upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own)
+                    upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own,
+                                   direct_mode, direct_rate)
                     st.success(f"✅ {disp} 저장 완료")
                     st.rerun()
 
@@ -473,6 +513,8 @@ with t_cl:
                     float(st.session_state.get(f"fr_{wk}",0)),
                     float(st.session_state.get(f"rr_{wk}",0)),
                     bool(st.session_state.get(f"own_{wk}",False)),
+                    bool(st.session_state.get(f"dm_{wk}",False)),
+                    float(st.session_state.get(f"dr_{wk}",0)),
                 )
             st.success("✅ 전체 저장 완료"); st.rerun()
 
@@ -522,11 +564,13 @@ with t_fl:
             fl   = m.get("freelancer","미분류")
             fr   = float(m.get("freelancer_rate",0))
             rr   = float(m.get("rebate_rate",0))
-            is_o = m.get("is_owner_managed",False)
-            ad_s = float(row.get("ad_supply",0))
-            ad_t = float(row.get("ad_total",0))
-            cm_s = float(row.get("comm_supply",0))
-            r    = calc(ad_s, ad_t, cm_s, fr, rr, is_o)
+            is_o  = m.get("is_owner_managed",False)
+            dm    = m.get("direct_commission_mode",False)
+            dr    = float(m.get("direct_commission_rate",0))
+            ad_s  = float(row.get("ad_supply",0))
+            ad_t  = float(row.get("ad_total",0))
+            cm_s  = float(row.get("comm_supply",0))
+            r     = calc(ad_s, ad_t, cm_s, fr, rr, is_o, dm, dr)
 
             details.append({
                 "프리랜서": fl, "업체명": disp,
