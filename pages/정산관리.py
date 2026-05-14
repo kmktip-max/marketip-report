@@ -432,8 +432,20 @@ with hc2:
         for k in ["settlement_auth","uploaded_df","upload_dbg"]: st.session_state.pop(k, None)
         st.rerun()
 
-YM = [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)]
-sel_ym = st.selectbox("📅 정산 월", YM, index=None, placeholder="YYYY-MM...", key="main_ym")
+_today      = date.today()
+_ym_years   = list(range(2026, _today.year + 2))
+_def_y_idx  = _ym_years.index(max(2026, _today.year)) if max(2026, _today.year) in _ym_years else 0
+_def_m_idx  = _today.month - 1   # 0-based
+
+_yc, _mc, _ = st.columns([1, 1, 5])
+with _yc:
+    _sel_year  = st.selectbox("연도", _ym_years, index=_def_y_idx,
+                              format_func=lambda y: f"{y}년", key="main_year")
+with _mc:
+    _sel_month = st.selectbox("월", list(range(1, 13)), index=_def_m_idx,
+                              format_func=lambda m: f"{m}월", key="main_month")
+
+sel_ym = f"{_sel_year}-{_sel_month:02d}"
 st.divider()
 
 t_up, t_cl, t_un, t_fl, t_ex, t_pnl, t_annual = st.tabs([
