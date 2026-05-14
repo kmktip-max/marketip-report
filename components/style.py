@@ -153,9 +153,9 @@ PAYBACK_CSS = """
 <style>
 /* ── layout ── */
 .block-container {
-  max-width: 100% !important;
-  padding-left: 3rem !important;
-  padding-right: 3rem !important;
+  max-width: 1400px !important;
+  padding-left: 4rem !important;
+  padding-right: 4rem !important;
 }
 
 /* ── typography ── */
