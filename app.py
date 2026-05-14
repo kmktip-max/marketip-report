@@ -35,6 +35,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── 라우팅 먼저 등록 (page_link가 참조하려면 navigation이 앞에 있어야 함) ───────
+pg = st.navigation([
+    st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
+    st.Page("pages/월간보고서.py",    title="월간보고서"),
+    st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
+])
+
 # ── 사이드바 CSS 주입 ─────────────────────────────────────────────────────────
 st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 
@@ -65,10 +72,5 @@ with st.sidebar:
                 unsafe_allow_html=True)
     st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
-# ── 라우팅 ────────────────────────────────────────────────────────────────────
-pg = st.navigation([
-    st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
-    st.Page("pages/월간보고서.py",    title="월간보고서"),
-    st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
-])
+# ── 페이지 실행 ───────────────────────────────────────────────────────────────
 pg.run()
