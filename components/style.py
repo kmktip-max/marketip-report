@@ -21,9 +21,16 @@ def badge(status: str) -> str:
 SIDEBAR_CSS = """
 <style>
 /* ── 기본 Streamlit 사이드바 nav 숨기기 ── */
-[data-testid="stSidebarNav"]            { display: none !important; }
-[data-testid="stSidebarNavItems"]       { display: none !important; }
-[data-testid="stSidebarNavSeparator"]   { display: none !important; }
+[data-testid="stSidebarNav"],
+[data-testid="stSidebarNavItems"],
+[data-testid="stSidebarNavSeparator"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
 
 /* ── 사이드바 기본 ── */
 [data-testid="stSidebar"] {
@@ -35,14 +42,21 @@ SIDEBAR_CSS = """
 [data-testid="stSidebar"] > div:first-child,
 [data-testid="stSidebarContent"] {
     padding: 0 !important;
+    margin: 0 !important;
     gap: 0 !important;
+}
+/* 사이드바 내부 최상단 여백 제거 */
+[data-testid="stSidebarContent"] > div:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
 }
 
 /* ── 로고 래퍼 ── */
 .sb-logo-wrap {
-    padding: 8px 16px 12px;
+    padding: 4px 16px 10px;
     border-bottom: 1px solid #EAEDF2;
     margin-bottom: 6px;
+    margin-top: 0;
 }
 
 /* ── 섹션 레이블 ── */
@@ -108,7 +122,7 @@ SIDEBAR_CSS = """
 PAYBACK_CSS = """
 <style>
 /* ── layout ── */
-.block-container { padding-top: 1.8rem !important; max-width: 960px !important; }
+.block-container { max-width: 960px !important; }
 
 /* ── typography ── */
 .pb-h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 6px; letter-spacing:-.5px; }
