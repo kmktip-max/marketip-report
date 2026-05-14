@@ -40,7 +40,7 @@ SIDEBAR_CSS = """
 
 /* ── 로고 래퍼 ── */
 .sb-logo-wrap {
-    padding: 20px 20px 16px;
+    padding: 8px 16px 12px;
     border-bottom: 1px solid #EAEDF2;
     margin-bottom: 6px;
 }
