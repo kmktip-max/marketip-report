@@ -502,13 +502,10 @@ t_up, t_cl, t_un, t_fl, t_ex, t_pnl, t_annual = st.tabs([
 
 # ─── 업로드 탭 ────────────────────────────────────────────────────────────────
 def _merge_uploads(existing: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
-    """두 개의 파싱된 DataFrame을 groupby 키 기준으로 합산 병합"""
+    """두 DataFrame을 groupby 키 기준으로 합산 병합 (중복 방지)"""
     combined = pd.concat([existing, new_df], ignore_index=True)
     for col in ["customer_id","ad_account_no"]:
-        if col in combined.columns:
-            combined[col] = combined[col].astype(str).str.strip()
-        else:
-            combined[col] = ""
+        combined[col] = combined.get(col, pd.Series(dtype=str)).fillna("").astype(str).str.strip()
     if "매체사" not in combined.columns:
         combined["매체사"] = ""
     else:
@@ -524,66 +521,100 @@ def _merge_uploads(existing: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame
 
 with t_up:
     st.subheader("상위대행사 정산 엑셀 업로드")
+    st.caption("여러 대행사 엑셀을 동시에 선택하거나 '+' 버튼으로 추가 — 자동 합산 처리됩니다.")
 
-    _up_col1, _up_col2 = st.columns([3, 2])
-    with _up_col1:
-        st.caption("병합셀/단순 헤더 포맷 모두 지원 | 상위대행사별 엑셀 양식 자동 인식")
-    with _up_col2:
-        _append_mode = st.checkbox(
-            "기존 데이터에 추가 (다중 대행사 합산)",
-            value=False,
-            help="체크 시 이전 업로드 결과와 합산. 같은 업체·수수료율은 금액이 더해집니다.",
-        )
+    ufs = st.file_uploader(
+        "파일 선택 (여러 파일 동시 업로드 가능)",
+        type=["xlsx","xls","csv"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
 
-    uf = st.file_uploader("파일 선택", type=["xlsx","xls","csv"], label_visibility="collapsed")
+    if ufs:
+        # ── 파일별 파싱 ──────────────────────────────────────────────────────
+        _results, merged_df = [], None
+        for _uf in ufs:
+            _dg, _err, _, _dbg = parse_excel(_uf)
+            _results.append({
+                "name": _uf.name,
+                "ok":   _err is None,
+                "cnt":  len(_dg) if _err is None else 0,
+                "err":  _err,
+                "dbg":  _dbg,
+                "df":   _dg if _err is None else None,
+            })
+            if _err is None:
+                merged_df = _dg if merged_df is None else _merge_uploads(merged_df, _dg)
 
-    if uf:
-        df_g, err, df_detail, dbg = parse_excel(uf)
+        # ── 파일별 상태 카드 ──────────────────────────────────────────────────
+        for _r in _results:
+            _ico   = "✅" if _r["ok"] else "❌"
+            _color = "#059669" if _r["ok"] else "#DC2626"
+            _detail = f"{_r['cnt']}개 계정 추출" if _r["ok"] else f"오류: {_r['err']}"
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:10px;'
+                f'padding:8px 14px;margin-bottom:4px;'
+                f'border:1px solid #E5E8ED;border-radius:10px;background:#FAFAFA;">'
+                f'<span style="font-size:16px;">{_ico}</span>'
+                f'<span style="font-weight:600;color:#111;flex:1;">{_r["name"]}</span>'
+                f'<span style="font-size:12px;color:{_color};">{_detail}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            if not _r["ok"]:
+                with st.expander(f"🐛 {_r['name']} 디버그"):
+                    st.write(_r["dbg"])
 
-        if err:
-            st.error(f"파싱 오류: {err}")
-            with st.expander("🐛 디버그"):
-                st.write(dbg)
-        else:
-            # 다중 대행사 합산 모드
-            if _append_mode and st.session_state.get("uploaded_df") is not None:
-                prev_cnt = len(st.session_state["uploaded_df"])
-                df_g = _merge_uploads(st.session_state["uploaded_df"], df_g)
-                st.success(f"✅ 합산 완료: 기존 {prev_cnt}개 + 신규 → 총 {len(df_g)}개 계정")
-            else:
-                st.success(f"✅ {len(df_g)}개 계정 추출 (병합헤더:{dbg['merged_row']}행 → 실헤더:{dbg['header_row']}행)")
+        if merged_df is not None:
+            n_ok  = sum(1 for r in _results if r["ok"])
+            n_acc = len(merged_df)
+            _ts   = merged_df["ad_supply"].sum()  if "ad_supply"  in merged_df.columns else 0
+            _tt   = merged_df["ad_total"].sum()   if "ad_total"   in merged_df.columns else 0
+            _cs   = merged_df["comm_supply"].sum() if "comm_supply" in merged_df.columns else 0
+            _ct   = merged_df["comm_total"].sum()  if "comm_total"  in merged_df.columns else 0
 
+            # ── 합산 요약 카드 ────────────────────────────────────────────────
+            st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:12px;'
+                f'padding:16px 20px;margin-bottom:12px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#1D4ED8;margin-bottom:10px;">'
+                f'📊 합산 완료 — 업로드 {n_ok}개 파일 / 총 {n_acc}개 계정</div>'
+                f'<div style="display:flex;gap:32px;flex-wrap:wrap;">'
+                f'<span style="font-size:12px;color:#374151;">광고비 공급가 합계 '
+                f'<b>{_ts:,.0f}원</b></span>'
+                f'<span style="font-size:12px;color:#374151;">광고비 합계금액 '
+                f'<b>{_tt:,.0f}원</b></span>'
+                f'<span style="font-size:12px;color:#374151;">수수료 공급가 합계 '
+                f'<b>{_cs:,.0f}원</b></span>'
+                f'<span style="font-size:12px;color:#374151;">수수료 합계금액 '
+                f'<b>{_ct:,.0f}원</b></span>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
             st.caption("※ 같은 업체라도 매체사·수수료율이 다르면 별개 계정으로 분리됩니다.")
 
-            vc1, vc2, vc3, vc4 = st.columns(4)
-            _ts = df_g["ad_supply"].sum() if "ad_supply" in df_g.columns else 0
-            _tt = df_g["ad_total"].sum()  if "ad_total"  in df_g.columns else 0
-            _cs = df_g["comm_supply"].sum() if "comm_supply" in df_g.columns else 0
-            _ct = df_g["comm_total"].sum()  if "comm_total"  in df_g.columns else 0
-            vc1.metric("광고비 공급가 합계",   f"{_ts:,.0f}원")
-            vc2.metric("광고비 합계금액 합계", f"{_tt:,.0f}원")
-            vc3.metric("수수료 공급가 합계",   f"{_cs:,.0f}원")
-            vc4.metric("수수료 합계금액 합계", f"{_ct:,.0f}원")
-
-            with st.expander("🐛 디버그 정보"):
-                st.markdown(f"**병합헤더 행**: {dbg['merged_row']}  |  **실헤더 행**: {dbg['header_row']}")
-                st.markdown(f"**광고비 시작위치**: {dbg['ad_pos']}  |  **수수료 시작위치**: {dbg['comm_pos']}")
-                st.markdown("**원본 컬럼명**"); st.write(dbg["orig_cols"])
-                st.markdown("**컬럼 매핑 결과**"); st.json(dbg["rename_map"])
-                st.markdown("**매핑 후 컬럼**"); st.write(dbg.get("raw_cols"))
-                st.markdown("**상위 20행 (매핑 후)**")
-                st.dataframe(pd.DataFrame(dbg["raw_sample"]), use_container_width=True)
+            # 디버그 (마지막 성공 파일 기준)
+            _last_dbg = next((r["dbg"] for r in reversed(_results) if r["ok"]), {})
+            with st.expander("🐛 디버그 정보 (마지막 파일 기준)"):
+                st.markdown(f"**병합헤더 행**: {_last_dbg.get('merged_row')}  "
+                            f"|  **실헤더 행**: {_last_dbg.get('header_row')}")
+                st.markdown("**원본 컬럼명**"); st.write(_last_dbg.get("orig_cols"))
+                st.markdown("**컬럼 매핑 결과**"); st.json(_last_dbg.get("rename_map",{}))
+                st.markdown("**상위 20행**")
+                st.dataframe(pd.DataFrame(_last_dbg.get("raw_sample",[])), use_container_width=True)
                 st.markdown("**그룹핑 결과 상위 10행**")
-                st.dataframe(pd.DataFrame(dbg["group_sample"]), use_container_width=True)
+                st.dataframe(pd.DataFrame(_last_dbg.get("group_sample",[])), use_container_width=True)
 
-            st.session_state["uploaded_df"] = df_g
-            st.session_state["upload_dbg"]  = dbg
+            st.session_state["uploaded_df"] = merged_df
 
             show = [c for c in ["display_name","customer_id","ad_account_no","매체사",
-                                  "ad_supply","ad_total","comm_rate","comm_supply","comm_total"]
-                    if c in df_g.columns]
-            st.markdown("**추출된 계정 목록**")
-            st.dataframe(df_g[show], use_container_width=True, hide_index=True)
+                                 "ad_supply","ad_total","comm_rate","comm_supply","comm_total"]
+                    if c in merged_df.columns]
+            st.markdown("**통합 계정 목록**")
+            st.dataframe(merged_df[show], use_container_width=True, hide_index=True)
+        else:
+            st.error("모든 파일 파싱에 실패했습니다. 디버그 정보를 확인하세요.")
 
 # ─── 업체 분류 탭 ─────────────────────────────────────────────────────────────
 with t_cl:
