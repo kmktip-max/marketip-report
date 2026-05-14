@@ -18,6 +18,93 @@ def badge(status: str) -> str:
     return f'<span style="display:inline-block;padding:3px 12px;border-radius:100px;font-size:11px;font-weight:700;{style}">{status}</span>'
 
 
+SIDEBAR_CSS = """
+<style>
+/* ── 기본 Streamlit 사이드바 nav 숨기기 ── */
+[data-testid="stSidebarNav"]            { display: none !important; }
+[data-testid="stSidebarNavItems"]       { display: none !important; }
+[data-testid="stSidebarNavSeparator"]   { display: none !important; }
+
+/* ── 사이드바 기본 ── */
+[data-testid="stSidebar"] {
+    background: #fff !important;
+    border-right: 1px solid #EAEDF2 !important;
+    min-width: 220px !important;
+    max-width: 260px !important;
+}
+[data-testid="stSidebar"] > div:first-child,
+[data-testid="stSidebarContent"] {
+    padding: 0 !important;
+    gap: 0 !important;
+}
+
+/* ── 로고 래퍼 ── */
+.sb-logo-wrap {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid #EAEDF2;
+    margin-bottom: 6px;
+}
+
+/* ── 섹션 레이블 ── */
+.sb-label {
+    display: block !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #B4BCC8 !important;
+    letter-spacing: 1px !important;
+    text-transform: uppercase !important;
+    padding: 14px 20px 5px !important;
+}
+
+/* ── 섹션 구분선 ── */
+.sb-divider {
+    border: none;
+    border-top: 1px solid #EAEDF2;
+    margin: 6px 14px !important;
+}
+
+/* ── page_link 공통 ── */
+[data-testid="stPageLink"] {
+    padding: 1px 10px !important;
+    width: 100% !important;
+}
+[data-testid="stPageLink"] a {
+    display: flex !important;
+    align-items: center !important;
+    padding: 10px 14px !important;
+    border-radius: 8px !important;
+    color: #3A4152 !important;
+    font-size: 13.5px !important;
+    font-weight: 500 !important;
+    text-decoration: none !important;
+    transition: background .15s, color .15s !important;
+    gap: 0 !important;
+    line-height: 1.4 !important;
+}
+[data-testid="stPageLink"] a:hover {
+    background: #EEF4FF !important;
+    color: #0064FF !important;
+}
+[data-testid="stPageLink"] a[aria-current="page"] {
+    background: #E4EDFF !important;
+    color: #0064FF !important;
+    font-weight: 700 !important;
+}
+
+/* ── 페이백신청 항목 상시 강조 ── */
+#section-payback ~ div [data-testid="stPageLink"] a {
+    font-weight: 700 !important;
+    color: #0055E0 !important;
+}
+#section-payback ~ div [data-testid="stPageLink"] a:hover {
+    background: #E4EDFF !important;
+}
+#section-payback ~ div [data-testid="stPageLink"] a[aria-current="page"] {
+    background: #D6E6FF !important;
+}
+</style>
+"""
+
 PAYBACK_CSS = """
 <style>
 /* ── layout ── */
