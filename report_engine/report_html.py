@@ -126,32 +126,33 @@ def generate_html(data: dict, client_name: str, report_date: str) -> str:
 <meta charset="UTF-8">
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-html, body {{ background: #f3f5f8; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; font-size: 13px; color: #222; }}
-
-.rpt-outer {{
-  width: 1600px;
-  transform-origin: top left;
+html, body {{
+  background: #f3f5f8;
+  font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  font-size: 13px; color: #222;
+  width: 100%; overflow-x: hidden;
 }}
+.rpt-outer {{ width: 100%; }}
 .rpt {{
-  width: 1600px;
+  width: 100%; max-width: none;
   background: #fff;
-  border-radius: 12px;
+  border-radius: 0;
   overflow: hidden;
   box-shadow: 0 2px 16px rgba(0,0,0,.10);
 }}
-.rpt-body {{ padding: 20px 28px; }}
-.section {{ margin: 16px 0; }}
-.row {{ display: flex; gap: 14px; }}
-.kpi-row {{ display: flex; gap: 10px; }}
-.two-col {{ display: flex; gap: 14px; }}
+.rpt-body {{ padding: 20px 28px; width: 100%; }}
+.section {{ margin: 16px 0; width: 100%; }}
+.row {{ display: flex; gap: 14px; width: 100%; }}
+.kpi-row {{ display: flex; gap: 10px; width: 100%; }}
+.two-col {{ display: flex; gap: 14px; width: 100%; }}
 .two-col > div {{ flex: 1; min-width: 0; }}
-.three-col {{ display: flex; gap: 12px; }}
+.three-col {{ display: flex; gap: 12px; width: 100%; }}
 .three-col > div {{ flex: 1; min-width: 0; }}
 .panel {{
   border: 1px solid #dde3ea;
   border-radius: 8px;
   padding: 14px;
-  min-width: 0;
+  min-width: 0; width: 100%;
   overflow: hidden;
 }}
 .panel-title {{ font-size: 12px; font-weight: 600; color: #444; border-bottom: 1px solid #eee; padding-bottom: 7px; margin-bottom: 10px; }}
@@ -159,23 +160,21 @@ html, body {{ background: #f3f5f8; font-family: 'Malgun Gothic', 'Apple SD Gothi
 .rtable td, .rtable th {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 .chart-wrap {{ position: relative; width: 100%; height: 200px; }}
 .pie-wrap {{ position: relative; width: 100%; height: 160px; }}
-canvas {{ max-width: 100% !important; }}
+canvas {{ width: 100% !important; max-width: 100% !important; }}
 .leg {{ font-size: 10px; color: #555; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }}
 .leg-item {{ display: flex; align-items: center; gap: 3px; max-width: 100%; }}
 .leg-dot {{ width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }}
-.footer {{ text-align: center; padding: 14px; font-size: 11px; color: #aaa; border-top: 1px solid #eee; }}
+.footer {{ text-align: center; padding: 14px; font-size: 11px; color: #aaa; border-top: 1px solid #eee; width: 100%; }}
 
 @media print {{
   html, body {{ background: #fff; }}
-  .rpt-outer {{ transform: none !important; }}
   .rpt {{ box-shadow: none; }}
 }}
 </style>
 </head>
 <body>
-<div style="padding: 20px;">
-<div class="rpt-outer" id="rptOuter">
-<div class="rpt" id="rpt">
+<div class="rpt-outer">
+<div class="rpt">
 
 <!-- ══ 헤더 ══════════════════════════════════════════════════════════ -->
 <div style="background:#0D47A1;color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:center;">
@@ -317,23 +316,9 @@ canvas {{ max-width: 100% !important; }}
 <div class="footer">본 보고서는 {report_date}에 자동 생성되었습니다. &nbsp;|&nbsp; admarketip.com</div>
 </div><!-- rpt -->
 </div><!-- rpt-outer -->
-</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-// ── 화면 너비에 맞게 스케일 축소 (1600px 기준) ──────────────────────
-(function scaleReport() {{
-  var outer = document.getElementById('rptOuter');
-  function doScale() {{
-    var avail = (window.innerWidth || document.documentElement.clientWidth) - 40;
-    var scale = avail < 1600 ? avail / 1600 : 1;
-    outer.style.transform = 'scale(' + scale + ')';
-    outer.style.transformOrigin = 'top left';
-    document.querySelector('body > div').style.height = (1600 * scale) + 'px';
-  }}
-  doScale();
-  window.addEventListener('resize', doScale);
-}})();
 
 const COLORS = ['#0D47A1','#1565C0','#1976D2','#42A5F5','#90CAF9','#BBDEFB'];
 

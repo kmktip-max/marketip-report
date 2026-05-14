@@ -295,7 +295,7 @@ with tab2:
                     st.caption(f"기간: {d['since']} ~ {d['until']} | 키워드: {d['total_keywords']}개 | "
                                f"클릭: {sum(k['clicks'] for k in d['keywords']):,}회 | "
                                f"노출: {sum(k['impressions'] for k in d['keywords']):,}회")
-                    components.html(r["html"], height=600, scrolling=True)
+                    components.html(r["html"], height=1200, scrolling=True)
 
                 # ── 3단계: 승인 및 발송 ──
                 st.divider()
