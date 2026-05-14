@@ -32,35 +32,45 @@ SIDEBAR_CSS = """
     overflow: hidden !important;
 }
 
-/* ══ 이미지 확대 버튼 제거 ══════════════════════════════════════════════ */
+/* ══ 이미지 확대/풀스크린 버튼 완전 제거 ══════════════════════════════ */
+button[title="View fullscreen"],
 [data-testid="stImageContainer"] button,
-button[title="View fullscreen"] { display: none !important; }
+[data-testid="stImage"] button,
+[data-testid="StyledFullScreenButton"],
+[data-testid="stBaseButton-headerNoPadding"],
+button[aria-label="View fullscreen"] { display: none !important; }
 
 /* ══ 사이드바 기본 ══════════════════════════════════════════════════════ */
 [data-testid="stSidebar"] {
     background: #fff !important;
     border-right: 1px solid #E5E8ED !important;
 }
-[data-testid="stSidebar"] > div:first-child {
-    padding: 0 !important;
-    margin: 0 !important;
-}
-[data-testid="stSidebarContent"] {
-    padding: 0 !important;
-    margin: 0 !important;
-    gap: 0 !important;
-}
-[data-testid="stSidebarContent"] > div:first-child {
+/* 최상단 여백 전면 제거 */
+[data-testid="stSidebar"] > div,
+[data-testid="stSidebar"] > div > div,
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarContent"] > div,
+[data-testid="stSidebarUserContent"],
+[data-testid="stSidebarUserContent"] > div {
     padding-top: 0 !important;
     margin-top: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    gap: 0 !important;
 }
 
 /* ══ 로고 ══════════════════════════════════════════════════════════════ */
 .sb-logo-wrap {
-    padding: 6px 18px 12px;
+    padding: 10px 18px 10px;
     border-bottom: 1px solid #E5E8ED;
-    margin-bottom: 0;
+    margin: 0;
+    /* 이미지 hover 오버레이 제거 */
+    position: relative;
 }
+.sb-logo-wrap img { display: block; }
+/* 로고 이미지 위 모든 버튼/오버레이 숨김 */
+.sb-logo-wrap button,
+.sb-logo-wrap [data-testid="stImageContainer"] > div > button { display: none !important; }
 
 /* ══ 그룹 레이블 (광고 관리 / 정산 관리 / 회원 관리 통일) ══════════════ */
 .sb-label {
