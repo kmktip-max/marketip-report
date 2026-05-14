@@ -157,6 +157,13 @@ PAYBACK_CSS = """
   padding-left: 4rem !important;
   padding-right: 4rem !important;
 }
+/* Streamlit 컬럼 흰 박스 제거 */
+[data-testid="stColumn"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+}
 
 /* ── typography ── */
 .pb-h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 6px; letter-spacing:-.5px; }

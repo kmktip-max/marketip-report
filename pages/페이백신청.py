@@ -213,17 +213,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── 계정 리스트 ───────────────────────────────────────────────────────────────
 accounts = load_accounts()
 
-h1, h2 = st.columns([5, 1])
-with h1:
-    st.markdown(
-        f'<div class="sec-ttl">내 네이버 광고 계정'
-        f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
-        unsafe_allow_html=True
-    )
-with h2:
+st.markdown(
+    f'<div class="sec-ttl">내 네이버 광고 계정'
+    f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
+    unsafe_allow_html=True
+)
+_, col_btn = st.columns([5, 1])
+with col_btn:
     add_btn = st.button("＋ 계정 추가", type="primary", use_container_width=True)
-st.markdown('<style>[data-testid="stBaseButton-primary"]{min-width:160px;}</style>',
-            unsafe_allow_html=True)
 
 # 상태 탭
 tab_options = ["전체"] + STATUS_LIST
