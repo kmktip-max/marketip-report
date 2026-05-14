@@ -97,6 +97,59 @@ with b2:
     if st.button("내역보기", use_container_width=True):
         st.session_state["payback_tab"] = "전체"
 
+# ── 페이백이란? 안내 ──────────────────────────────────────────────────────────
+with st.expander("ℹ️  광고비 페이백이란?"):
+    st.markdown("""
+<style>
+.pb-rate-wrap { display:flex; gap:24px; flex-wrap:wrap; margin-top:4px; }
+.pb-rate-card {
+  background:#F8FAFF;
+  border:1px solid #E0E7FF;
+  border-radius:12px;
+  padding:18px 22px;
+  min-width:200px;
+  flex:1;
+}
+.pb-rate-platform {
+  font-size:13px; font-weight:800; color:#111;
+  margin-bottom:12px; display:flex; align-items:center; gap:6px;
+}
+.pb-rate-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:6px 0; border-bottom:1px solid #EEF0F4; font-size:13px;
+}
+.pb-rate-row:last-child { border-bottom:none; }
+.pb-rate-label { color:#555; }
+.pb-rate-pct { font-weight:700; color:#0064FF; font-size:14px; }
+.pb-intro {
+  font-size:15px; font-weight:700; color:#111;
+  margin-bottom:16px; line-height:1.6;
+}
+.pb-pct-hl { color:#0064FF; }
+</style>
+<div class="pb-intro">
+  마케팁 광고 계정을 연동하면,<br>
+  광고 비용의 최대 <span class="pb-pct-hl">10%</span>를 돌려받을 수 있는 시스템입니다.
+</div>
+<div class="pb-rate-wrap">
+  <div class="pb-rate-card">
+    <div class="pb-rate-platform">🟢 네이버</div>
+    <div class="pb-rate-row"><span class="pb-rate-label">검색광고 (파워링크·쇼핑·브랜드)</span><span class="pb-rate-pct">10%</span></div>
+    <div class="pb-rate-row"><span class="pb-rate-label">GFA</span><span class="pb-rate-pct">10%</span></div>
+    <div class="pb-rate-row"><span class="pb-rate-label">AD Voost</span><span class="pb-rate-pct">5%</span></div>
+  </div>
+  <div class="pb-rate-card">
+    <div class="pb-rate-platform">🟡 카카오</div>
+    <div class="pb-rate-row"><span class="pb-rate-label">검색광고</span><span class="pb-rate-pct">10%</span></div>
+    <div class="pb-rate-row"><span class="pb-rate-label">배너광고</span><span class="pb-rate-pct">10%</span></div>
+  </div>
+  <div class="pb-rate-card">
+    <div class="pb-rate-platform">🟠 당근</div>
+    <div class="pb-rate-row"><span class="pb-rate-label">전문가광고</span><span class="pb-rate-pct">7%</span></div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── 안내 카드 2개 ─────────────────────────────────────────────────────────────
