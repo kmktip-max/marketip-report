@@ -66,7 +66,7 @@ def generate_html(data, client_name, report_date):
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
 body{{font-family:'Malgun Gothic',sans-serif;font-size:13px;color:#222;background:#f5f7fa;padding:20px;}}
-.rpt{{max-width:900px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);}}
+.rpt{{max-width:1080px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;overflow-x:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);}}
 .rpt-header{{background:#0D47A1;color:#fff;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;}}
 .rpt-body{{padding:20px 24px;}}
 .section{{margin:18px 0;}}
@@ -76,7 +76,10 @@ body{{font-family:'Malgun Gothic',sans-serif;font-size:13px;color:#222;backgroun
 .kpi-label{{font-size:11px;color:#666;margin-bottom:4px;}}
 .kpi-val{{font-size:18px;font-weight:700;color:#0D47A1;}}
 .two-col{{display:grid;grid-template-columns:1fr 1fr;gap:12px;}}
-.three-col{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}}
+.three-col{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}}
+.panel{{min-width:0;overflow:hidden;}}
+canvas{{max-width:100%!important;}}
+@media(max-width:600px){{.three-col{{grid-template-columns:1fr;}}.two-col{{grid-template-columns:1fr;}}.kpi-row{{grid-template-columns:repeat(2,1fr);}}}}
 .panel{{border:1px solid #dde3ea;border-radius:6px;padding:12px;}}
 .panel-title{{font-size:12px;font-weight:600;color:#555;border-bottom:1px solid #eee;padding-bottom:6px;margin-bottom:8px;}}
 .rtable{{width:100%;border-collapse:collapse;font-size:11px;}}
