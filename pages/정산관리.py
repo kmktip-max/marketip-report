@@ -271,8 +271,11 @@ def parse_excel(f):
     ]].head(20).to_dict("records")
 
     # ── 그룹핑: CID + AdAccountNo + 매체사 + 수수료율 ──────────────────────
-    # 수수료율 소수점 1자리로 정규화하여 float 오차 제거
+    # 수수료율을 항상 % 단위로 정규화 (Excel에 0.095로 저장된 경우 → 9.5%)
     if "comm_rate" in df.columns:
+        non_zero = df["comm_rate"][df["comm_rate"] != 0]
+        if len(non_zero) > 0 and non_zero.abs().max() < 2:
+            df["comm_rate"] = df["comm_rate"] * 100   # 소수 → %
         df["comm_rate"] = df["comm_rate"].round(1)
     # 매체사가 없으면 빈 문자열
     if "매체사" not in df.columns:
