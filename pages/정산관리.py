@@ -917,7 +917,7 @@ with t_pnl:
 # ─── 월/연간 손익 탭 ──────────────────────────────────────────────────────────
 with t_annual:
     st.subheader("월/연간 손익 현황")
-    st.caption("월 손익 탭에서 '이 달 손익 확정 저장'을 누르거나, 아래 수동 입력으로 데이터를 추가하세요.")
+    st.caption("월 손익 탭 '이 달 손익 확정 저장' 또는 아래 수동 입력으로 데이터를 추가하세요.")
 
     # 연도 선택
     _today = date.today()
@@ -926,102 +926,133 @@ with t_annual:
     ann_year = st.selectbox("연도 선택", _years,
                             index=_years.index(_def_y), key="ann_year_sel")
 
-    ANN_START_M = 5 if ann_year == 2026 else 1
-    ann_months  = list(range(ANN_START_M, 13))
+    # 1~12월 전체 활성 (연도 무관)
+    ann_months = list(range(1, 13))
 
-    # 이번 연도 데이터 로드
+    # 데이터 로드
     _ann_raw = {r["month"]: r for r in load_annual() if r.get("year") == ann_year}
 
-    # 월별 집계
+    # 월별 집계 (데이터 없는 달은 None으로 구분)
     _ann_rows = []
     for _m in ann_months:
         _r = _ann_raw.get(_m, {})
-        _ts  = int(_r.get("total_sales",        0))
-        _pp  = int(_r.get("pretax_profit",       0))
-        _at  = int(_r.get("after_tax_estimate",  round(_pp * 0.8)))
+        _has = bool(_r)
+        _ts  = int(_r.get("total_sales",       0)) if _has else 0
+        _pp  = int(_r.get("pretax_profit",      0)) if _has else 0
+        _at  = int(_r.get("after_tax_estimate", round(_pp * 0.8))) if _has else 0
         _ann_rows.append({
             "month": _m, "월": f"{_m}월",
             "total_sales": _ts, "pretax_profit": _pp, "after_tax": _at,
-            "has_data": bool(_r),
+            "has_data": _has,
         })
     _ann_df = pd.DataFrame(_ann_rows)
 
-    cum_ts  = _ann_df["total_sales"].sum()
-    cum_pp  = _ann_df["pretax_profit"].sum()
-    cum_at  = _ann_df["after_tax"].sum()
+    # 누적 KPI (데이터 있는 월만 합산)
+    _has_df = _ann_df[_ann_df["has_data"]]
+    cum_ts = _has_df["total_sales"].sum()
+    cum_pp = _has_df["pretax_profit"].sum()
+    cum_at = _has_df["after_tax"].sum()
 
-    # KPI 카드
+    # ── KPI 카드 ─────────────────────────────────────────────────────────────
     _kc1, _kc2, _kc3 = st.columns(3)
-    _kc1.markdown(_kpi_card(f"{ann_year}년 누적 총매출",      w(cum_ts)),  unsafe_allow_html=True)
-    _kc2.markdown(_kpi_card(f"{ann_year}년 누적 세전수익",    w(cum_pp),  "primary"), unsafe_allow_html=True)
+    _kc1.markdown(_kpi_card(f"{ann_year}년 누적 총매출",       w(cum_ts)),  unsafe_allow_html=True)
+    _kc2.markdown(_kpi_card(f"{ann_year}년 누적 세전수익",     w(cum_pp), "primary"), unsafe_allow_html=True)
     _kc3.markdown(_kpi_card(f"{ann_year}년 누적 세후추정수익", w(cum_at), "secondary", badge="×0.8"),
                   unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
 
-    # 차트
-    if cum_ts > 0 or cum_pp > 0:
-        st.markdown("**월별 수익 흐름**")
-        try:
-            import plotly.graph_objects as go
-            _fig = go.Figure()
-            _series = [
-                ("total_sales",   "총매출",       "#9CA3AF", "dot",   False),
-                ("pretax_profit", "세전수익",      "#60A5FA", "solid", False),
-                ("after_tax",     "세후추정수익",  "#1D4ED8", "solid", True),
-            ]
-            for _col, _name, _clr, _dash, _bold in _series:
-                _fig.add_trace(go.Scatter(
-                    x=_ann_df["월"],
-                    y=_ann_df[_col],
-                    name=_name,
-                    mode="lines+markers",
-                    line=dict(color=_clr, width=3 if _bold else 2, dash=_dash),
-                    marker=dict(size=9 if _bold else 6),
-                    fill="tozeroy" if _bold else None,
-                    fillcolor="rgba(29,78,216,0.05)" if _bold else None,
-                    customdata=_ann_df[_col],
-                    hovertemplate="%{x}: <b>%{customdata:,.0f}원</b><extra>" + _name + "</extra>",
-                ))
-            _fig.update_layout(
-                plot_bgcolor="white", paper_bgcolor="white",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                            font=dict(size=13)),
-                yaxis=dict(tickformat=",.0f", title="원", gridcolor="#F3F4F6",
-                           separatethousands=True),
-                xaxis=dict(title="", gridcolor="#F3F4F6"),
-                margin=dict(l=10, r=10, t=30, b=10),
-                height=320,
-                hovermode="x unified",
-            )
-            st.plotly_chart(_fig, use_container_width=True)
-        except ImportError:
-            st.line_chart(_ann_df.set_index("월")[["total_sales","pretax_profit","after_tax"]])
-    else:
-        st.info("아직 데이터가 없습니다. 아래 수동 입력 또는 월 손익 탭의 확정 저장을 이용하세요.")
+    # ── 월별 수익 흐름 차트 ───────────────────────────────────────────────────
+    # 데이터 없는 달은 None → 라인 자동 끊김
+    def _y(col):
+        return [float(r[col]) if r["has_data"] else None for _, r in _ann_df.iterrows()]
 
-    # 월별 요약 테이블
+    def _txt(col):
+        return [f"{int(r[col]):,}원" if r["has_data"] else "" for _, r in _ann_df.iterrows()]
+
+    try:
+        import plotly.graph_objects as go
+
+        _chart_series = [
+            ("total_sales",   "총매출",       "#9CA3AF", 1.5, "dot"),
+            ("pretax_profit", "세전수익",      "#2563EB", 2.5, "solid"),
+            ("after_tax",     "세후추정수익",  "#059669", 2.5, "solid"),
+        ]
+        _fig = go.Figure()
+        for _col, _nm, _clr, _lw, _dash in _chart_series:
+            _is_green = (_col == "after_tax")
+            _fig.add_trace(go.Scatter(
+                x=_ann_df["월"],
+                y=_y(_col),
+                text=_txt(_col),
+                name=_nm,
+                mode="lines+markers",
+                connectgaps=False,               # 빈 달에서 라인 끊김
+                line=dict(color=_clr, width=_lw, dash=_dash, shape="spline", smoothing=0.3),
+                marker=dict(size=7, color=_clr, symbol="circle"),
+                fill="tozeroy" if _is_green else None,
+                fillcolor="rgba(5,150,105,0.06)" if _is_green else None,
+                hovertemplate="<b>%{text}</b><extra>%{fullData.name}</extra>",
+                hoverlabel=dict(bgcolor="white", font_size=13),
+            ))
+
+        _fig.update_layout(
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=8, r=8, t=36, b=8),
+            height=270,
+            hovermode="x unified",
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.04,
+                xanchor="right", x=1,
+                font=dict(size=12), bgcolor="rgba(0,0,0,0)",
+            ),
+            xaxis=dict(
+                showgrid=False, zeroline=False,
+                tickfont=dict(size=12, color="#6B7280"),
+            ),
+            yaxis=dict(
+                showgrid=True, gridcolor="#F3F4F6", zeroline=False,
+                tickformat=",.0f", tickfont=dict(size=11, color="#9CA3AF"),
+                title=None,
+            ),
+        )
+        # 카드 박스 느낌
+        st.markdown(
+            '<div style="border:1.5px solid #E5E8ED;border-radius:14px;'
+            'padding:4px 8px 0;background:#fff;">',
+            unsafe_allow_html=True,
+        )
+        st.plotly_chart(_fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    except ImportError:
+        st.line_chart(_ann_df.set_index("월")[["total_sales","pretax_profit","after_tax"]])
+
+    st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
+
+    # ── 월별 요약 테이블 ─────────────────────────────────────────────────────
     st.markdown("**월별 요약**")
     _tbl = []
     for _, _r in _ann_df.iterrows():
         _tbl.append({
-            "월":         _r["월"],
-            "총매출":     w(_r["total_sales"])    if _r["has_data"] else "—",
-            "세전수익":   w(_r["pretax_profit"])  if _r["has_data"] else "—",
-            "세후추정수익": w(_r["after_tax"])    if _r["has_data"] else "—",
+            "월":          _r["월"],
+            "총매출":      w(_r["total_sales"])    if _r["has_data"] else "—",
+            "세전수익":    w(_r["pretax_profit"])  if _r["has_data"] else "—",
+            "세후추정수익":w(_r["after_tax"])      if _r["has_data"] else "—",
         })
     _tbl.append({"월":"합계",
                  "총매출": w(cum_ts), "세전수익": w(cum_pp), "세후추정수익": w(cum_at)})
 
     def _ann_style(sdf):
         out = pd.DataFrame("", index=sdf.index, columns=sdf.columns)
-        out["세전수익"]    = "color:#1D4ED8;font-weight:600;"
-        out["세후추정수익"] = "color:#0369A1;font-weight:700;"
+        out["세전수익"]     = "color:#2563EB;font-weight:600;"
+        out["세후추정수익"] = "color:#059669;font-weight:700;"
         last = len(sdf) - 1
         for _c in sdf.columns:
             out.iloc[last, sdf.columns.get_loc(_c)] = "font-weight:800;"
-        out.iloc[last, sdf.columns.get_loc("세전수익")]    = "font-weight:800;color:#1D4ED8;"
-        out.iloc[last, sdf.columns.get_loc("세후추정수익")] = "font-weight:800;color:#0369A1;"
+        out.iloc[last, sdf.columns.get_loc("세전수익")]     = "font-weight:800;color:#2563EB;"
+        out.iloc[last, sdf.columns.get_loc("세후추정수익")] = "font-weight:800;color:#059669;"
         return out
 
     st.dataframe(
@@ -1029,7 +1060,7 @@ with t_annual:
         use_container_width=True, hide_index=True,
     )
 
-    # 수동 입력 폼
+    # ── 수동 입력 폼 ─────────────────────────────────────────────────────────
     st.divider()
     st.markdown("**월별 수동 입력** (수정 또는 미확정 월 직접 입력)")
     _mc1, _mc2, _mc3, _mc4 = st.columns([1, 2, 2, 1])
@@ -1058,6 +1089,5 @@ with t_annual:
             upsert_annual(ann_year, _man_m, _man_ts, _man_pp)
             st.success(f"✅ {ann_year}년 {_man_m}월 저장 완료")
             st.rerun()
-    if _man_ex:
-        _at_preview = round(_man_pp * 0.8)
-        st.caption(f"세후추정수익 미리보기: {_at_preview:,.0f}원 (세전수익 × 0.8)")
+    _at_preview = round(_man_pp * 0.8)
+    st.caption(f"세후추정수익 미리보기: {_at_preview:,.0f}원 (세전수익 × 0.8)")
