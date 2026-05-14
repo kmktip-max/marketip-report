@@ -1,18 +1,20 @@
 import streamlit as st
-import json
-import os
-import sys
-import uuid
+import json, os, sys, uuid
 import pandas as pd
-from datetime import datetime, date
+from datetime import date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+# ── 상수 ─────────────────────────────────────────────────────────────────────
+FREELANCERS = [
+    "미분류", "권혁우", "최은성", "조성지", "임예솔", "홍선기",
+    "안주희", "이승준", "문성빈", "김하린", "김주훈", "대표 직접",
+]
+
 # ── 경로 ─────────────────────────────────────────────────────────────────────
-F_CLIENTS  = os.path.join(ROOT, "settlement_clients.json")
+F_MAPPING  = os.path.join(ROOT, "freelancer_mapping.json")
 F_EXPENSES = os.path.join(ROOT, "other_expenses.json")
-F_SPEND    = os.path.join(ROOT, "monthly_ad_spend.json")
 F_EXTRA    = os.path.join(ROOT, "monthly_extra_revenue.json")
 
 # ── 관리자 인증 ───────────────────────────────────────────────────────────────
@@ -24,59 +26,62 @@ def _get_admin_pw():
         pass
     return os.getenv("SETTLEMENT_ADMIN_PW", "1471028690")
 
-ADMIN_PW = _get_admin_pw()
-
-def check_auth():
-    if st.session_state.get("settlement_auth"):
-        return True
+if not st.session_state.get("settlement_auth"):
     st.title("🔐 정산 관리 — 관리자 전용")
-    pw = st.text_input("비밀번호", type="password", key="settlement_pw_input")
+    pw = st.text_input("비밀번호", type="password")
     if st.button("로그인", type="primary"):
-        if pw == ADMIN_PW:
+        if pw == _get_admin_pw():
             st.session_state.settlement_auth = True
             st.rerun()
         else:
             st.error("비밀번호가 틀렸습니다.")
-    return False
-
-if not check_auth():
     st.stop()
 
 # ── 스토리지 ──────────────────────────────────────────────────────────────────
-def _load(path):
+def _load(p):
     try:
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
         pass
     return []
 
-def _save(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def _save(p, d):
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
 
-def load_clients():  return _load(F_CLIENTS)
-def save_clients(d): _save(F_CLIENTS, d)
-def load_expenses():  return _load(F_EXPENSES)
-def save_expenses(d): _save(F_EXPENSES, d)
-def load_spend():  return _load(F_SPEND)
-def save_spend(d): _save(F_SPEND, d)
-def load_extra():  return _load(F_EXTRA)
-def save_extra(d): _save(F_EXTRA, d)
+load_mapping  = lambda: _load(F_MAPPING)
+save_mapping  = lambda d: _save(F_MAPPING, d)
+load_expenses = lambda: _load(F_EXPENSES)
+save_expenses = lambda d: _save(F_EXPENSES, d)
+load_extra    = lambda: _load(F_EXTRA)
+save_extra    = lambda d: _save(F_EXTRA, d)
 
-def get_spend_for_month(ym):
-    return {r["client_id"]: r["ad_spend"] for r in load_spend() if r["year_month"] == ym}
+def get_mapping(cid, ano, name=""):
+    for m in load_mapping():
+        if str(m.get("customer_id","")) == str(cid) and str(m.get("ad_account_no","")) == str(ano):
+            return m
+    if name:
+        for m in load_mapping():
+            if m.get("account_name","") == name:
+                return m
+    return None
 
-def set_spend(ym, client_id, amount):
-    data = load_spend()
-    for r in data:
-        if r["year_month"] == ym and r["client_id"] == client_id:
-            r["ad_spend"] = amount
-            save_spend(data)
+def upsert_mapping(cid, ano, name, fl, fr, rr, is_own):
+    data = load_mapping()
+    for m in data:
+        if str(m.get("customer_id","")) == str(cid) and str(m.get("ad_account_no","")) == str(ano):
+            m.update({"account_name": name, "freelancer": fl,
+                      "freelancer_rate": fr, "rebate_rate": rr, "is_owner_managed": is_own})
+            save_mapping(data)
             return
-    data.append({"year_month": ym, "client_id": client_id, "ad_spend": amount})
-    save_spend(data)
+    data.append({"customer_id": str(cid), "ad_account_no": str(ano), "account_name": name,
+                 "freelancer": fl, "freelancer_rate": fr, "rebate_rate": rr, "is_owner_managed": is_own})
+    save_mapping(data)
+
+def get_expenses_for_month(ym):
+    return [e for e in load_expenses() if e["year_month"] == ym]
 
 def get_extra_for_month(ym):
     for r in load_extra():
@@ -89,323 +94,410 @@ def set_extra(ym, place, blog, memo=""):
     for r in data:
         if r["year_month"] == ym:
             r.update({"place_revenue": place, "blog_revenue": blog, "memo": memo})
-            save_extra(data)
-            return
+            save_extra(data); return
     data.append({"year_month": ym, "place_revenue": place, "blog_revenue": blog, "memo": memo})
     save_extra(data)
 
-def get_expenses_for_month(ym):
-    return [e for e in load_expenses() if e["year_month"] == ym]
+# ── 엑셀 파싱 ─────────────────────────────────────────────────────────────────
+ALIAS = {
+    "매체사":         ["매체사","매체","Media"],
+    "계정명":         ["계정명","광고주명","Account Name"],
+    "customer_id":   ["CustomerID","Customer ID","계정번호 CustomerID","고객ID","customer_id"],
+    "ad_account_no": ["AdAccountNo","Ad Account No","계정번호 AdAccountNo","광고계정번호"],
+    "ad_supply":     ["광고비 공급가","광고비공급가","공급가액"],
+    "ad_vat":        ["광고비 세액","광고비세액"],
+    "ad_total":      ["광고비 합계금액","광고비합계금액","광고비합계"],
+    "comm_rate":     ["수수료율","수수료율(%)"],
+    "comm_supply":   ["수수료 공급가","수수료공급가"],
+    "comm_vat":      ["수수료 세액","수수료세액"],
+    "comm_total":    ["수수료 합계금액","수수료합계금액","수수료합계"],
+}
+
+def _find_col(df_cols, aliases):
+    norm = lambda s: str(s).strip().replace(" ","").lower()
+    for a in aliases:
+        for c in df_cols:
+            if norm(c) == norm(a): return c
+    for a in aliases:
+        for c in df_cols:
+            if norm(a) in norm(c): return c
+    return None
+
+def parse_excel(f):
+    try:
+        df_raw = pd.read_excel(f, header=2, engine="openpyxl")
+    except Exception:
+        try:
+            df_raw = pd.read_csv(f, header=2, encoding="utf-8-sig")
+        except Exception as e:
+            return None, str(e), None
+
+    col_map = {k: _find_col(df_raw.columns.tolist(), v) for k, v in ALIAS.items()}
+    name_col = col_map.get("계정명")
+    if not name_col:
+        return None, "계정명 컬럼을 찾을 수 없습니다.", df_raw
+
+    df = df_raw[df_raw[name_col].notna()].copy()
+    df = df[~df[name_col].astype(str).str.contains("합계|소계|TOTAL|합 계", regex=True, na=False)]
+    df = df[df[name_col].astype(str).str.strip() != ""]
+
+    df = df.rename(columns={v: k for k, v in col_map.items() if v})
+
+    for nc in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total"]:
+        if nc in df.columns:
+            df[nc] = pd.to_numeric(
+                df[nc].astype(str).str.replace(",","").str.replace("원","").str.strip(),
+                errors="coerce").fillna(0)
+    for ic in ["customer_id","ad_account_no"]:
+        if ic in df.columns:
+            df[ic] = df[ic].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
+
+    num_cols  = [c for c in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total"] if c in df.columns]
+    first_cols = [c for c in ["comm_rate","계정명","매체사"] if c in df.columns]
+
+    if "customer_id" in df.columns and "ad_account_no" in df.columns:
+        agg = {c: "sum" for c in num_cols}
+        agg.update({c: "first" for c in first_cols if c not in ["customer_id","ad_account_no"]})
+        df_g = df.groupby(["customer_id","ad_account_no"], as_index=False).agg(agg)
+    else:
+        agg = {c: "sum" for c in num_cols}
+        agg.update({c: "first" for c in first_cols if c != "계정명"})
+        df_g = df.groupby(["계정명"], as_index=False).agg(agg)
+
+    return df_g, None, df_raw
 
 # ── 정산 계산 ─────────────────────────────────────────────────────────────────
-def calc(client, ad_spend):
-    cr   = client.get("commission_rate", 0) / 100
-    fbr  = client.get("freelancer_base_rate", 0) / 100
-    rr   = client.get("rebate_rate", 0) / 100
-    commission = ad_spend * cr
-    rebate_payout = ad_spend * rr
-    is_direct = client.get("is_direct", False)
-    if is_direct or not client.get("freelancer", "").strip():
-        fer = 0.0
-        fl_payout = 0.0
-        rep_revenue = commission - rebate_payout
-    else:
-        fer = fbr - rr
-        fl_payout = ad_spend * max(fer, 0)
-        rep_revenue = commission - fl_payout - rebate_payout
-    return {
-        "commission":             round(commission),
-        "freelancer_effective_rate": round(fer * 100, 2),
-        "freelancer_payout":      round(fl_payout),
-        "rebate_payout":          round(rebate_payout),
-        "rep_revenue":            round(rep_revenue),
-        "warning":                fer < 0,
-    }
+def calc_from_ad(ad_supply, comm_supply, freelancer_rate, rebate_rate, is_owner):
+    fr = freelancer_rate / 100
+    rr = rebate_rate / 100
+    rebate_payout = round(ad_supply * rr)
+    if is_owner:
+        return {"effective_rate": 0.0, "fl_payout": 0,
+                "rebate_payout": rebate_payout,
+                "rep_revenue": round(comm_supply - rebate_payout),
+                "warning": False}
+    effective = fr - rr
+    fl_payout = round(ad_supply * max(effective, 0))
+    return {"effective_rate": round(effective * 100, 2),
+            "fl_payout": fl_payout, "rebate_payout": rebate_payout,
+            "rep_revenue": round(comm_supply - fl_payout - rebate_payout),
+            "warning": effective < 0}
 
-# ── UI ───────────────────────────────────────────────────────────────────────
-st.title("📊 정산 관리")
-c1, c2 = st.columns([5, 1])
-with c2:
-    if st.button("로그아웃", key="settle_logout"):
-        st.session_state.settlement_auth = False
+# ── 헤더 ──────────────────────────────────────────────────────────────────────
+hc1, hc2 = st.columns([5, 1])
+with hc1:
+    st.title("📊 정산 관리")
+with hc2:
+    st.write("")
+    if st.button("로그아웃"):
+        for k in ["settlement_auth","uploaded_df","upload_ym"]:
+            st.session_state.pop(k, None)
         st.rerun()
 
-tab0, tab1, tab2, tab3 = st.tabs(["⚙️ 광고주 설정", "📋 정산표", "💰 기타비용", "📈 월 손익"])
+YM_LIST = [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)]
+sel_ym = st.selectbox("📅 정산 월", YM_LIST, index=None,
+                       placeholder="YYYY-MM 선택...", key="main_ym")
+st.divider()
+
+t_up, t_cl, t_un, t_fl, t_ex, t_pnl = st.tabs([
+    "📤 엑셀 업로드", "🏢 업체 분류", "❓ 미분류",
+    "👤 프리랜서 정산", "💰 기타비용", "📈 월 손익",
+])
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 0: 광고주 설정
+# 탭: 엑셀 업로드
 # ═══════════════════════════════════════════════════════════════
-with tab0:
-    st.subheader("광고주 / 프리랜서 설정")
-    clients = load_clients()
+with t_up:
+    st.subheader("상위대행사 정산 엑셀 업로드")
+    st.caption("3행이 헤더인 xlsx/csv 파일을 업로드하세요.")
+    f = st.file_uploader("파일 선택", type=["xlsx","xls","csv"])
+    if f:
+        df_g, err, df_raw = parse_excel(f)
+        if err:
+            st.error(f"파싱 오류: {err}")
+        else:
+            st.success(f"✅ 파싱 완료 — {len(df_g)}개 계정 추출")
 
-    with st.form("add_client_form", clear_on_submit=True):
-        st.markdown("**새 업체 추가**")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            new_name = st.text_input("업체명 *")
-            new_fl   = st.text_input("담당 프리랜서 (없으면 비워두기)")
-        with c2:
-            new_cr  = st.number_input("상위대행사 수수료율 (%)", 0.0, 100.0, 15.0, step=0.5)
-            new_fbr = st.number_input("프리랜서 기본 정산율 (%)", 0.0, 100.0, 12.0, step=0.5)
-        with c3:
-            new_rr     = st.number_input("광고주 리베이트율 (%)", 0.0, 100.0, 0.0, step=0.5)
-            new_direct = st.checkbox("대표 직접 운영 계정")
-            new_memo   = st.text_input("메모")
+            with st.expander("원본 미리보기 (상위 20행)"):
+                st.dataframe(df_raw.head(20), use_container_width=True)
 
-        if st.form_submit_button("➕ 추가", type="primary"):
-            if not new_name:
-                st.error("업체명을 입력하세요.")
-            else:
-                clients.append({
-                    "id": str(uuid.uuid4()),
-                    "name": new_name.strip(),
-                    "freelancer": new_fl.strip(),
-                    "commission_rate": new_cr,
-                    "freelancer_base_rate": new_fbr,
-                    "rebate_rate": new_rr,
-                    "is_direct": new_direct,
-                    "memo": new_memo.strip(),
-                    "created_at": date.today().isoformat(),
-                })
-                save_clients(clients)
-                st.success(f"✅ {new_name} 추가 완료")
-                st.rerun()
+            # 검증
+            VALID = [("광고비 공급가","ad_supply"),("광고비 합계금액","ad_total"),
+                     ("수수료 공급가","comm_supply"),("수수료 합계금액","comm_total")]
+            vcols = st.columns(4)
+            for idx, (label, col) in enumerate(VALID):
+                if col in df_g.columns:
+                    ext = df_g[col].sum()
+                    raw_col = _find_col(df_raw.columns.tolist(), ALIAS.get(col,[col]))
+                    if raw_col:
+                        raw = pd.to_numeric(df_raw[raw_col].astype(str).str.replace(",",""), errors="coerce").fillna(0).sum()
+                        diff = abs(ext - raw)
+                        vcols[idx].metric(label, f"{ext:,.0f}원",
+                                          delta="✅ 일치" if diff < 1 else f"⚠️ 차이 {diff:,.0f}")
+                    else:
+                        vcols[idx].metric(label, f"{ext:,.0f}원")
 
-    st.divider()
-    if not clients:
-        st.info("등록된 업체가 없습니다.")
+            st.session_state["uploaded_df"] = df_g
+            st.session_state["upload_ym"]   = sel_ym
+            st.markdown("**추출된 계정 목록**")
+            st.dataframe(df_g, use_container_width=True, hide_index=True)
+
+# ═══════════════════════════════════════════════════════════════
+# 탭: 업체 분류
+# ═══════════════════════════════════════════════════════════════
+with t_cl:
+    st.subheader("업체별 프리랜서 분류")
+    df = st.session_state.get("uploaded_df")
+    if df is None:
+        st.info("엑셀 업로드 탭에서 파일을 먼저 업로드해주세요.")
     else:
-        for i, c in enumerate(clients):
-            with st.expander(f"**{c['name']}** | {c.get('freelancer','대표 직접') or '대표 직접'} | "
-                             f"수수료 {c['commission_rate']}% | 정산 {c['freelancer_base_rate']}% | 리베이트 {c['rebate_rate']}%"):
-                cc1, cc2, cc3, cc4 = st.columns([2,2,2,1])
-                with cc1:
-                    v_name = st.text_input("업체명", c["name"],       key=f"name_{i}")
-                    v_fl   = st.text_input("프리랜서", c.get("freelancer",""), key=f"fl_{i}")
-                with cc2:
-                    v_cr  = st.number_input("수수료율(%)",    value=float(c["commission_rate"]),       key=f"cr_{i}", step=0.5)
-                    v_fbr = st.number_input("프리랜서 정산율(%)", value=float(c["freelancer_base_rate"]), key=f"fbr_{i}", step=0.5)
-                with cc3:
-                    v_rr     = st.number_input("리베이트율(%)", value=float(c["rebate_rate"]), key=f"rr_{i}", step=0.5)
-                    v_direct = st.checkbox("대표 직접 운영", c.get("is_direct", False), key=f"dir_{i}")
-                    v_memo   = st.text_input("메모", c.get("memo",""), key=f"memo_{i}")
-                with cc4:
-                    if st.button("저장", key=f"save_{i}"):
-                        clients[i].update({
-                            "name": v_name, "freelancer": v_fl,
-                            "commission_rate": v_cr, "freelancer_base_rate": v_fbr,
-                            "rebate_rate": v_rr, "is_direct": v_direct, "memo": v_memo,
-                        })
-                        save_clients(clients)
-                        st.toast("✅ 저장됨")
-                        st.rerun()
-                    if st.button("🗑️ 삭제", key=f"del_{i}"):
-                        clients.pop(i)
-                        save_clients(clients)
+        st.caption("설정을 변경한 후 행별 **저장** 또는 하단 **일괄 저장**을 클릭하세요.")
+        for _, row in df.iterrows():
+            cid  = str(row.get("customer_id","")).strip()
+            ano  = str(row.get("ad_account_no","")).strip()
+            name = str(row.get("계정명","")).strip()
+            ex   = get_mapping(cid, ano, name) or {}
+            ad_s = int(row.get("ad_supply", 0))
+            cm_s = int(row.get("comm_supply", 0))
+
+            with st.expander(f"**{name}** │ CID:{cid} │ 광고비:{ad_s:,}원 │ 수수료:{cm_s:,}원"):
+                r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
+                with r1c1:
+                    fl = st.selectbox("담당 프리랜서", FREELANCERS,
+                        index=FREELANCERS.index(ex["freelancer"]) if ex.get("freelancer") in FREELANCERS else 0,
+                        key=f"fl_{cid}_{ano}")
+                    is_own = st.checkbox("대표 직접 운영", ex.get("is_owner_managed", False),
+                                         key=f"own_{cid}_{ano}")
+                with r1c2:
+                    fr = st.number_input("프리랜서 기본 정산율(%)", 0.0, 100.0,
+                        float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{cid}_{ano}")
+                    rr = st.number_input("리베이트율(%)", 0.0, 100.0,
+                        float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{cid}_{ano}")
+                with r1c3:
+                    eff = fr - rr
+                    if not is_own:
+                        if eff < 0:
+                            st.error(f"⚠️ 실지급률 음수: {eff:.1f}%")
+                        else:
+                            st.info(f"실지급률: **{eff:.1f}%**")
+                    r = calc_from_ad(ad_s, cm_s, fr, rr, is_own)
+                    st.caption(f"프리랜서 지급액: {r['fl_payout']:,}원")
+                    st.caption(f"리베이트 지급액: {r['rebate_payout']:,}원")
+                    st.caption(f"대표 수익: {r['rep_revenue']:,}원")
+                    if st.button("💾 저장", key=f"sv_{cid}_{ano}"):
+                        upsert_mapping(cid, ano, name, fl, fr, rr, is_own)
+                        st.toast(f"✅ {name} 저장됨")
                         st.rerun()
 
+        st.divider()
+        if st.button("💾 전체 일괄 저장", type="primary", use_container_width=True):
+            for _, row in df.iterrows():
+                cid  = str(row.get("customer_id","")).strip()
+                ano  = str(row.get("ad_account_no","")).strip()
+                name = str(row.get("계정명","")).strip()
+                upsert_mapping(
+                    cid, ano, name,
+                    st.session_state.get(f"fl_{cid}_{ano}", "미분류"),
+                    float(st.session_state.get(f"fr_{cid}_{ano}", 0)),
+                    float(st.session_state.get(f"rr_{cid}_{ano}", 0)),
+                    bool(st.session_state.get(f"own_{cid}_{ano}", False)),
+                )
+            st.success("✅ 전체 저장 완료")
+            st.rerun()
+
 # ═══════════════════════════════════════════════════════════════
-# TAB 1: 정산표
+# 탭: 미분류
 # ═══════════════════════════════════════════════════════════════
-with tab1:
-    st.subheader("월별 정산표")
-    clients = load_clients()
-    if not clients:
-        st.warning("광고주 설정 탭에서 업체를 먼저 등록해주세요.")
+with t_un:
+    st.subheader("미분류 업체")
+    df = st.session_state.get("uploaded_df")
+    if df is None:
+        st.info("엑셀 업로드 탭에서 파일을 먼저 업로드해주세요.")
     else:
-        sel_ym = st.selectbox(
-            "정산 월 선택",
-            [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)],
-            index=None, placeholder="YYYY-MM 선택...", key="settle_ym"
-        )
-        if sel_ym:
-            spend_map = get_spend_for_month(sel_ym)
-            rows = []
-            warnings = []
+        unclassified = []
+        for _, row in df.iterrows():
+            cid  = str(row.get("customer_id","")).strip()
+            ano  = str(row.get("ad_account_no","")).strip()
+            name = str(row.get("계정명","")).strip()
+            m = get_mapping(cid, ano, name)
+            if not m or m.get("freelancer","") in ["미분류",""]:
+                unclassified.append({"계정명": name, "CustomerID": cid, "AdAccountNo": ano,
+                                     "광고비 공급가": int(row.get("ad_supply",0)),
+                                     "수수료 공급가": int(row.get("comm_supply",0))})
 
-            st.markdown("**광고비 공급가 입력 (VAT 제외)**")
-            with st.form(f"spend_form_{sel_ym}"):
-                cols = st.columns(min(len(clients), 4))
-                spend_inputs = {}
-                for idx, c in enumerate(clients):
-                    with cols[idx % 4]:
-                        spend_inputs[c["id"]] = st.number_input(
-                            c["name"],
-                            value=float(spend_map.get(c["id"], 0)),
-                            step=10000.0, format="%.0f",
-                            key=f"spend_{c['id']}_{sel_ym}"
-                        )
-                if st.form_submit_button("💾 저장", type="primary"):
-                    for cid, amt in spend_inputs.items():
-                        set_spend(sel_ym, cid, int(amt))
-                    st.toast("✅ 저장됨")
-                    st.rerun()
+        total, remain = len(df), len(unclassified)
+        m1, m2 = st.columns(2)
+        m1.metric("미분류 업체", f"{remain}개", delta=f"전체 {total}개 중")
+        m2.metric("분류 완료", f"{total - remain}개")
 
-            st.divider()
-            # 계산
-            for c in clients:
-                ad_spend = spend_map.get(c["id"], 0)
-                r = calc(c, ad_spend)
-                if r["warning"]:
-                    warnings.append(f"⚠️ **{c['name']}**: 프리랜서 실지급 정산율이 음수입니다! "
-                                    f"(리베이트 {c['rebate_rate']}% > 정산율 {c['freelancer_base_rate']}%)")
-                rows.append({
-                    "업체명":              c["name"],
-                    "담당 프리랜서":        c.get("freelancer","") or "대표 직접",
-                    "광고비 공급가":        ad_spend,
-                    "수수료율(%)":         c["commission_rate"],
-                    "수수료 공급가":        r["commission"],
-                    "프리랜서 기본 정산율(%)": c.get("freelancer_base_rate", 0) if not c.get("is_direct") else "-",
-                    "광고주 리베이트율(%)":  c.get("rebate_rate", 0),
-                    "프리랜서 실지급 정산율(%)": r["freelancer_effective_rate"] if not c.get("is_direct") else "-",
-                    "프리랜서 지급액":       r["freelancer_payout"],
-                    "광고주 리베이트 지급액": r["rebate_payout"],
-                    "대표 수익":            r["rep_revenue"],
-                })
+        if remain == 0:
+            st.success("✅ 모든 업체 분류 완료. 정산 확정 가능합니다.")
+        else:
+            st.warning(f"⚠️ {remain}개 미분류. 업체 분류 탭에서 프리랜서를 지정해주세요.")
+            st.dataframe(pd.DataFrame(unclassified), use_container_width=True, hide_index=True)
 
-            for w in warnings:
-                st.warning(w)
-
-            df = pd.DataFrame(rows)
-            totals = {
-                "업체명": "합계", "담당 프리랜서": "",
-                "광고비 공급가": df["광고비 공급가"].sum(),
-                "수수료율(%)": "", "수수료 공급가": df["수수료 공급가"].sum(),
-                "프리랜서 기본 정산율(%)": "", "광고주 리베이트율(%)": "",
-                "프리랜서 실지급 정산율(%)": "",
-                "프리랜서 지급액": df["프리랜서 지급액"].sum(),
-                "광고주 리베이트 지급액": df["광고주 리베이트 지급액"].sum(),
-                "대표 수익": df["대표 수익"].sum(),
-            }
-            df_display = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-            # CSV 다운로드
-            st.download_button(
-                "📥 CSV 다운로드",
-                df_display.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                file_name=f"정산표_{sel_ym}.csv",
-                mime="text/csv",
-            )
+        # 정산 확정 버튼
+        st.divider()
+        if st.button("✅ 정산 확정", type="primary", disabled=(remain > 0),
+                      use_container_width=True):
+            st.success("정산이 확정되었습니다.")
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 2: 기타비용
+# 탭: 프리랜서 정산
 # ═══════════════════════════════════════════════════════════════
-with tab2:
+with t_fl:
+    st.subheader("프리랜서별 정산 집계")
+    df = st.session_state.get("uploaded_df")
+    if df is None:
+        st.info("엑셀 업로드 탭에서 파일을 먼저 업로드해주세요.")
+    else:
+        fl_sum  = {}
+        details = []
+        for _, row in df.iterrows():
+            cid  = str(row.get("customer_id","")).strip()
+            ano  = str(row.get("ad_account_no","")).strip()
+            name = str(row.get("계정명","")).strip()
+            m    = get_mapping(cid, ano, name) or {}
+            fl   = m.get("freelancer","미분류")
+            fr   = float(m.get("freelancer_rate", 0))
+            rr   = float(m.get("rebate_rate", 0))
+            is_o = m.get("is_owner_managed", False)
+            ad_s = float(row.get("ad_supply", 0))
+            ad_t = float(row.get("ad_total",  0))
+            cm_s = float(row.get("comm_supply",0))
+            r    = calc_from_ad(ad_s, cm_s, fr, rr, is_o)
+
+            details.append({
+                "프리랜서": fl, "업체명": name,
+                "광고비 공급가": int(ad_s), "광고비 합계": int(ad_t),
+                "수수료 공급가": int(cm_s),
+                "기본 정산율(%)": fr, "리베이트율(%)": rr,
+                "실지급률(%)": r["effective_rate"],
+                "프리랜서 지급액": r["fl_payout"],
+                "리베이트 지급액": r["rebate_payout"],
+                "대표 수익": r["rep_revenue"],
+                "⚠️": "⚠️" if r["warning"] else "",
+            })
+            g = fl_sum.setdefault(fl, {"업체수":0,"광고비 공급가":0,"광고비 합계":0,
+                                        "수수료 공급가":0,"프리랜서 지급액":0,
+                                        "리베이트 지급액":0,"대표 수익":0})
+            g["업체수"]        += 1
+            g["광고비 공급가"]  += int(ad_s)
+            g["광고비 합계"]    += int(ad_t)
+            g["수수료 공급가"]  += int(cm_s)
+            g["프리랜서 지급액"] += r["fl_payout"]
+            g["리베이트 지급액"] += r["rebate_payout"]
+            g["대표 수익"]      += r["rep_revenue"]
+
+        warns = [d for d in details if d["⚠️"]]
+        for w in warns:
+            st.warning(f"⚠️ **{w['업체명']}**: 실지급률 음수 ({w['실지급률(%)']:.1f}%)")
+
+        st.markdown("**프리랜서별 요약**")
+        if fl_sum:
+            s_df = pd.DataFrame([{"프리랜서":k,**v} for k,v in fl_sum.items()])
+            tot  = {"프리랜서":"합계", **{c: s_df[c].sum() for c in s_df.columns if c!="프리랜서"}}
+            s_df = pd.concat([s_df, pd.DataFrame([tot])], ignore_index=True)
+            st.dataframe(s_df, use_container_width=True, hide_index=True)
+
+        st.markdown("**업체별 상세**")
+        d_df = pd.DataFrame(details).sort_values("프리랜서")
+        st.dataframe(d_df, use_container_width=True, hide_index=True)
+
+        st.download_button("📥 CSV 다운로드",
+            d_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+            file_name=f"프리랜서정산_{sel_ym or 'all'}.csv", mime="text/csv")
+
+# ═══════════════════════════════════════════════════════════════
+# 탭: 기타비용
+# ═══════════════════════════════════════════════════════════════
+with t_ex:
     st.subheader("기타비용 관리")
-    exp_ym = st.selectbox(
-        "월 선택",
-        [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)],
-        index=None, placeholder="YYYY-MM...", key="exp_ym"
-    )
-
-    if exp_ym:
+    if not sel_ym:
+        st.info("상단에서 정산 월을 선택해주세요.")
+    else:
         with st.form("add_expense", clear_on_submit=True):
             ec1, ec2, ec3 = st.columns([2, 2, 3])
-            with ec1: exp_name = st.text_input("비용명 *", placeholder="세무비")
+            with ec1: exp_name = st.text_input("비용명 *")
             with ec2: exp_amt  = st.number_input("금액 (원)", 0, step=1000)
             with ec3: exp_memo = st.text_input("메모")
             if st.form_submit_button("➕ 추가"):
                 if not exp_name:
-                    st.error("비용명을 입력하세요.")
+                    st.error("비용명 필수")
                 else:
                     exps = load_expenses()
-                    exps.append({
-                        "id": str(uuid.uuid4()),
-                        "year_month": exp_ym,
-                        "name": exp_name.strip(),
-                        "amount": int(exp_amt),
-                        "memo": exp_memo.strip(),
-                        "created_at": date.today().isoformat(),
-                    })
-                    save_expenses(exps)
-                    st.rerun()
+                    exps.append({"id": str(uuid.uuid4()), "year_month": sel_ym,
+                                 "name": exp_name.strip(), "amount": int(exp_amt),
+                                 "memo": exp_memo.strip(), "created_at": date.today().isoformat()})
+                    save_expenses(exps); st.rerun()
 
-        month_exps = get_expenses_for_month(exp_ym)
+        month_exps = get_expenses_for_month(sel_ym)
         if month_exps:
             all_exps = load_expenses()
             for e in month_exps:
-                ec1, ec2, ec3, ec4, ec5 = st.columns([2, 2, 3, 1, 1])
-                ec1.markdown(f"**{e['name']}**")
-                new_amt  = ec2.number_input("금액", value=e["amount"], step=1000, key=f"ea_{e['id']}", label_visibility="collapsed")
-                new_memo = ec3.text_input("메모", value=e.get("memo",""), key=f"em_{e['id']}", label_visibility="collapsed")
-                if ec4.button("저장", key=f"esave_{e['id']}"):
+                c1, c2, c3, c4, c5 = st.columns([2, 2, 3, 1, 1])
+                c1.markdown(f"**{e['name']}**")
+                na = c2.number_input("금액", e["amount"], step=1000, key=f"ea_{e['id']}", label_visibility="collapsed")
+                nm = c3.text_input("메모", e.get("memo",""), key=f"em_{e['id']}", label_visibility="collapsed")
+                if c4.button("저장", key=f"es_{e['id']}"):
                     for x in all_exps:
                         if x["id"] == e["id"]:
-                            x["amount"] = int(new_amt)
-                            x["memo"] = new_memo
-                    save_expenses(all_exps)
-                    st.rerun()
-                if ec5.button("🗑️", key=f"edel_{e['id']}"):
-                    save_expenses([x for x in all_exps if x["id"] != e["id"]])
-                    st.rerun()
-
+                            x["amount"] = int(na); x["memo"] = nm
+                    save_expenses(all_exps); st.rerun()
+                if c5.button("🗑️", key=f"ed_{e['id']}"):
+                    save_expenses([x for x in all_exps if x["id"] != e["id"]]); st.rerun()
             st.divider()
-            total_exp = sum(e["amount"] for e in month_exps)
-            st.metric(f"{exp_ym} 기타비용 합계", f"{total_exp:,}원")
+            st.metric("합계", f"{sum(e['amount'] for e in month_exps):,}원")
         else:
             st.info("이 달의 기타비용이 없습니다.")
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 3: 월 손익
+# 탭: 월 손익
 # ═══════════════════════════════════════════════════════════════
-with tab3:
-    st.subheader("월별 손익 현황")
-    pnl_ym = st.selectbox(
-        "월 선택",
-        [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)],
-        index=None, placeholder="YYYY-MM...", key="pnl_ym"
-    )
+with t_pnl:
+    st.subheader("월별 손익")
+    if not sel_ym:
+        st.info("상단에서 정산 월을 선택해주세요.")
+    else:
+        df        = st.session_state.get("uploaded_df")
+        exps      = get_expenses_for_month(sel_ym)
+        extra     = get_extra_for_month(sel_ym)
+        total_exp = sum(e["amount"] for e in exps)
 
-    if pnl_ym:
-        clients    = load_clients()
-        spend_map  = get_spend_for_month(pnl_ym)
-        month_exps = get_expenses_for_month(pnl_ym)
-        extra      = get_extra_for_month(pnl_ym)
+        search_rep = 0
+        if df is not None:
+            for _, row in df.iterrows():
+                cid  = str(row.get("customer_id","")).strip()
+                ano  = str(row.get("ad_account_no","")).strip()
+                name = str(row.get("계정명","")).strip()
+                m    = get_mapping(cid, ano, name) or {}
+                r    = calc_from_ad(float(row.get("ad_supply",0)),
+                                    float(row.get("comm_supply",0)),
+                                    float(m.get("freelancer_rate",0)),
+                                    float(m.get("rebate_rate",0)),
+                                    m.get("is_owner_managed",False))
+                search_rep += r["rep_revenue"]
 
-        # 검색광고 대표 수익 합산
-        search_rep = sum(calc(c, spend_map.get(c["id"], 0))["rep_revenue"] for c in clients)
-        total_exp  = sum(e["amount"] for e in month_exps)
-
-        st.markdown("**기타 수익 입력**")
-        with st.form("extra_revenue_form"):
+        with st.form("extra_rev"):
             xc1, xc2, xc3 = st.columns(3)
-            with xc1: place = st.number_input("플레이스 수익 (원)", value=float(extra["place_revenue"]), step=10000.0)
-            with xc2: blog  = st.number_input("블로그 수익 (원)",   value=float(extra["blog_revenue"]),  step=10000.0)
-            with xc3: x_memo = st.text_input("메모", value=extra.get("memo",""))
+            with xc1: place = st.number_input("플레이스 수익(원)", value=float(extra["place_revenue"]), step=10000.0)
+            with xc2: blog  = st.number_input("블로그 수익(원)",   value=float(extra["blog_revenue"]),  step=10000.0)
+            with xc3: xmemo = st.text_input("메모", extra.get("memo",""))
             if st.form_submit_button("💾 저장"):
-                set_extra(pnl_ym, int(place), int(blog), x_memo)
-                st.rerun()
+                set_extra(sel_ym, int(place), int(blog), xmemo); st.rerun()
 
-        place_rev = extra["place_revenue"]
-        blog_rev  = extra["blog_revenue"]
+        place_rev = int(extra["place_revenue"])
+        blog_rev  = int(extra["blog_revenue"])
         net = search_rep + place_rev + blog_rev - total_exp
 
         st.divider()
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("검색광고 대표 수익",  f"{search_rep:,}원")
-        c2.metric("플레이스 수익",        f"{place_rev:,}원")
-        c3.metric("블로그 수익",          f"{blog_rev:,}원")
-        c4.metric("기타비용 합계",        f"{total_exp:,}원", delta=f"-{total_exp:,}")
-        c5.metric("**월 최종 순수익**",   f"{net:,}원",
-                  delta=f"{'▲' if net>=0 else '▼'}{abs(net):,}")
+        c1.metric("검색광고 대표 수익", f"{search_rep:,}원")
+        c2.metric("플레이스 수익",      f"{place_rev:,}원")
+        c3.metric("블로그 수익",        f"{blog_rev:,}원")
+        c4.metric("기타비용 합계",      f"{total_exp:,}원", delta=f"-{total_exp:,}")
+        c5.metric("월 최종 순수익",     f"{net:,}원",
+                  delta=f"{'▲' if net>=0 else '▼'} {abs(net):,}")
 
-        st.divider()
-        st.markdown("**기타비용 내역**")
-        if month_exps:
-            st.dataframe(pd.DataFrame(month_exps)[["name","amount","memo"]]
-                         .rename(columns={"name":"비용명","amount":"금액","memo":"메모"}),
-                         use_container_width=True, hide_index=True)
-        else:
-            st.info("이 달의 기타비용이 없습니다.")
-
-        st.markdown("**검색광고 정산 내역**")
-        if clients:
-            rows = []
-            for c in clients:
-                ad_spend = spend_map.get(c["id"], 0)
-                r = calc(c, ad_spend)
-                rows.append({"업체명": c["name"], "광고비": ad_spend,
-                             "수수료": r["commission"], "대표 수익": r["rep_revenue"]})
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if df is None:
+            st.warning("엑셀 데이터 없음 — 검색광고 수익 0원으로 계산됩니다.")
