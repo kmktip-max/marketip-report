@@ -5,8 +5,9 @@ import time
 import json
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
+KST = timezone(timedelta(hours=9))
 BASE_URL = "https://api.searchad.naver.com"
 
 
@@ -28,10 +29,20 @@ def _headers(method, path, api_key, secret_key, customer_id):
     }
 
 
+def _dedup(items, key):
+    seen, result = set(), []
+    for item in items:
+        k = item.get(key)
+        if k and k not in seen:
+            seen.add(k)
+            result.append(item)
+    return result
+
+
 class NaverAdAPI:
     def __init__(self, api_key, secret_key, customer_id):
-        self.api_key = api_key.strip()
-        self.secret_key = secret_key.strip()
+        self.api_key     = api_key.strip()
+        self.secret_key  = secret_key.strip()
         self.customer_id = str(customer_id).strip()
 
     def _get(self, path, params=None):
@@ -49,7 +60,7 @@ class NaverAdAPI:
 
     def get_campaigns(self):
         try:
-            return self._get("/ncc/campaigns") or []
+            return _dedup(self._get("/ncc/campaigns") or [], "nccCampaignId")
         except:
             return []
 
@@ -63,11 +74,9 @@ class NaverAdAPI:
                     all_ag.extend(r)
             except:
                 continue
-        return all_ag
+        return _dedup(all_ag, "nccAdgroupId")
 
-    def get_keywords(self, adgroup_ids, max_adgroups=79):
-        targets = adgroup_ids[:max_adgroups]
-
+    def get_keywords(self, adgroup_ids):
         def _fetch(ag_id):
             try:
                 r = self._get("/ncc/keywords", {"nccAdgroupId": ag_id})
@@ -77,21 +86,20 @@ class NaverAdAPI:
 
         all_kw = []
         with ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(_fetch, ag_id): ag_id for ag_id in targets}
-            for f in as_completed(futures):
+            for f in as_completed([ex.submit(_fetch, ag) for ag in adgroup_ids]):
                 all_kw.extend(f.result())
-        return all_kw
+        return _dedup(all_kw, "nccKeywordId")
 
     def get_stats(self, entity_ids, since, until):
-        tr = json.dumps({"since": since, "until": until})
+        tr     = json.dumps({"since": since, "until": until})
         fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"])
         batches = [entity_ids[i:i+20] for i in range(0, len(entity_ids), 20)]
 
         def _fetch(batch):
             try:
                 r = self._get("/stats", {
-                    "ids": ",".join(batch),
-                    "fields": fields,
+                    "ids":       ",".join(batch),
+                    "fields":    fields,
                     "timeRange": tr,
                 })
                 return r.get("data", []) if isinstance(r, dict) else []
@@ -100,91 +108,135 @@ class NaverAdAPI:
 
         all_stats = []
         with ThreadPoolExecutor(max_workers=10) as ex:
-            futures = [ex.submit(_fetch, b) for b in batches]
-            for f in as_completed(futures):
+            for f in as_completed([ex.submit(_fetch, b) for b in batches]):
                 all_stats.extend(f.result())
-        return all_stats
+        return _dedup(all_stats, "id")
+
+    def _parse_row(self, s, keyword=None):
+        clicks  = int(s.get("clkCnt", 0))
+        imps    = int(s.get("impCnt", 0))
+        convs   = int(s.get("ccnt", 0))
+        cpconv  = float(s.get("cpConv", 0))
+        api_ror = float(s.get("ror", 0))
+        revenue = int(s.get("salesAmt", 0)) if convs > 0 else 0
+        cost    = int(cpconv * convs)        if convs > 0 else 0
+
+        ctr  = round(clicks / imps  * 100, 2) if imps  > 0 else 0
+        cpc  = round(cost   / clicks)          if clicks > 0 and cost > 0 else 0
+        cvr  = round(convs  / clicks * 100, 2) if clicks > 0 else 0
+        cpa  = round(cost   / convs)            if convs  > 0 and cost > 0 else 0
+        roas = round(revenue / cost * 100, 1)   if cost   > 0 and revenue > 0 else round(api_ror, 1)
+
+        row = {
+            "id":          s.get("id", ""),
+            "clicks":      clicks,
+            "impressions": imps,
+            "conversions": convs,
+            "revenue":     revenue,
+            "cost":        cost,
+            "ctr":         ctr,
+            "cpc":         cpc,
+            "cvr":         cvr,
+            "cpa":         cpa,
+            "roas":        roas,
+            "avg_rnk":     round(float(s.get("avgRnk", 0)), 1),
+        }
+        if keyword is not None:
+            row["keyword"] = keyword
+        return row
 
     def fetch_report(self, period="weekly"):
         since, until = get_date_range(period)
+        debug_log = []
 
+        # ── 1. 캠페인 목록 ────────────────────────────────────────────
         campaigns = self.get_campaigns()
-        camp_ids = [c["nccCampaignId"] for c in campaigns]
+        camp_ids  = [c["nccCampaignId"] for c in campaigns]
+        camp_map  = {c["nccCampaignId"]: c.get("name", c["nccCampaignId"]) for c in campaigns}
+        debug_log.append(f"캠페인 수: {len(campaigns)} | IDs: {camp_ids}")
 
-        adgroups = self.get_adgroups(camp_ids)
-        ag_ids = [g["nccAdgroupId"] for g in adgroups]
-
-        keywords = self.get_keywords(ag_ids)
-        kw_map = {k["nccKeywordId"]: k.get("keyword", "") for k in keywords}
-        kw_ids = list(kw_map.keys())
-
-        # 캠페인 레벨 통계 (KPI 요약용) + 키워드 레벨 통계 병렬 수집
+        # ── 2. 캠페인 통계 + 광고그룹 목록 병렬 수집 ─────────────────
         with ThreadPoolExecutor(max_workers=2) as ex:
-            f_camp  = ex.submit(self.get_stats, camp_ids, since, until)
-            f_kw    = ex.submit(self.get_stats, kw_ids,   since, until)
-            camp_stats = f_camp.result()
-            stats      = f_kw.result()
+            f_cstat = ex.submit(self.get_stats, camp_ids, since, until)
+            f_ag    = ex.submit(self.get_adgroups, camp_ids)
+            camp_stats = f_cstat.result()
+            adgroups   = f_ag.result()
 
-        # 캠페인 레벨 합산 (KPI 카드용)
-        summary = {"clicks": 0, "impressions": 0, "conversions": 0, "revenue": 0, "cost": 0}
+        ag_ids = [g["nccAdgroupId"] for g in adgroups]
+        debug_log.append(f"캠페인 통계 row: {len(camp_stats)}")
+        debug_log.append(f"광고그룹 수: {len(adgroups)}")
+
+        # ── 3. 키워드 목록 + 키워드 통계 병렬 수집 ───────────────────
+        keywords  = self.get_keywords(ag_ids)
+        kw_map    = {k["nccKeywordId"]: k.get("keyword", "") for k in keywords}
+        kw_ids    = list(kw_map.keys())
+        kw_stats  = self.get_stats(kw_ids, since, until)
+        debug_log.append(f"키워드 수: {len(kw_ids)} | 키워드 통계 row: {len(kw_stats)}")
+
+        # ── 4. 캠페인 레벨 집계 (KPI 카드 + 캠페인 테이블) ──────────
+        summary    = {"clicks": 0, "impressions": 0, "conversions": 0, "revenue": 0, "cost": 0}
+        camp_table = []
         for s in camp_stats:
-            convs  = int(s.get("ccnt", 0))
-            cpconv = float(s.get("cpConv", 0))
-            summary["clicks"]      += int(s.get("clkCnt", 0))
-            summary["impressions"] += int(s.get("impCnt", 0))
-            summary["conversions"] += convs
-            summary["revenue"]     += int(s.get("salesAmt", 0)) if convs > 0 else 0
-            summary["cost"]        += int(cpconv * convs) if convs > 0 else 0
-
-        rows = []
-        for s in stats:
-            kid       = s.get("id", "")
-            clicks    = int(s.get("clkCnt", 0))
-            imps      = int(s.get("impCnt", 0))
-            convs     = int(s.get("ccnt", 0))
-            revenue   = int(s.get("salesAmt", 0)) if int(s.get("ccnt", 0)) > 0 else 0
-            cpconv    = float(s.get("cpConv", 0))
-            api_ror   = float(s.get("ror", 0))
-
-            # 비용: API가 cost 필드 미제공 → cpConv * ccnt 근사
-            cost = int(cpconv * convs) if convs > 0 else 0
-
-            # 파생 지표 — 분모 0 방지
-            ctr  = round(clicks / imps * 100, 2) if imps > 0 else 0
-            cpc  = round(cost / clicks) if clicks > 0 and cost > 0 else 0
-            cvr  = round(convs / clicks * 100, 2) if clicks > 0 else 0
-            cpa  = round(cost / convs) if convs > 0 and cost > 0 else 0
-            roas = round(revenue / cost * 100, 1) if cost > 0 and revenue > 0 else \
-                   round(api_ror, 1)
-
-            rows.append({
-                "keyword":     kw_map.get(kid, kid),
-                "clicks":      clicks,
-                "impressions": imps,
-                "conversions": convs,
-                "revenue":     revenue,
-                "cost":        cost,
-                "ctr":         ctr,
-                "cpc":         cpc,
-                "cvr":         cvr,
-                "cpa":         cpa,
-                "roas":        roas,
-                "avg_rnk":     round(s.get("avgRnk", 0), 1),
+            row = self._parse_row(s)
+            for k in summary:
+                summary[k] += row[k]
+            camp_table.append({
+                "캠페인ID":  row["id"],
+                "캠페인명":  camp_map.get(row["id"], row["id"]),
+                "노출수":    row["impressions"],
+                "클릭수":    row["clicks"],
+                "CTR(%)":   row["ctr"],
+                "평균CPC":   row["cpc"],
+                "비용":      row["cost"],
+                "전환수":    row["conversions"],
+                "전환매출":  row["revenue"],
             })
+        debug_log.append(
+            f"캠페인 레벨 합계 — 클릭: {summary['clicks']:,} / 노출: {summary['impressions']:,}"
+        )
+
+        # ── 5. 키워드 레벨 집계 ──────────────────────────────────────
+        kw_rows = [self._parse_row(s, kw_map.get(s.get("id", ""), s.get("id", "")))
+                   for s in kw_stats]
+        kw_summary = {
+            "clicks":      sum(r["clicks"]      for r in kw_rows),
+            "impressions": sum(r["impressions"] for r in kw_rows),
+            "conversions": sum(r["conversions"] for r in kw_rows),
+            "revenue":     sum(r["revenue"]     for r in kw_rows),
+            "cost":        sum(r["cost"]        for r in kw_rows),
+        }
+        debug_log.append(
+            f"키워드 레벨 합계 — 클릭: {kw_summary['clicks']:,} / 노출: {kw_summary['impressions']:,}"
+        )
 
         return {
-            "period": period,
-            "since": since,
-            "until": until,
-            "keywords": rows,
-            "summary": summary,
+            "period":    period,
+            "since":     since,
+            "until":     until,
+            "keywords":  kw_rows,
+            "summary":   summary,
+            "kw_summary": kw_summary,
+            "camp_table": camp_table,
             "total_campaigns": len(campaigns),
-            "total_keywords": len(kw_ids),
+            "total_keywords":  len(kw_ids),
+            "debug": debug_log,
+            "debug_params": {
+                "customer_id":     self.customer_id,
+                "since":           since,
+                "until":           until,
+                "endpoint":        BASE_URL + "/stats",
+                "fields":          "impCnt,clkCnt,salesAmt,ccnt,ctr,ror,cpConv,avgRnk",
+                "camp_stat_rows":  len(camp_stats),
+                "kw_stat_rows":    len(kw_stats),
+                "total_campaigns": len(campaigns),
+                "total_adgroups":  len(adgroups),
+                "total_keywords":  len(kw_ids),
+            },
         }
 
 
 def get_date_range(period):
-    today = datetime.now()
+    today = datetime.now(KST).date()
     if period == "weekly":
         until = today - timedelta(days=1)
         since = until - timedelta(days=6)

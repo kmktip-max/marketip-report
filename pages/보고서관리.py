@@ -184,36 +184,73 @@ with tab2:
                         data = api.fetch_report(period_key)
                         kws = data["keywords"]
 
-                        # ── 디버그 요약 ──────────────────────────────
-                        total_clicks = sum(k["clicks"]      for k in kws)
-                        total_imps   = sum(k["impressions"] for k in kws)
-                        total_convs  = sum(k["conversions"] for k in kws)
-                        total_rev    = sum(k["revenue"]     for k in kws)
-                        total_cost   = sum(k["cost"]        for k in kws)
+                        import pandas as pd
+                        sm   = data.get("summary",    {})
+                        kwsm = data.get("kw_summary", {})
+                        dbg  = data.get("debug_params", {})
 
                         with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=True):
-                            sm = data.get("summary", {})
-                            st.markdown("**캠페인 레벨 (KPI 카드에 표시)**")
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            col1.metric("클릭수",   f"{sm.get('clicks',0):,}회")
-                            col2.metric("노출수",   f"{sm.get('impressions',0):,}회")
-                            col3.metric("전환수",   f"{sm.get('conversions',0):,}건")
-                            col4.metric("전환매출", f"{sm.get('revenue',0):,}원")
-                            col5.metric("추정비용", f"{sm.get('cost',0):,}원")
-                            st.markdown("**키워드 레벨 합산 (테이블 기준)**")
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            col1.metric("클릭수",   f"{total_clicks:,}회")
-                            col2.metric("노출수",   f"{total_imps:,}회")
-                            col3.metric("전환수",   f"{total_convs:,}건")
-                            col4.metric("전환매출", f"{total_rev:,}원")
-                            col5.metric("추정비용", f"{total_cost:,}원")
+                            # ① API 요청 정보
+                            st.markdown("**① API 요청 정보**")
+                            c1, c2, c3 = st.columns(3)
+                            c1.text(f"Customer ID : {dbg.get('customer_id','')}")
+                            c2.text(f"조회 시작일  : {dbg.get('since','')}")
+                            c3.text(f"조회 종료일  : {dbg.get('until','')}")
+                            st.caption(
+                                f"Endpoint: {dbg.get('endpoint','')}  |  "
+                                f"Fields: {dbg.get('fields','')}  |  "
+                                f"캠페인 통계 row: {dbg.get('camp_stat_rows',0)}  |  "
+                                f"키워드 통계 row: {dbg.get('kw_stat_rows',0)}  |  "
+                                f"캠페인: {dbg.get('total_campaigns',0)}개  "
+                                f"광고그룹: {dbg.get('total_adgroups',0)}개  "
+                                f"키워드: {dbg.get('total_keywords',0)}개"
+                            )
 
+                            st.divider()
+
+                            # ② 캠페인 레벨 (KPI 카드 기준 — 네이버 대시보드와 비교)
+                            st.markdown("**② 캠페인 레벨 집계 (KPI 카드 기준 / 네이버 대시보드와 비교)**")
+                            c1, c2, c3, c4, c5 = st.columns(5)
+                            c1.metric("클릭수",   f"{sm.get('clicks',0):,}")
+                            c2.metric("노출수",   f"{sm.get('impressions',0):,}")
+                            c3.metric("전환수",   f"{sm.get('conversions',0):,}")
+                            c4.metric("전환매출", f"{sm.get('revenue',0):,}")
+                            c5.metric("추정비용", f"{sm.get('cost',0):,}")
+
+                            # ③ 키워드 레벨 (차이 delta 표시)
+                            st.markdown("**③ 키워드 레벨 합산 (테이블 기준 / 차이 = 미귀속 트래픽)**")
+                            c1, c2, c3, c4, c5 = st.columns(5)
+                            c1.metric("클릭수",   f"{kwsm.get('clicks',0):,}",
+                                      delta=f"{kwsm.get('clicks',0)-sm.get('clicks',0):+,}")
+                            c2.metric("노출수",   f"{kwsm.get('impressions',0):,}",
+                                      delta=f"{kwsm.get('impressions',0)-sm.get('impressions',0):+,}")
+                            c3.metric("전환수",   f"{kwsm.get('conversions',0):,}")
+                            c4.metric("전환매출", f"{kwsm.get('revenue',0):,}")
+                            c5.metric("추정비용", f"{kwsm.get('cost',0):,}")
+
+                            st.divider()
+
+                            # ④ 캠페인별 성과 테이블 (네이버 관리자 화면 1:1 비교)
+                            camp_table = data.get("camp_table", [])
+                            if camp_table:
+                                st.markdown("**④ 캠페인별 성과 (네이버 관리자 화면 1:1 비교)**")
+                                df_camp = pd.DataFrame(camp_table)
+                                st.dataframe(df_camp, use_container_width=True, hide_index=True)
+
+                            # ⑤ 키워드 원본 상위 10행
                             if kws:
-                                import pandas as pd
-                                df_prev = pd.DataFrame(kws[:5])[
-                                    ["keyword","clicks","impressions","conversions","revenue","cost","ctr","cpa","roas"]
-                                ]
-                                st.dataframe(df_prev, use_container_width=True)
+                                st.markdown("**⑤ 키워드 성과 상위 10행**")
+                                cols = ["keyword","clicks","impressions","conversions",
+                                        "revenue","cost","ctr","cpc","roas","avg_rnk"]
+                                st.dataframe(
+                                    pd.DataFrame(kws[:10])[[c for c in cols if c in kws[0]]],
+                                    use_container_width=True, hide_index=True
+                                )
+
+                            # ⑥ 디버그 로그
+                            with st.expander("디버그 로그"):
+                                for line in data.get("debug", []):
+                                    st.caption(line)
 
                         html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
                         results.append({
@@ -222,7 +259,12 @@ with tab2:
                             "html": html,
                             "status": "ok"
                         })
-                        st.success(f"✅ {client['name']} 완료 — 키워드 {data['total_keywords']}개 | 클릭 {total_clicks:,}회 | 노출 {total_imps:,}회")
+                        st.success(
+                            f"✅ {client['name']} 완료 — "
+                            f"캠페인 {data['total_campaigns']}개 | 키워드 {data['total_keywords']}개 | "
+                            f"클릭 {sm.get('clicks',0):,}회 (캠페인 레벨) | "
+                            f"노출 {sm.get('impressions',0):,}회"
+                        )
                     except Exception as e:
                         results.append({
                             "client": client,
