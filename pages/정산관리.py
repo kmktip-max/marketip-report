@@ -19,6 +19,7 @@ OWNER_FL   = "권혁우"   # 대표가 직접 담당하는 프리랜서명
 F_MAPPING  = os.path.join(ROOT, "freelancer_mapping.json")
 F_EXPENSES = os.path.join(ROOT, "other_expenses.json")
 F_EXTRA    = os.path.join(ROOT, "monthly_extra_revenue.json")
+F_PNL      = os.path.join(ROOT, "monthly_pnl_data.json")
 
 # ── 관리자 인증 ───────────────────────────────────────────────────────────────
 def _admin_pw():
@@ -58,6 +59,29 @@ load_expenses = lambda: _load(F_EXPENSES)
 save_expenses = lambda d: _save(F_EXPENSES, d)
 load_extra    = lambda: _load(F_EXTRA)
 save_extra    = lambda d: _save(F_EXTRA, d)
+load_pnl      = lambda: _load(F_PNL)
+save_pnl      = lambda d: _save(F_PNL, d)
+
+def upsert_pnl(ym, search_owner, search_fl, place, blog,
+               expenses, gross, after_tax, net, net_after_tax):
+    data = load_pnl()
+    entry = {
+        "year_month": ym,
+        "search_owner_profit":      int(round(search_owner)),
+        "search_freelancer_profit": int(round(search_fl)),
+        "place_revenue":            int(place),
+        "blog_revenue":             int(blog),
+        "other_expenses":           int(expenses),
+        "gross_total_profit":       int(round(gross)),
+        "gross_after_tax":          int(round(after_tax)),
+        "final_net_profit":         int(round(net)),
+        "final_net_after_tax":      int(round(net_after_tax)),
+        "confirmed_at":             date.today().isoformat(),
+    }
+    for r in data:
+        if r.get("year_month") == ym:
+            r.update(entry); save_pnl(data); return
+    data.append(entry); save_pnl(data)
 
 # ── 복합 키: CID + AdAccountNo + 매체사 + 상위수수료율 ───────────────────────
 def _norm_media(m):
@@ -841,3 +865,14 @@ with t_pnl:
 
         if df is None:
             st.warning("엑셀 없음 — 검색광고 수익 0원으로 계산됩니다.")
+
+        st.divider()
+        btn_disabled = (not sel_ym) or (df is None)
+        if st.button("💾 이 달 손익 확정 저장 → 월/연간 손익 대시보드에 반영",
+                     type="primary", use_container_width=True, disabled=btn_disabled):
+            upsert_pnl(sel_ym,
+                       search_owner_profit, search_freelancer_profit,
+                       place_rev, blog_rev, tot_exp,
+                       gross_total_profit, gross_total_profit_after_tax,
+                       final_net_profit, final_net_profit_after_tax)
+            st.success(f"✅ {sel_ym} 손익 저장 완료 — 월/연간 손익 페이지에서 확인하세요.")

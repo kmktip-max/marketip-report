@@ -40,7 +40,8 @@ pg = st.navigation([
     st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
     st.Page("pages/월간보고서.py",    title="월간보고서"),
     st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
-    st.Page("pages/정산관리.py",      title="정산관리"),       # 사이드바 미노출
+    st.Page("pages/정산관리.py",      title="정산관리"),
+    st.Page("pages/월연간손익.py",    title="월/연간 손익"),
 ])
 
 # ── CSS 주입 ──────────────────────────────────────────────────────────────────
@@ -104,7 +105,8 @@ with st.sidebar:
   <hr style="border:none;border-top:1px solid #E5E8ED;margin:0 0 10px;">
 </div>
 """, unsafe_allow_html=True)
-    st.page_link("pages/정산관리.py", label="⚙️  정산관리", use_container_width=True)
+    st.page_link("pages/정산관리.py",   label="⚙️  정산관리",    use_container_width=True)
+    st.page_link("pages/월연간손익.py", label="📊  월/연간 손익", use_container_width=True)
 
 # ── 페이지 실행 ───────────────────────────────────────────────────────────────
 pg.run()
