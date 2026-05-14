@@ -20,6 +20,7 @@ F_MAPPING  = os.path.join(ROOT, "freelancer_mapping.json")
 F_EXPENSES = os.path.join(ROOT, "other_expenses.json")
 F_EXTRA    = os.path.join(ROOT, "monthly_extra_revenue.json")
 F_PNL      = os.path.join(ROOT, "monthly_pnl_data.json")
+F_ANNUAL   = os.path.join(ROOT, "annual_pnl.json")
 
 # ── 관리자 인증 ───────────────────────────────────────────────────────────────
 def _admin_pw():
@@ -61,6 +62,8 @@ load_extra    = lambda: _load(F_EXTRA)
 save_extra    = lambda d: _save(F_EXTRA, d)
 load_pnl      = lambda: _load(F_PNL)
 save_pnl      = lambda d: _save(F_PNL, d)
+load_annual   = lambda: _load(F_ANNUAL)
+save_annual   = lambda d: _save(F_ANNUAL, d)
 
 def upsert_pnl(ym, search_owner, search_fl, place, blog,
                expenses, gross, after_tax, net, net_after_tax):
@@ -80,8 +83,29 @@ def upsert_pnl(ym, search_owner, search_fl, place, blog,
     }
     for r in data:
         if r.get("year_month") == ym:
-            r.update(entry); save_pnl(data); return
-    data.append(entry); save_pnl(data)
+            r.update(entry); save_pnl(data); break
+    else:
+        data.append(entry); save_pnl(data)
+    # 연간 손익 테이블에도 자동 반영
+    try:
+        yr, mo = int(ym[:4]), int(ym[5:7])
+        upsert_annual(yr, mo, int(round(gross)), int(round(net)))
+    except Exception:
+        pass
+
+def upsert_annual(year, month, total_sales, pretax_profit):
+    data = load_annual()
+    after_tax = round(pretax_profit * 0.8)
+    entry = {
+        "year": int(year), "month": int(month),
+        "total_sales":         int(total_sales),
+        "pretax_profit":       int(pretax_profit),
+        "after_tax_estimate":  int(after_tax),
+    }
+    for r in data:
+        if r.get("year") == int(year) and r.get("month") == int(month):
+            r.update(entry); save_annual(data); return
+    data.append(entry); save_annual(data)
 
 # ── 복합 키: CID + AdAccountNo + 매체사 + 상위수수료율 ───────────────────────
 def _norm_media(m):
@@ -412,9 +436,9 @@ YM = [f"{y}-{m:02d}" for y in range(2025, 2028) for m in range(1, 13)]
 sel_ym = st.selectbox("📅 정산 월", YM, index=None, placeholder="YYYY-MM...", key="main_ym")
 st.divider()
 
-t_up, t_cl, t_un, t_fl, t_ex, t_pnl = st.tabs([
+t_up, t_cl, t_un, t_fl, t_ex, t_pnl, t_annual = st.tabs([
     "📤 엑셀 업로드", "🏢 업체 분류", "❓ 미분류",
-    "👤 프리랜서 정산", "💰 기타비용", "📈 월 손익",
+    "👤 프리랜서 정산", "💰 기타비용", "📈 월 손익", "📊 월/연간 손익",
 ])
 
 # ─── 업로드 탭 ────────────────────────────────────────────────────────────────
@@ -881,11 +905,159 @@ with t_pnl:
 
         st.divider()
         btn_disabled = (not sel_ym) or (df is None)
-        if st.button("💾 이 달 손익 확정 저장 → 월/연간 손익 대시보드에 반영",
+        if st.button("💾 이 달 손익 확정 저장 → 월/연간 손익 탭에 반영",
                      type="primary", use_container_width=True, disabled=btn_disabled):
             upsert_pnl(sel_ym,
                        search_owner_profit, search_freelancer_profit,
                        place_rev, blog_rev, tot_exp,
                        gross_total_profit, gross_total_profit_after_tax,
                        final_net_profit, final_net_profit_after_tax)
-            st.success(f"✅ {sel_ym} 손익 저장 완료 — 월/연간 손익 페이지에서 확인하세요.")
+            st.success(f"✅ {sel_ym} 손익 저장 완료 — 월/연간 손익 탭에서 확인하세요.")
+
+# ─── 월/연간 손익 탭 ──────────────────────────────────────────────────────────
+with t_annual:
+    st.subheader("월/연간 손익 현황")
+    st.caption("월 손익 탭에서 '이 달 손익 확정 저장'을 누르거나, 아래 수동 입력으로 데이터를 추가하세요.")
+
+    # 연도 선택
+    _today = date.today()
+    _years = list(range(2026, _today.year + 2))
+    _def_y = _today.year if _today.year >= 2026 else 2026
+    ann_year = st.selectbox("연도 선택", _years,
+                            index=_years.index(_def_y), key="ann_year_sel")
+
+    ANN_START_M = 5 if ann_year == 2026 else 1
+    ann_months  = list(range(ANN_START_M, 13))
+
+    # 이번 연도 데이터 로드
+    _ann_raw = {r["month"]: r for r in load_annual() if r.get("year") == ann_year}
+
+    # 월별 집계
+    _ann_rows = []
+    for _m in ann_months:
+        _r = _ann_raw.get(_m, {})
+        _ts  = int(_r.get("total_sales",        0))
+        _pp  = int(_r.get("pretax_profit",       0))
+        _at  = int(_r.get("after_tax_estimate",  round(_pp * 0.8)))
+        _ann_rows.append({
+            "month": _m, "월": f"{_m}월",
+            "total_sales": _ts, "pretax_profit": _pp, "after_tax": _at,
+            "has_data": bool(_r),
+        })
+    _ann_df = pd.DataFrame(_ann_rows)
+
+    cum_ts  = _ann_df["total_sales"].sum()
+    cum_pp  = _ann_df["pretax_profit"].sum()
+    cum_at  = _ann_df["after_tax"].sum()
+
+    # KPI 카드
+    _kc1, _kc2, _kc3 = st.columns(3)
+    _kc1.markdown(_kpi_card(f"{ann_year}년 누적 총매출",      w(cum_ts)),  unsafe_allow_html=True)
+    _kc2.markdown(_kpi_card(f"{ann_year}년 누적 세전수익",    w(cum_pp),  "primary"), unsafe_allow_html=True)
+    _kc3.markdown(_kpi_card(f"{ann_year}년 누적 세후추정수익", w(cum_at), "secondary", badge="×0.8"),
+                  unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+
+    # 차트
+    if cum_ts > 0 or cum_pp > 0:
+        st.markdown("**월별 수익 흐름**")
+        try:
+            import plotly.graph_objects as go
+            _fig = go.Figure()
+            _series = [
+                ("total_sales",   "총매출",       "#9CA3AF", "dot",   False),
+                ("pretax_profit", "세전수익",      "#60A5FA", "solid", False),
+                ("after_tax",     "세후추정수익",  "#1D4ED8", "solid", True),
+            ]
+            for _col, _name, _clr, _dash, _bold in _series:
+                _fig.add_trace(go.Scatter(
+                    x=_ann_df["월"],
+                    y=_ann_df[_col],
+                    name=_name,
+                    mode="lines+markers",
+                    line=dict(color=_clr, width=3 if _bold else 2, dash=_dash),
+                    marker=dict(size=9 if _bold else 6),
+                    fill="tozeroy" if _bold else None,
+                    fillcolor="rgba(29,78,216,0.05)" if _bold else None,
+                    customdata=_ann_df[_col],
+                    hovertemplate="%{x}: <b>%{customdata:,.0f}원</b><extra>" + _name + "</extra>",
+                ))
+            _fig.update_layout(
+                plot_bgcolor="white", paper_bgcolor="white",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                            font=dict(size=13)),
+                yaxis=dict(tickformat=",.0f", title="원", gridcolor="#F3F4F6",
+                           separatethousands=True),
+                xaxis=dict(title="", gridcolor="#F3F4F6"),
+                margin=dict(l=10, r=10, t=30, b=10),
+                height=320,
+                hovermode="x unified",
+            )
+            st.plotly_chart(_fig, use_container_width=True)
+        except ImportError:
+            st.line_chart(_ann_df.set_index("월")[["total_sales","pretax_profit","after_tax"]])
+    else:
+        st.info("아직 데이터가 없습니다. 아래 수동 입력 또는 월 손익 탭의 확정 저장을 이용하세요.")
+
+    # 월별 요약 테이블
+    st.markdown("**월별 요약**")
+    _tbl = []
+    for _, _r in _ann_df.iterrows():
+        _tbl.append({
+            "월":         _r["월"],
+            "총매출":     w(_r["total_sales"])    if _r["has_data"] else "—",
+            "세전수익":   w(_r["pretax_profit"])  if _r["has_data"] else "—",
+            "세후추정수익": w(_r["after_tax"])    if _r["has_data"] else "—",
+        })
+    _tbl.append({"월":"합계",
+                 "총매출": w(cum_ts), "세전수익": w(cum_pp), "세후추정수익": w(cum_at)})
+
+    def _ann_style(sdf):
+        out = pd.DataFrame("", index=sdf.index, columns=sdf.columns)
+        out["세전수익"]    = "color:#1D4ED8;font-weight:600;"
+        out["세후추정수익"] = "color:#0369A1;font-weight:700;"
+        last = len(sdf) - 1
+        for _c in sdf.columns:
+            out.iloc[last, sdf.columns.get_loc(_c)] = "font-weight:800;"
+        out.iloc[last, sdf.columns.get_loc("세전수익")]    = "font-weight:800;color:#1D4ED8;"
+        out.iloc[last, sdf.columns.get_loc("세후추정수익")] = "font-weight:800;color:#0369A1;"
+        return out
+
+    st.dataframe(
+        pd.DataFrame(_tbl).style.apply(_ann_style, axis=None),
+        use_container_width=True, hide_index=True,
+    )
+
+    # 수동 입력 폼
+    st.divider()
+    st.markdown("**월별 수동 입력** (수정 또는 미확정 월 직접 입력)")
+    _mc1, _mc2, _mc3, _mc4 = st.columns([1, 2, 2, 1])
+    with _mc1:
+        _man_m = st.selectbox("월", ann_months,
+                              format_func=lambda x: f"{x}월", key="ann_man_month")
+    _man_ex = _ann_raw.get(_man_m, {})
+    with _mc2:
+        _man_ts = st.number_input(
+            "총매출(원)",
+            value=int(_man_ex.get("total_sales", 0)),
+            min_value=0, step=100000, format="%d",
+            key=f"ann_ts_{ann_year}_{_man_m}",
+        )
+    with _mc3:
+        _man_pp = st.number_input(
+            "세전수익(원)",
+            value=int(_man_ex.get("pretax_profit", 0)),
+            min_value=0, step=100000, format="%d",
+            key=f"ann_pp_{ann_year}_{_man_m}",
+        )
+    with _mc4:
+        st.write(""); st.write("")
+        if st.button("💾 저장", key=f"ann_sv_{ann_year}_{_man_m}",
+                     type="primary", use_container_width=True):
+            upsert_annual(ann_year, _man_m, _man_ts, _man_pp)
+            st.success(f"✅ {ann_year}년 {_man_m}월 저장 완료")
+            st.rerun()
+    if _man_ex:
+        _at_preview = round(_man_pp * 0.8)
+        st.caption(f"세후추정수익 미리보기: {_at_preview:,.0f}원 (세전수익 × 0.8)")
