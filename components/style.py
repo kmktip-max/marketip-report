@@ -50,17 +50,10 @@ SIDEBAR_CSS = """
     margin-top: 0 !important;
     padding-top: 0 !important;
 }
-/* 사이드바 전체를 flex column으로 → 하단 고정 가능 */
-[data-testid="stSidebarContent"] > div {
-    display: flex !important;
-    flex-direction: column !important;
-    min-height: 100vh !important;
-}
-.sb-spacer { flex: 1 !important; min-height: 24px !important; }
+.sb-spacer { min-height: 40px !important; }
 .sb-bottom {
     border-top: 1px solid #EAEDF2;
     padding: 12px 10px 16px;
-    margin-top: auto;
 }
 
 /* ── 이미지 확대 버튼 제거 ── */
