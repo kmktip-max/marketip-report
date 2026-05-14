@@ -100,7 +100,7 @@ with b2:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── 안내 카드 2개 ─────────────────────────────────────────────────────────────
-left, right = st.columns([1.3, 1], gap="medium")
+left, right = st.columns([2.2, 1], gap="large")
 
 with left:
     st.markdown("""

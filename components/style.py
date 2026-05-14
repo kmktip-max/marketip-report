@@ -152,7 +152,11 @@ button[title="View fullscreen"] { display: none !important; }
 PAYBACK_CSS = """
 <style>
 /* ── layout ── */
-.block-container { max-width: 960px !important; }
+.block-container {
+  max-width: 100% !important;
+  padding-left: 3rem !important;
+  padding-right: 3rem !important;
+}
 
 /* ── typography ── */
 .pb-h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 6px; letter-spacing:-.5px; }
@@ -183,9 +187,9 @@ PAYBACK_CSS = """
   margin-bottom:10px;
   box-shadow:0 3px 10px rgba(0,100,255,.25);
 }
-.step-lbl { font-size:12px; font-weight:700; color:#111; text-align:center; }
-.step-desc { font-size:11px; color:#aaa; text-align:center; margin-top:3px; }
-.step-line { flex:1; height:2px; background:#E0E7FF; margin-top:22px; }
+.step-lbl { font-size:13px; font-weight:700; color:#111; text-align:center; white-space:nowrap; }
+.step-desc { font-size:12px; color:#aaa; text-align:center; margin-top:4px; line-height:1.5; white-space:nowrap; }
+.step-line { flex:1; height:2px; background:#E0E7FF; margin-top:22px; min-width:16px; }
 
 /* ── notice ── */
 .notice-wrap {
@@ -197,7 +201,7 @@ PAYBACK_CSS = """
 .notice-ttl { font-size:13px; font-weight:800; color:#F5A623; margin-bottom:14px; }
 .notice-row { display:flex; gap:12px; margin-bottom:10px; align-items:flex-start; }
 .notice-row:last-child { margin-bottom:0; }
-.notice-key { font-size:12px; font-weight:700; color:#555; min-width:88px; flex-shrink:0; }
+.notice-key { font-size:12px; font-weight:700; color:#555; min-width:100px; flex-shrink:0; white-space:nowrap; }
 .notice-val { font-size:12px; color:#333; line-height:1.6; }
 em-blue { color:#0064FF; font-style:normal; font-weight:700; }
 em-red  { color:#CC5500; font-style:normal; font-weight:700; }
