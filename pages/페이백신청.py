@@ -194,15 +194,15 @@ with right:
     <div class="notice-ttl">⚠️ 필독 안내 사항</div>
     <div class="notice-row">
       <span class="notice-key">정산 일정</span>
-      <span class="notice-val" style="white-space:nowrap;">페이백 정산은 <em-red>2달 뒤</em-red> 진행됩니다.&nbsp;<span style="font-size:11px;color:#aaa;">(ex. 1월 → 3월 20~25일)</span></span>
+      <span class="notice-val">페이백 정산은 <em-red>2달 뒤</em-red> 진행됩니다. <span style="font-size:11px;color:#aaa;">(ex. 1월 → 3월 20~25일)</span></span>
     </div>
     <div class="notice-row">
       <span class="notice-key">페이백 불가</span>
-      <span class="notice-val" style="white-space:nowrap;">네이버 플레이스, 파워컨텐츠는 <em-red>불가</em-red>합니다.</span>
+      <span class="notice-val">네이버 플레이스, 파워컨텐츠는 <em-red>불가</em-red>합니다.</span>
     </div>
     <div class="notice-row">
       <span class="notice-key">문의처</span>
-      <span class="notice-val" style="white-space:nowrap;">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0064FF;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
+      <span class="notice-val">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0064FF;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
     </div>
   </div>
 </div>
@@ -213,7 +213,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── 계정 리스트 ───────────────────────────────────────────────────────────────
 accounts = load_accounts()
 
-h1, h2 = st.columns([4, 1])
+h1, h2 = st.columns([5, 1])
 with h1:
     st.markdown(
         f'<div class="sec-ttl">내 네이버 광고 계정'
@@ -222,6 +222,8 @@ with h1:
     )
 with h2:
     add_btn = st.button("＋ 계정 추가", type="primary", use_container_width=True)
+st.markdown('<style>[data-testid="stBaseButton-primary"]{min-width:160px;}</style>',
+            unsafe_allow_html=True)
 
 # 상태 탭
 tab_options = ["전체"] + STATUS_LIST

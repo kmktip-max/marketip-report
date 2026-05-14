@@ -199,10 +199,16 @@ PAYBACK_CSS = """
   padding:18px 20px;
 }
 .notice-ttl { font-size:13px; font-weight:800; color:#F5A623; margin-bottom:14px; }
-.notice-row { display:flex; gap:12px; margin-bottom:10px; align-items:flex-start; }
+.notice-row {
+  display:grid;
+  grid-template-columns: 80px 1fr;
+  gap:12px;
+  margin-bottom:10px;
+  align-items:baseline;
+}
 .notice-row:last-child { margin-bottom:0; }
-.notice-key { font-size:12px; font-weight:700; color:#555; min-width:100px; flex-shrink:0; white-space:nowrap; }
-.notice-val { font-size:12px; color:#333; line-height:1.6; }
+.notice-key { font-size:12px; font-weight:700; color:#555; white-space:nowrap; }
+.notice-val { font-size:12px; color:#333; line-height:1.6; word-break:keep-all; }
 em-blue { color:#0064FF; font-style:normal; font-weight:700; }
 em-red  { color:#CC5500; font-style:normal; font-weight:700; }
 
