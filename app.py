@@ -40,6 +40,7 @@ pg = st.navigation([
     st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
     st.Page("pages/월간보고서.py",    title="월간보고서"),
     st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
+    st.Page("pages/정산관리.py",      title="정산관리"),       # 사이드바 미노출
 ])
 
 # ── CSS 주입 ──────────────────────────────────────────────────────────────────
