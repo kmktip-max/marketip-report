@@ -193,18 +193,16 @@ with right:
   <div class="notice-wrap">
     <div class="notice-ttl">⚠️ 필독 안내 사항</div>
     <div class="notice-row">
-      <span class="notice-key">정산 일정 안내</span>
-      <span class="notice-val">페이백 정산은 <em-red>2달 뒤</em-red> 진행됩니다.<br>
-        <span style="font-size:11px;color:#aaa;">(ex. 1월 → 3월 10일)</span>
-      </span>
+      <span class="notice-key">정산 일정</span>
+      <span class="notice-val" style="white-space:nowrap;">페이백 정산은 <em-red>2달 뒤</em-red> 진행됩니다.&nbsp;<span style="font-size:11px;color:#aaa;">(ex. 1월 → 3월 20~25일)</span></span>
     </div>
     <div class="notice-row">
-      <span class="notice-key">네이버 플레이스</span>
-      <span class="notice-val">플레이스 광고 페이백은 <em-red>불가</em-red>합니다.</span>
+      <span class="notice-key">페이백 불가</span>
+      <span class="notice-val" style="white-space:nowrap;">네이버 플레이스, 파워컨텐츠는 <em-red>불가</em-red>합니다.</span>
     </div>
     <div class="notice-row">
-      <span class="notice-key">문의처 안내</span>
-      <span class="notice-val">검색광고 문의는 <em-blue>마케팁</em-blue>으로 부탁드립니다.</span>
+      <span class="notice-key">문의처</span>
+      <span class="notice-val" style="white-space:nowrap;">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0064FF;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
     </div>
   </div>
 </div>
