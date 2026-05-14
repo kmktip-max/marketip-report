@@ -4,6 +4,7 @@ import base64
 import time
 import json
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 BASE_URL = "https://api.searchad.naver.com"
@@ -65,34 +66,43 @@ class NaverAdAPI:
         return all_ag
 
     def get_keywords(self, adgroup_ids, max_adgroups=79):
-        all_kw = []
-        for ag_id in adgroup_ids[:max_adgroups]:
+        targets = adgroup_ids[:max_adgroups]
+
+        def _fetch(ag_id):
             try:
                 r = self._get("/ncc/keywords", {"nccAdgroupId": ag_id})
-                if isinstance(r, list):
-                    all_kw.extend(r)
+                return r if isinstance(r, list) else []
             except:
-                continue
+                return []
+
+        all_kw = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(_fetch, ag_id): ag_id for ag_id in targets}
+            for f in as_completed(futures):
+                all_kw.extend(f.result())
         return all_kw
 
     def get_stats(self, entity_ids, since, until):
-        """통계 조회 - 여러 파라미터 형식 시도"""
         tr = json.dumps({"since": since, "until": until})
         fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"])
+        batches = [entity_ids[i:i+20] for i in range(0, len(entity_ids), 20)]
 
-        all_stats = []
-        for i in range(0, len(entity_ids), 20):
-            batch = entity_ids[i:i+20]
+        def _fetch(batch):
             try:
                 r = self._get("/stats", {
                     "ids": ",".join(batch),
                     "fields": fields,
                     "timeRange": tr,
                 })
-                data = r.get("data", []) if isinstance(r, dict) else []
-                all_stats.extend(data)
+                return r.get("data", []) if isinstance(r, dict) else []
             except:
-                continue
+                return []
+
+        all_stats = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = [ex.submit(_fetch, b) for b in batches]
+            for f in as_completed(futures):
+                all_stats.extend(f.result())
         return all_stats
 
     def fetch_report(self, period="weekly"):
