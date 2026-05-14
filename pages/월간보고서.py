@@ -13,7 +13,7 @@ from report_engine.emailer import send_report
 from report_engine.report_html import generate_html
 from report_engine.storage import load_clients, save_clients
 
-st.set_page_config(page_title="보고서 관리", page_icon="📊", layout="wide")
+
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────
