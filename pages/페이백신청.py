@@ -213,12 +213,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ── 계정 리스트 ───────────────────────────────────────────────────────────────
 accounts = load_accounts()
 
-st.markdown(
-    f'<div class="sec-ttl">내 네이버 광고 계정'
-    f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
-    unsafe_allow_html=True
-)
-_, col_btn = st.columns([5, 1])
+col_title, col_btn = st.columns([4, 1])
+with col_title:
+    st.markdown(
+        f'<div class="sec-ttl" style="line-height:2.2;">내 네이버 광고 계정'
+        f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
+        unsafe_allow_html=True
+    )
 with col_btn:
     add_btn = st.button("＋ 계정 추가", type="primary", use_container_width=True)
 

@@ -174,6 +174,11 @@ PAYBACK_CSS = """
   border: none !important;
   padding: 0 !important;
 }
+/* 계정 헤더 행 수직 정렬 */
+[data-testid="stHorizontalBlock"]:has(.sec-ttl) {
+  align-items: center !important;
+  margin: 28px 0 12px !important;
+}
 
 /* ── typography ── */
 .pb-h1 { font-size:26px; font-weight:800; color:#111; margin:0 0 6px; letter-spacing:-.5px; }
