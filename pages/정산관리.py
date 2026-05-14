@@ -349,7 +349,11 @@ def parse_excel(f):
     for col in NUM:
         if col in df.columns:
             df[col] = pd.to_numeric(
-                df[col].astype(str).str.replace(",","").str.replace("원","").str.strip(),
+                df[col].astype(str)
+                       .str.replace(",", "")
+                       .str.replace("원", "")
+                       .str.replace("%", "")   # "14.0%" → "14.0" 처리
+                       .str.strip(),
                 errors="coerce").fillna(0)
         else:
             df[col] = 0.0
