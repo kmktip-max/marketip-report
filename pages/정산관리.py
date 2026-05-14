@@ -100,7 +100,7 @@ def set_extra(ym, place, blog, memo=""):
     save_extra(data)
 
 # ── 숫자 포맷 ─────────────────────────────────────────────────────────────────
-def w(n):   return f"{int(round(n)):,}원"
+def w(n):   return f"{int(round(n)):,} 원"
 def pct(p): return f"{p:.1f}%"
 
 # ── 엑셀 파싱 ─────────────────────────────────────────────────────────────────
