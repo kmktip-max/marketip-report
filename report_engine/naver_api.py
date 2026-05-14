@@ -118,7 +118,23 @@ class NaverAdAPI:
         kw_map = {k["nccKeywordId"]: k.get("keyword", "") for k in keywords}
         kw_ids = list(kw_map.keys())
 
-        stats = self.get_stats(kw_ids, since, until)
+        # 캠페인 레벨 통계 (KPI 요약용) + 키워드 레벨 통계 병렬 수집
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_camp  = ex.submit(self.get_stats, camp_ids, since, until)
+            f_kw    = ex.submit(self.get_stats, kw_ids,   since, until)
+            camp_stats = f_camp.result()
+            stats      = f_kw.result()
+
+        # 캠페인 레벨 합산 (KPI 카드용)
+        summary = {"clicks": 0, "impressions": 0, "conversions": 0, "revenue": 0, "cost": 0}
+        for s in camp_stats:
+            convs  = int(s.get("ccnt", 0))
+            cpconv = float(s.get("cpConv", 0))
+            summary["clicks"]      += int(s.get("clkCnt", 0))
+            summary["impressions"] += int(s.get("impCnt", 0))
+            summary["conversions"] += convs
+            summary["revenue"]     += int(s.get("salesAmt", 0)) if convs > 0 else 0
+            summary["cost"]        += int(cpconv * convs) if convs > 0 else 0
 
         rows = []
         for s in stats:
@@ -161,6 +177,7 @@ class NaverAdAPI:
             "since": since,
             "until": until,
             "keywords": rows,
+            "summary": summary,
             "total_campaigns": len(campaigns),
             "total_keywords": len(kw_ids),
         }

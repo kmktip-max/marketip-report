@@ -19,12 +19,13 @@ def generate_html(data: dict, client_name: str, report_date: str) -> str:
     until = data.get("until", "")
     period_label = "주간" if data.get("period") == "weekly" else "월간"
 
-    # ── 집계 ──────────────────────────────────────────────────────────
-    total_clicks  = sum(k["clicks"]      for k in kws)
-    total_imps    = sum(k["impressions"] for k in kws)
-    total_convs   = sum(k["conversions"] for k in kws)
-    total_revenue = sum(k["revenue"]     for k in kws)
-    total_cost    = sum(k["cost"]        for k in kws)
+    # ── 집계 (KPI: 캠페인 레벨 / 테이블: 키워드 레벨) ─────────────────
+    sm = data.get("summary", {})
+    total_clicks  = sm.get("clicks",      sum(k["clicks"]      for k in kws))
+    total_imps    = sm.get("impressions", sum(k["impressions"] for k in kws))
+    total_convs   = sm.get("conversions", sum(k["conversions"] for k in kws))
+    total_revenue = sm.get("revenue",     sum(k["revenue"]     for k in kws))
+    total_cost    = sm.get("cost",        sum(k["cost"]        for k in kws))
 
     avg_ctr  = _fmt_pct(total_clicks / total_imps * 100)    if total_imps              else "-"
     avg_cpa  = f"{round(total_cost / total_convs):,}원"     if total_convs and total_cost else "-"
