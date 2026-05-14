@@ -63,6 +63,10 @@ SIDEBAR_CSS = """
     margin-top: auto;
 }
 
+/* ── 이미지 확대 버튼 제거 ── */
+[data-testid="stImageContainer"] button,
+button[title="View fullscreen"] { display: none !important; }
+
 /* ── 로고 래퍼 ── */
 .sb-logo-wrap {
     padding: 4px 16px 10px;
