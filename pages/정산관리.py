@@ -710,7 +710,9 @@ with t_pnl:
                            float(row.get("comm_supply",0)),
                            float(m.get("freelancer_rate",0)),
                            float(m.get("rebate_rate",0)),
-                           m.get("is_owner_managed",False))
+                           m.get("is_owner_managed",False),
+                           m.get("direct_commission_mode",False),
+                           float(m.get("direct_commission_rate",0)))
                 search_rep += r["owner"]
 
         with st.form("extra_rev"):
