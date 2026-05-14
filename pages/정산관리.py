@@ -69,7 +69,7 @@ def get_mapping(cid, ano):
     return None
 
 def upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own,
-                   direct_mode=False, direct_rate=0.0):
+                   direct_mode=False, direct_rate=0.0, locked=True):
     data = load_mapping()
     k = _mk(cid, ano)
     entry = {"customer_id": str(cid), "ad_account_no": str(ano),
@@ -77,7 +77,9 @@ def upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own,
              "freelancer": fl, "freelancer_rate": fr, "rebate_rate": rr,
              "is_owner_managed": is_own,
              "direct_commission_mode": direct_mode,
-             "direct_commission_rate": direct_rate}
+             "direct_commission_rate": direct_rate,
+             "locked": locked,
+             "updated_at": date.today().isoformat()}
     for m in data:
         if _mk(m.get("customer_id",""), m.get("ad_account_no","")) == k:
             m.update(entry)
@@ -152,7 +154,6 @@ def parse_excel(f):
     merged_row, ad_p, comm_p = _find_sections(df_raw)
     hr = _find_header(df_raw, merged_row)
 
-    # 실제 헤더로 읽기 (중복 컬럼 → pandas가 .1, .2 자동 부여)
     df = pd.read_excel(f, header=hr, engine="openpyxl")
     orig = df.columns.tolist()
 
@@ -165,15 +166,12 @@ def parse_excel(f):
     rename = {}
 
     if ad_p is not None and comm_p is not None:
-        # ── 위치 기반 매핑 (핵심) ─────────────────────────────────────
-        # 고정 컬럼 (ad_p 앞)
         for i, c in enumerate(orig[:ad_p]):
             nc = _norm(c)
             for k, std in _FIXED_MAP.items():
                 if k in nc and std not in rename.values():
                     rename[c] = std; break
 
-        # 광고비 섹션: ad_p, ad_p+1, ad_p+2
         def _set(pos, std):
             if pos < len(orig): rename[orig[pos]] = std
 
@@ -181,24 +179,21 @@ def parse_excel(f):
         _set(ad_p+1, "ad_vat")
         _set(ad_p+2, "ad_total")
 
-        # ad+3 ~ comm_p-1: 수수료율 (독립)
         for i in range(ad_p+3, comm_p):
             if i < len(orig) and "comm_rate" not in rename.values():
                 rename[orig[i]] = "comm_rate"
 
-        # 수수료 섹션: comm_p부터
         nc0 = _norm(orig[comm_p]) if comm_p < len(orig) else ""
-        if "율" in nc0:   # 첫 컬럼이 수수료율
+        if "율" in nc0:
             _set(comm_p,   "comm_rate")
             _set(comm_p+1, "comm_supply")
             _set(comm_p+2, "comm_vat")
             _set(comm_p+3, "comm_total")
-        else:              # 첫 컬럼이 바로 공급가
+        else:
             _set(comm_p,   "comm_supply")
             _set(comm_p+1, "comm_vat")
             _set(comm_p+2, "comm_total")
     else:
-        # ── 이름 기반 폴백 (pandas .1 중복 처리 포함) ─────────────────
         _NAME = {
             **_FIXED_MAP,
             "광고비공급가":"ad_supply","공급가":"ad_supply",
@@ -218,20 +213,17 @@ def parse_excel(f):
     debug["rename_map"] = {str(k): v for k, v in rename.items()}
     df = df.rename(columns=rename)
 
-    # 계정명 컬럼 확인
     if "계정명" not in df.columns:
         for c in df.columns:
             if "계정명" in str(c): df = df.rename(columns={c:"계정명"}); break
     if "계정명" not in df.columns:
         return None, f"계정명 컬럼 없음. 원본: {orig}", df, debug
 
-    # 데이터 정제
     df = df[df["계정명"].notna()].copy()
     df = df[~df["계정명"].astype(str).str.strip().str.match(
         r"^(합계|소계|TOTAL|합\s*계|nan)$", na=False)]
     df = df[df["계정명"].astype(str).str.strip().replace("nan","") != ""]
 
-    # 숫자 변환
     NUM = ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total","comm_rate"]
     for col in NUM:
         if col in df.columns:
@@ -241,14 +233,12 @@ def parse_excel(f):
         else:
             df[col] = 0.0
 
-    # ID 문자열화
     for ic in ["customer_id","ad_account_no","account_id"]:
         if ic in df.columns:
             df[ic] = df[ic].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
         else:
             df[ic] = ""
 
-    # display_name
     def _disp(row):
         nm = str(row.get("계정명","")).strip()
         if not nm or nm in ["-","nan","None","NaN",""]:
@@ -257,7 +247,6 @@ def parse_excel(f):
         return nm
     df["display_name"] = df.apply(_disp, axis=1)
 
-    # 디버그 수치
     debug["ad_supply_sum"]   = float(df["ad_supply"].sum())
     debug["ad_total_sum"]    = float(df["ad_total"].sum())
     debug["comm_supply_sum"] = float(df["comm_supply"].sum())
@@ -269,7 +258,6 @@ def parse_excel(f):
         if c in df.columns
     ]].head(20).to_dict("records")
 
-    # 그룹핑: customer_id + ad_account_no
     SUM_COLS   = [c for c in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total"] if c in df.columns]
     FIRST_COLS = [c for c in ["comm_rate","계정명","display_name","매체사","account_id"] if c in df.columns]
     agg = {c:"sum" for c in SUM_COLS}
@@ -289,24 +277,14 @@ def parse_excel(f):
 # ── 정산 계산 ─────────────────────────────────────────────────────────────────
 def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
          direct_mode=False, direct_rate_pct=0.0):
-    """
-    ad_supply        : 광고비 공급가 (프리랜서 지급 기준)
-    ad_total         : 광고비 합계금액 VAT포함 (리베이트 기준)
-    comm_supply      : 수수료 공급가 (네이버 구조에서 대표 수익 기준)
-    fr_pct           : 프리랜서 기본 정산율 (%)
-    rr_pct           : 리베이트율 (%)
-    direct_mode      : 광고주 직접 수수료 구조 (구글 등)
-    direct_rate_pct  : 광고주 직접 수수료율 (%)
-    """
     fr  = fr_pct / 100
     rr  = rr_pct / 100
     eff = max(fr - rr, 0)
-    rebate = round(ad_total * rr)   # 리베이트: VAT포함 합계 기준
+    rebate = round(ad_total * rr)
 
     if direct_mode:
-        # ── 구글 광고 구조: 광고주 직접 수수료 기반 ────────────────────
         dr = direct_rate_pct / 100
-        direct_comm = round(ad_supply * dr)     # 광고주 직접 수수료 금액
+        direct_comm = round(ad_supply * dr)
         if is_own:
             return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
                     "rebate": rebate, "owner": direct_comm - rebate,
@@ -320,7 +298,6 @@ def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
                 "owner": direct_comm - fl_gross - rebate,
                 "direct_comm": direct_comm, "warn": (fr - rr) < 0, "direct": True}
     else:
-        # ── 네이버 구조: 상위대행사 수수료 공급가 기반 ──────────────────
         if is_own:
             return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
                     "rebate": rebate, "owner": round(comm_supply - rebate),
@@ -333,6 +310,12 @@ def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
                 "rebate": rebate,
                 "owner": round(comm_supply - fl_gross - rebate),
                 "direct_comm": 0, "warn": (fr - rr) < 0, "direct": False}
+
+# ── Styler 헬퍼 ───────────────────────────────────────────────────────────────
+def _style_fl(col):
+    if col.name == "프리랜서 지급액":
+        return ["color: #dc2626; font-weight: 700"] * len(col)
+    return [""] * len(col)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # UI
@@ -370,14 +353,12 @@ with t_up:
         else:
             st.success(f"✅ {len(df_g)}개 업체 추출 (병합헤더:{dbg['merged_row']}행 → 실헤더:{dbg['header_row']}행)")
 
-            # 검증 합계
             vc1, vc2, vc3, vc4 = st.columns(4)
             vc1.metric("광고비 공급가 합계",  f"{dbg['ad_supply_sum']:,.0f}원")
             vc2.metric("광고비 합계금액 합계", f"{dbg['ad_total_sum']:,.0f}원")
             vc3.metric("수수료 공급가 합계",   f"{dbg['comm_supply_sum']:,.0f}원")
             vc4.metric("수수료 합계금액 합계", f"{dbg['comm_total_sum']:,.0f}원")
 
-            # 디버그 패널
             with st.expander("🐛 디버그 정보"):
                 st.markdown(f"**병합헤더 행**: {dbg['merged_row']}  |  **실헤더 행**: {dbg['header_row']}")
                 st.markdown(f"**광고비 시작위치**: {dbg['ad_pos']}  |  **수수료 시작위치**: {dbg['comm_pos']}")
@@ -425,17 +406,20 @@ with t_cl:
             wk  = f"{cid}_{ano}".replace(" ","_")
             cr_pct = cm_r * 100 if cm_r < 1 else cm_r
 
-            label = (f"**{disp}** │ CID:{cid} │ "
+            is_locked = ex.get("locked", True) if ex else True
+            lock_icon = "🔒" if is_locked else "🔓"
+            label = (f"{lock_icon} **{disp}** │ CID:{cid} │ "
                      f"광고비 공급가:{w(ad_s)} │ 수수료 공급가:{w(cm_s)}")
 
             with st.expander(label, expanded=(ex.get("freelancer","미분류")=="미분류")):
                 lc, rc = st.columns([2, 3])
 
-                # ── 좌측: 설정 입력 ──────────────────────────────────────
                 with lc:
                     fl_idx = FREELANCERS.index(ex["freelancer"]) if ex.get("freelancer") in FREELANCERS else 0
                     fl = st.selectbox("담당 프리랜서", FREELANCERS, index=fl_idx, key=f"fl_{wk}")
                     is_own = st.checkbox("대표 직접 운영", ex.get("is_owner_managed", False), key=f"own_{wk}")
+                    locked = st.checkbox("🔒 담당자 고정 (다음 업로드 시 유지)",
+                                         ex.get("locked", True), key=f"lk_{wk}")
                     fr = st.number_input("프리랜서 기본 정산율(%)", 0.0, 100.0,
                                          float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{wk}")
                     rr = st.number_input("리베이트율(%)", 0.0, 100.0,
@@ -450,7 +434,6 @@ with t_cl:
                                                       float(ex.get("direct_commission_rate", 0)),
                                                       step=0.5, key=f"dr_{wk}")
 
-                # ── 우측: 계산 결과 ──────────────────────────────────────
                 with rc:
                     r = calc(ad_s, ad_t, cm_s, fr, rr, is_own, direct_mode, direct_rate)
 
@@ -478,12 +461,13 @@ with t_cl:
                         ("리베이트율",      pct(rr)),
                         ("실지급률",        pct(r["eff_pct"])),
                         ("───","───"),
+                        ("리베이트 지급액",          w(r["rebate"])),
                         ("프리랜서 공제전 지급액",  w(r["fl_gross"])),
                         ("프리랜서 3.3% 공제액",    w(r["fl_tax"])),
                         ("프리랜서 공제후 실수령액", w(r["fl_net"])),
-                        ("리베이트 지급액",          w(r["rebate"])),
                         ("───","───"),
                         ("대표 수익",                w(r["owner"])),
+                        ("대표 세후 추정 (×0.8)",    w(round(r["owner"] * 0.8))),
                     ]
 
                     tbl = "| 항목 | 금액 |\n|---|---:|\n"
@@ -494,7 +478,7 @@ with t_cl:
 
                 if st.button("💾 저장", key=f"sv_{wk}", type="primary"):
                     upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own,
-                                   direct_mode, direct_rate)
+                                   direct_mode, direct_rate, locked)
                     st.success(f"✅ {disp} 저장 완료")
                     st.rerun()
 
@@ -515,6 +499,7 @@ with t_cl:
                     bool(st.session_state.get(f"own_{wk}",False)),
                     bool(st.session_state.get(f"dm_{wk}",False)),
                     float(st.session_state.get(f"dr_{wk}",0)),
+                    bool(st.session_state.get(f"lk_{wk}",True)),
                 )
             st.success("✅ 전체 저장 완료"); st.rerun()
 
@@ -578,26 +563,26 @@ with t_fl:
                 "수수료 공급가": int(cm_s),
                 "기본 정산율(%)": fr, "리베이트율(%)": rr,
                 "실지급률(%)": r["eff_pct"],
-                "프리랜서 지급액": r["fl_gross"],
                 "리베이트 지급액": r["rebate"],
+                "프리랜서 지급액": r["fl_gross"],
                 "대표 수익": r["owner"],
                 "⚠️": "⚠️" if r["warn"] else "",
             })
             g = fl_sum.setdefault(fl, {k:0 for k in
                 ["업체수","광고비 공급가","광고비 합계","수수료 공급가",
-                 "프리랜서 지급액","리베이트 지급액","대표 수익"]})
+                 "리베이트 지급액","프리랜서 지급액","대표 수익"]})
             g["업체수"]        += 1
             g["광고비 공급가"]  += int(ad_s)
             g["광고비 합계"]    += int(ad_t)
             g["수수료 공급가"]  += int(cm_s)
-            g["프리랜서 지급액"] += r["fl_gross"]
             g["리베이트 지급액"] += r["rebate"]
+            g["프리랜서 지급액"] += r["fl_gross"]
             g["대표 수익"]      += r["owner"]
 
         for wd in [d for d in details if d["⚠️"]]:
             st.warning(f"⚠️ **{wd['업체명']}**: 실지급률 음수 ({wd['실지급률(%)']:.1f}%)")
 
-        # 프리랜서 요약 (포맷 적용)
+        # 프리랜서 요약
         if fl_sum:
             st.markdown("**프리랜서별 요약**")
             s_rows = []
@@ -607,24 +592,29 @@ with t_fl:
                     "광고비 공급가": w(g["광고비 공급가"]),
                     "광고비 합계":   w(g["광고비 합계"]),
                     "수수료 공급가": w(g["수수료 공급가"]),
-                    "프리랜서 지급액": w(g["프리랜서 지급액"]),
                     "리베이트 지급액": w(g["리베이트 지급액"]),
+                    "프리랜서 지급액": w(g["프리랜서 지급액"]),
                     "대표 수익":       w(g["대표 수익"]),
+                    "대표 세후 추정":  w(round(g["대표 수익"] * 0.8)),
                 })
-            # 합계 행
             s_rows.append({
                 "프리랜서":"합계",
                 "업체수": sum(g["업체수"] for g in fl_sum.values()),
                 "광고비 공급가": w(sum(g["광고비 공급가"] for g in fl_sum.values())),
                 "광고비 합계":   w(sum(g["광고비 합계"]   for g in fl_sum.values())),
                 "수수료 공급가": w(sum(g["수수료 공급가"] for g in fl_sum.values())),
-                "프리랜서 지급액": w(sum(g["프리랜서 지급액"] for g in fl_sum.values())),
                 "리베이트 지급액": w(sum(g["리베이트 지급액"] for g in fl_sum.values())),
+                "프리랜서 지급액": w(sum(g["프리랜서 지급액"] for g in fl_sum.values())),
                 "대표 수익":       w(sum(g["대표 수익"]       for g in fl_sum.values())),
+                "대표 세후 추정":  w(round(sum(g["대표 수익"] for g in fl_sum.values()) * 0.8)),
             })
-            st.dataframe(pd.DataFrame(s_rows), use_container_width=True, hide_index=True)
+            s_df = pd.DataFrame(s_rows)
+            st.dataframe(
+                s_df.style.apply(_style_fl, axis=0),
+                use_container_width=True, hide_index=True
+            )
 
-        # 상세 테이블 (포맷 적용)
+        # 업체별 상세
         st.markdown("**업체별 상세**")
         fmt_details = []
         for d in sorted(details, key=lambda x: x["프리랜서"]):
@@ -636,14 +626,19 @@ with t_fl:
                 "기본 정산율":   pct(d["기본 정산율(%)"]),
                 "리베이트율":    pct(d["리베이트율(%)"]),
                 "실지급률":      pct(d["실지급률(%)"]),
-                "프리랜서 지급액": w(d["프리랜서 지급액"]),
                 "리베이트 지급액": w(d["리베이트 지급액"]),
+                "프리랜서 지급액": w(d["프리랜서 지급액"]),
                 "대표 수익":       w(d["대표 수익"]),
+                "대표 세후 추정":  w(round(d["대표 수익"] * 0.8)),
                 "⚠️": d["⚠️"],
             })
-        st.dataframe(pd.DataFrame(fmt_details), use_container_width=True, hide_index=True)
+        fmt_df = pd.DataFrame(fmt_details)
+        st.dataframe(
+            fmt_df.style.apply(_style_fl, axis=0),
+            use_container_width=True, hide_index=True
+        )
 
-        # CSV (원본 숫자)
+        # CSV 다운로드 (원본 숫자)
         d_df = pd.DataFrame(details).sort_values("프리랜서")
         st.download_button("📥 CSV 다운로드",
             d_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
@@ -699,7 +694,9 @@ with t_pnl:
         extra    = get_extra(sel_ym)
         tot_exp  = sum(e["amount"] for e in exps)
 
-        search_rep = 0
+        search_owner_profit     = 0
+        search_freelancer_profit = 0
+
         if df is not None:
             for _, row in df.iterrows():
                 cid = str(row.get("customer_id","")).strip()
@@ -713,7 +710,8 @@ with t_pnl:
                            m.get("is_owner_managed",False),
                            m.get("direct_commission_mode",False),
                            float(m.get("direct_commission_rate",0)))
-                search_rep += r["owner"]
+                search_owner_profit      += r["owner"]
+                search_freelancer_profit += r["fl_gross"]
 
         with st.form("extra_rev"):
             xc1,xc2,xc3 = st.columns(3)
@@ -723,17 +721,33 @@ with t_pnl:
             if st.form_submit_button("💾 저장"):
                 set_extra(sel_ym, int(place), int(blog), xm); st.rerun()
 
-        place_rev = int(extra["place_revenue"])
-        blog_rev  = int(extra["blog_revenue"])
-        net = search_rep + place_rev + blog_rev - tot_exp
+        place_rev  = int(extra["place_revenue"])
+        blog_rev   = int(extra["blog_revenue"])
+
+        search_total_profit         = search_owner_profit + search_freelancer_profit
+        gross_total_profit          = search_total_profit + place_rev + blog_rev
+        gross_total_profit_after_tax = round(gross_total_profit * 0.8)
+        final_net_profit            = gross_total_profit - tot_exp
+        final_net_profit_after_tax  = gross_total_profit_after_tax - tot_exp
 
         st.divider()
-        c1,c2,c3,c4,c5 = st.columns(5)
-        c1.metric("검색광고 대표 수익", w(search_rep))
-        c2.metric("플레이스",           w(place_rev))
-        c3.metric("블로그",             w(blog_rev))
-        c4.metric("기타비용 합계",      w(tot_exp), delta=f"-{tot_exp:,}")
-        c5.metric("월 최종 순수익",     w(net))
+
+        # 1행: 검색광고 + 기타 수익
+        r1 = st.columns(5)
+        r1[0].metric("검색광고 대표 수익",      w(search_owner_profit))
+        r1[1].metric("검색광고 프리랜서 수익",   w(search_freelancer_profit))
+        r1[2].metric("검색광고 총 수익",         w(search_total_profit))
+        r1[3].metric("플레이스",                 w(place_rev))
+        r1[4].metric("블로그",                   w(blog_rev))
+
+        # 2행: 합산 + 세후 + 비용 + 순수익
+        r2 = st.columns(5)
+        r2[0].metric("총 수익",                   w(gross_total_profit))
+        r2[1].metric("총 수익 세후 추정",          w(gross_total_profit_after_tax))
+        r2[2].metric("기타비용 합계",              w(tot_exp),
+                     delta=f"-{tot_exp:,}" if tot_exp else None)
+        r2[3].metric("월 최종 순수익",             w(final_net_profit))
+        r2[4].metric("월 최종 세후 추정 순수익",   w(final_net_profit_after_tax))
 
         if df is None:
             st.warning("엑셀 없음 — 검색광고 수익 0원으로 계산됩니다.")
