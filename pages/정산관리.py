@@ -107,13 +107,19 @@ ALIASES = {
 _ALIAS_MAP = {norm(a): std for std, aliases in ALIASES.items() for a in aliases}
 
 def find_header_row(df_raw):
-    """헤더가 있는 행 자동 탐지"""
-    keywords = ["계정명","매체사","광고비"]
-    for i in range(min(10, len(df_raw))):
-        row_str = " ".join(str(v) for v in df_raw.iloc[i].values if pd.notna(v))
-        if any(k in row_str for k in keywords):
+    """헤더 행 자동 탐지 — '계정명' 키워드 우선, 병합헤더 건너뜀"""
+    # 1순위: "계정명"이 포함된 행 (실제 컬럼명 행)
+    for i in range(min(15, len(df_raw))):
+        row_vals = [str(v).strip() for v in df_raw.iloc[i].values if pd.notna(v) and str(v).strip()]
+        if "계정명" in row_vals:
             return i
-    return 2
+    # 2순위: CustomerID / AdAccountNo / 매체사 등 2개 이상 포함
+    spec = ["CustomerID","AdAccountNo","매체사","담당자","계정ID"]
+    for i in range(min(15, len(df_raw))):
+        row_str = " ".join(str(v) for v in df_raw.iloc[i].values if pd.notna(v))
+        if sum(1 for k in spec if k in row_str) >= 2:
+            return i
+    return 3  # fallback
 
 def parse_excel(f):
     try:
