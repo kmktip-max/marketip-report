@@ -28,5 +28,6 @@ st.set_page_config(
 pg = st.navigation([
     st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
     st.Page("pages/월간보고서.py",    title="월간보고서"),
+    st.Page("pages/페이백신청.py",    title="페이백신청"),
 ])
 pg.run()
