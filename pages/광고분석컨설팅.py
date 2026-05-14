@@ -3088,8 +3088,6 @@ def main():
 
     # 사이드바
     with st.sidebar:
-        st.markdown("### 마케팁 분석 시스템")
-        st.divider()
         st.markdown("**광고주:** " + st.session_state.get("advertiser_name", ""))
         if _uid and not is_admin(_uid):
             _sc = get_monthly_count(_uid)
