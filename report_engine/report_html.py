@@ -198,7 +198,7 @@ canvas {{ max-width: 100% !important; }}
     {kpi("총 노출수",   f"{total_imps:,}회")}
     {kpi("평균 CTR",    avg_ctr)}
     {kpi("총 전환수",   f"{total_convs:,}건")}
-    {kpi("총 전환매출", _fmt_won(total_revenue) if total_revenue else "미집계")}
+    {kpi("총 전환매출", _fmt_won(total_revenue) if (total_convs > 0 and total_revenue > 0) else "-")}
   </div>
 </div>
 

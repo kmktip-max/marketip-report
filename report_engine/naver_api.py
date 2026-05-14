@@ -116,7 +116,7 @@ class NaverAdAPI:
             clicks    = int(s.get("clkCnt", 0))
             imps      = int(s.get("impCnt", 0))
             convs     = int(s.get("ccnt", 0))
-            revenue   = int(s.get("salesAmt", 0))
+            revenue   = int(s.get("salesAmt", 0)) if int(s.get("ccnt", 0)) > 0 else 0
             cpconv    = float(s.get("cpConv", 0))
             api_ror   = float(s.get("ror", 0))
 
