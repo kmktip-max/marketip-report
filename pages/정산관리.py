@@ -826,12 +826,25 @@ with t_pnl:
                     search_freelancer_profit += r["owner"]
 
         with st.form("extra_rev"):
-            xc1,xc2,xc3 = st.columns(3)
-            with xc1: place = st.number_input("플레이스 수익(원)", float(extra["place_revenue"]), step=10000.0)
-            with xc2: blog  = st.number_input("블로그 수익(원)",   float(extra["blog_revenue"]),  step=10000.0)
-            with xc3: xm    = st.text_input("메모", extra.get("memo",""))
+            xc1, xc2, xc3 = st.columns(3)
+            with xc1:
+                place = st.number_input(
+                    "플레이스 수익(원)",
+                    value=int(extra.get("place_revenue") or 0),
+                    min_value=0, step=1000, format="%d",
+                )
+            with xc2:
+                blog = st.number_input(
+                    "블로그 수익(원)",
+                    value=int(extra.get("blog_revenue") or 0),
+                    min_value=0, step=1000, format="%d",
+                )
+            with xc3:
+                xm = st.text_input("메모", extra.get("memo", ""))
             if st.form_submit_button("💾 저장"):
-                set_extra(sel_ym, int(place), int(blog), xm); st.rerun()
+                # 0 포함 어떤 값이든 그대로 overwrite
+                set_extra(sel_ym, int(place), int(blog), xm)
+                st.rerun()
 
         place_rev  = int(extra["place_revenue"])
         blog_rev   = int(extra["blog_revenue"])
