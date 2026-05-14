@@ -20,7 +20,7 @@ def badge(status: str) -> str:
 
 SIDEBAR_CSS = """
 <style>
-/* ── 기본 Streamlit 사이드바 nav 숨기기 ── */
+/* ══ 기본 Streamlit nav 완전 제거 ══════════════════════════════════════ */
 [data-testid="stSidebarNav"],
 [data-testid="stSidebarNavItems"],
 [data-testid="stSidebarNavSeparator"] {
@@ -32,101 +32,122 @@ SIDEBAR_CSS = """
     overflow: hidden !important;
 }
 
-/* ── 사이드바 기본 ── */
+/* ══ 이미지 확대 버튼 제거 ══════════════════════════════════════════════ */
+[data-testid="stImageContainer"] button,
+button[title="View fullscreen"] { display: none !important; }
+
+/* ══ 사이드바 기본 ══════════════════════════════════════════════════════ */
 [data-testid="stSidebar"] {
     background: #fff !important;
-    border-right: 1px solid #EAEDF2 !important;
-    min-width: 220px !important;
-    max-width: 260px !important;
+    border-right: 1px solid #E5E8ED !important;
 }
-[data-testid="stSidebar"] > div:first-child,
+[data-testid="stSidebar"] > div:first-child {
+    padding: 0 !important;
+    margin: 0 !important;
+}
 [data-testid="stSidebarContent"] {
     padding: 0 !important;
     margin: 0 !important;
     gap: 0 !important;
 }
-/* 사이드바 내부 최상단 여백 제거 */
 [data-testid="stSidebarContent"] > div:first-child {
-    margin-top: 0 !important;
     padding-top: 0 !important;
-}
-.sb-spacer { min-height: 40px !important; }
-.sb-bottom {
-    border-top: 1px solid #EAEDF2;
-    padding: 12px 10px 16px;
+    margin-top: 0 !important;
 }
 
-/* ── 이미지 확대 버튼 제거 ── */
-[data-testid="stImageContainer"] button,
-button[title="View fullscreen"] { display: none !important; }
-
-/* ── 로고 래퍼 ── */
+/* ══ 로고 ══════════════════════════════════════════════════════════════ */
 .sb-logo-wrap {
-    padding: 4px 16px 10px;
-    border-bottom: 1px solid #EAEDF2;
-    margin-bottom: 6px;
-    margin-top: 0;
+    padding: 6px 18px 12px;
+    border-bottom: 1px solid #E5E8ED;
+    margin-bottom: 0;
 }
 
-/* ── 섹션 레이블 ── */
+/* ══ 그룹 레이블 (광고 관리 / 정산 관리 / 회원 관리 통일) ══════════════ */
 .sb-label {
     display: block !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 700 !important;
-    color: #B4BCC8 !important;
-    letter-spacing: 1px !important;
+    color: #9CA3AF !important;
+    letter-spacing: .9px !important;
     text-transform: uppercase !important;
-    padding: 14px 20px 5px !important;
+    padding: 22px 20px 6px !important;
+    margin: 0 !important;
+    line-height: 1 !important;
 }
 
-/* ── 섹션 구분선 ── */
+/* ══ 구분선 ══════════════════════════════════════════════════════════ */
 .sb-divider {
     border: none;
-    border-top: 1px solid #EAEDF2;
-    margin: 6px 14px !important;
+    border-top: 1px solid #E5E8ED;
+    margin: 8px 0 0 !important;
+    padding: 0 !important;
 }
 
-/* ── page_link 공통 ── */
+/* ══ st.page_link 스타일 ══════════════════════════════════════════════ */
 [data-testid="stPageLink"] {
     padding: 1px 10px !important;
+    margin: 0 !important;
     width: 100% !important;
 }
 [data-testid="stPageLink"] a {
     display: flex !important;
     align-items: center !important;
-    padding: 10px 14px !important;
-    border-radius: 8px !important;
-    color: #3A4152 !important;
-    font-size: 13.5px !important;
+    height: 44px !important;
+    padding: 0 14px !important;
+    border-radius: 10px !important;
+    color: #374151 !important;
+    font-size: 14px !important;
     font-weight: 500 !important;
     text-decoration: none !important;
     transition: background .15s, color .15s !important;
-    gap: 0 !important;
-    line-height: 1.4 !important;
+    gap: 10px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
 }
 [data-testid="stPageLink"] a:hover {
-    background: #EEF4FF !important;
+    background: #F0F4FF !important;
     color: #0064FF !important;
 }
 [data-testid="stPageLink"] a[aria-current="page"] {
-    background: #E4EDFF !important;
+    background: #EEF2F7 !important;
     color: #0064FF !important;
     font-weight: 700 !important;
 }
 
-/* ── 페이백신청 항목 상시 강조 ── */
+/* ══ 페이백신청 상시 강조 ══════════════════════════════════════════════ */
 #section-payback ~ div [data-testid="stPageLink"] a {
     font-weight: 700 !important;
     color: #0055E0 !important;
 }
-#section-payback ~ div [data-testid="stPageLink"] a:hover {
-    background: #E4EDFF !important;
-}
+#section-payback ~ div [data-testid="stPageLink"] a:hover,
 #section-payback ~ div [data-testid="stPageLink"] a[aria-current="page"] {
-    background: #D6E6FF !important;
+    background: #EEF2F7 !important;
+}
+
+/* ══ 사이드바 하단 영역 ══════════════════════════════════════════════ */
+.sb-bottom {
+    border-top: 1px solid #E5E8ED;
+    padding: 14px 18px 16px;
+    margin-top: 32px;
+}
+.sb-bottom-label {
+    display: block !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: #9CA3AF !important;
+    letter-spacing: .9px !important;
+    text-transform: uppercase !important;
+    margin-bottom: 8px !important;
+}
+.sb-user-info {
+    font-size: 12px;
+    color: #6B7280;
+    padding: 4px 0 8px;
+    line-height: 1.5;
 }
 </style>
 """
+
 
 PAYBACK_CSS = """
 <style>

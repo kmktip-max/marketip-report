@@ -1096,6 +1096,7 @@ def check_auth():
                     st.session_state.authenticated   = True
                     st.session_state.advertiser_name = matched
                     st.session_state.user_id         = user_id
+                    st.session_state.is_admin        = is_admin(user_id)
                     st.query_params["t"] = _make_token(user_id, matched)
                     st.query_params["u"] = user_id
                     st.query_params["n"] = matched
@@ -3086,15 +3087,9 @@ def main():
     api_key = os.getenv("OPENAI_API_KEY", "")
     model = "gpt-4.1"
 
-    # 사이드바
-    with st.sidebar:
-        # ── 관리자 전용: 회원 승인 패널 ──
-        if is_admin(_uid):
-            st.markdown(
-                '<p style="font-size:12px;font-weight:700;color:#3A4152;'
-                'padding:14px 10px 4px;margin:0;">👥 회원 관리</p>',
-                unsafe_allow_html=True,
-            )
+    # 사이드바 (관리자 회원 승인 패널만 유지)
+    if is_admin(_uid):
+        with st.sidebar:
             try:
                 _pending = gs_get_pending()
             except Exception:
@@ -3110,7 +3105,7 @@ def main():
                             if st.button("✅ 승인", key=f"approve_{_row_num}", use_container_width=True):
                                 if gs_set_status(_row_num, "승인",
                                                  _r.get("이메일",""), _r.get("이름","")):
-                                    st.success("승인 완료! 이메일 발송됨")
+                                    st.success("승인 완료!")
                                     st.rerun()
                         with _c2:
                             if st.button("❌ 거절", key=f"reject_{_row_num}", use_container_width=True):
@@ -3119,29 +3114,6 @@ def main():
                                     st.rerun()
             else:
                 st.caption("대기 중인 신청이 없습니다.")
-
-            if st.button("📋 전체 회원 보기", use_container_width=True):
-                _all = gs_get_all_members()
-                if _all:
-                    _df_members = pd.DataFrame(_all)[["ID","이름","이메일","신청일","상태","승인일"]]
-                    st.dataframe(_df_members, use_container_width=True)
-
-        # ── 하단 고정: 광고주 정보 + 로그아웃 ──
-        st.markdown('<div class="sb-spacer"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
-        st.caption("광고주: " + st.session_state.get("advertiser_name", ""))
-        if _uid and not is_admin(_uid):
-            _sc = get_monthly_count(_uid)
-            _sr = max(0, MONTHLY_LIMIT - _sc)
-            st.caption(f"이번달 분석: {_sc}/{MONTHLY_LIMIT} (잔여 {_sr}회)")
-        if st.button("🚪 로그아웃", use_container_width=True):
-            for k in ["authenticated", "advertiser_name", "user_id", "last_ai",
-                      "confirmed_df", "adf", "raw_df", "last_df_hash",
-                      "chat_messages", "chat_api"]:
-                st.session_state.pop(k, None)
-            st.query_params.clear()
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # ── 네이버 보고서 파서 ──
     def parse_naver_file(f):

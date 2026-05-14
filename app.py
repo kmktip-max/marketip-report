@@ -35,42 +35,67 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── 라우팅 먼저 등록 (page_link가 참조하려면 navigation이 앞에 있어야 함) ───────
+# ── 라우팅 등록 (page_link 호출 전에 먼저) ────────────────────────────────────
 pg = st.navigation([
     st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
     st.Page("pages/월간보고서.py",    title="월간보고서"),
     st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
 ])
 
-# ── 사이드바 CSS 주입 ─────────────────────────────────────────────────────────
+# ── CSS 주입 ──────────────────────────────────────────────────────────────────
 st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 
-# ── 커스텀 사이드바 ────────────────────────────────────────────────────────────
+# ── 사이드바 ──────────────────────────────────────────────────────────────────
 with st.sidebar:
 
-    # 로고
+    # ── 로고 ──────────────────────────────────────────────────────────────
     st.markdown('<div class="sb-logo-wrap">', unsafe_allow_html=True)
     if LOGO_PATH:
-        st.image(LOGO_PATH, width=140)
+        st.image(LOGO_PATH, width=136)
     else:
-        st.markdown(
-            '<div style="font-size:20px;font-weight:900;color:#006633;'
-            'letter-spacing:-.5px;">마케팁</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div style="font-size:20px;font-weight:900;color:#006633;">마케팁</div>',
+                    unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── 광고 관리 ──────────────────────────────────────────────────────────
+    # ── 상단 메뉴 ──────────────────────────────────────────────────────────
     st.markdown('<span class="sb-label">광고 관리</span>', unsafe_allow_html=True)
     st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
     st.page_link("pages/월간보고서.py",     label="📩  월간보고서",      use_container_width=True)
 
-    st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
-
-    # ── 정산 관리 (id="section-payback" → CSS 강조 트리거) ─────────────────
     st.markdown('<span class="sb-label" id="section-payback">정산 관리</span>',
                 unsafe_allow_html=True)
     st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
+
+    # ── 하단 영역 (로그인된 경우) ──────────────────────────────────────────
+    if st.session_state.get("authenticated"):
+        st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
+
+        # 회원 관리 (관리자만)
+        if st.session_state.get("is_admin"):
+            st.markdown('<span class="sb-label" style="padding:0 0 6px;">회원 관리</span>',
+                        unsafe_allow_html=True)
+            if st.button("👥  전체 회원 보기", use_container_width=True,
+                         key="sb_member_list"):
+                st.session_state["show_member_list"] = True
+
+        # 광고주 정보
+        advertiser = st.session_state.get("advertiser_name", "")
+        if advertiser:
+            st.markdown(
+                f'<div class="sb-user-info">광고주: <b>{advertiser}</b></div>',
+                unsafe_allow_html=True,
+            )
+
+        # 로그아웃
+        if st.button("🚪  로그아웃", use_container_width=True, key="sb_logout"):
+            for k in ["authenticated", "advertiser_name", "user_id", "is_admin",
+                      "last_ai", "confirmed_df", "adf", "raw_df", "last_df_hash",
+                      "chat_messages", "chat_api"]:
+                st.session_state.pop(k, None)
+            st.query_params.clear()
+            st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ── 페이지 실행 ───────────────────────────────────────────────────────────────
 pg.run()
