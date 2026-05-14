@@ -694,6 +694,7 @@ with t_pnl:
         extra    = get_extra(sel_ym)
         tot_exp  = sum(e["amount"] for e in exps)
 
+        OWNER_FL = "권혁우"   # 대표가 직접 담당하는 프리랜서명
         search_owner_profit     = 0
         search_freelancer_profit = 0
 
@@ -702,6 +703,7 @@ with t_pnl:
                 cid = str(row.get("customer_id","")).strip()
                 ano = str(row.get("ad_account_no","")).strip()
                 m   = get_mapping(cid, ano) or {}
+                fl  = m.get("freelancer", "미분류")
                 r   = calc(float(row.get("ad_supply",0)),
                            float(row.get("ad_total",0)),
                            float(row.get("comm_supply",0)),
@@ -710,8 +712,10 @@ with t_pnl:
                            m.get("is_owner_managed",False),
                            m.get("direct_commission_mode",False),
                            float(m.get("direct_commission_rate",0)))
-                search_owner_profit      += r["owner"]
-                search_freelancer_profit += r["fl_gross"]
+                if fl == OWNER_FL:
+                    search_owner_profit      += r["owner"]
+                else:
+                    search_freelancer_profit += r["owner"]
 
         with st.form("extra_rev"):
             xc1,xc2,xc3 = st.columns(3)
@@ -734,9 +738,9 @@ with t_pnl:
 
         # 1행: 검색광고 + 기타 수익
         r1 = st.columns(5)
-        r1[0].metric("검색광고 대표 수익",      w(search_owner_profit))
-        r1[1].metric("검색광고 프리랜서 수익",   w(search_freelancer_profit))
-        r1[2].metric("검색광고 총 수익",         w(search_total_profit))
+        r1[0].metric("검색광고 대표 직접수익",    w(search_owner_profit))
+        r1[1].metric("검색광고 프리랜서 계정수익", w(search_freelancer_profit))
+        r1[2].metric("검색광고 총수익",           w(search_total_profit))
         r1[3].metric("플레이스",                 w(place_rev))
         r1[4].metric("블로그",                   w(blog_rev))
 
