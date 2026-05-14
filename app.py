@@ -98,5 +98,13 @@ with st.sidebar:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── 관리자 전용 메뉴 (사이드바 맨 하단, 작게) ──────────────────────────
+    st.markdown("""
+<div style="padding:12px 20px 8px; margin-top:8px;">
+  <hr style="border:none;border-top:1px solid #E5E8ED;margin:0 0 10px;">
+</div>
+""", unsafe_allow_html=True)
+    st.page_link("pages/정산관리.py", label="⚙️  정산관리", use_container_width=True)
+
 # ── 페이지 실행 ───────────────────────────────────────────────────────────────
 pg.run()
