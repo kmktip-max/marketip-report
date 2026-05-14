@@ -83,43 +83,57 @@ def upsert_mapping(cid, ano, account_id, account_name, display_name,
                  "is_owner_managed": is_own})
     save_mapping(data)
 
-# ── 엑셀 파싱 ─────────────────────────────────────────────────────────────────
+# ── 엑셀 파싱 (위치 기반 + 이름 기반 하이브리드) ────────────────────────────
 def norm(s):
-    """컬럼명 정규화: 공백·줄바꿈 제거, 소문자"""
     return re.sub(r'\s+', '', str(s)).lower()
 
-# 표준명 → 원본 컬럼명 매핑을 위한 alias 딕셔너리 (정규화 키)
-ALIASES = {
-    "매체사":        ["매체사","매체","media"],
-    "account_id":   ["계정id","accountid","계정id"],
-    "customer_id":  ["계정번호customerId","customerId","customerId","고객id"],
-    "ad_account_no":["계정번호adaccountno","adaccountno","광고계정번호"],
-    "계정명":        ["계정명","광고주명","accountname"],
-    "ad_supply":    ["광고비공급가","공급가액","adspend"],
-    "ad_vat":       ["광고비세액"],
-    "ad_total":     ["광고비합계금액","광고비합계"],
-    "comm_rate":    ["수수료율","수수료율(%)"],
-    "comm_supply":  ["수수료공급가"],
-    "comm_vat":     ["수수료세액"],
-    "comm_total":   ["수수료합계금액","수수료합계"],
-}
-# norm된 alias → 표준명 역방향 맵
-_ALIAS_MAP = {norm(a): std for std, aliases in ALIASES.items() for a in aliases}
+# 병합헤더 기준 섹션 탐지용 키워드
+_SECTION_KW = {"광고비": "ad", "수수료": "comm"}
 
-def find_header_row(df_raw):
-    """헤더 행 자동 탐지 — '계정명' 키워드 우선, 병합헤더 건너뜀"""
-    # 1순위: "계정명"이 포함된 행 (실제 컬럼명 행)
-    for i in range(min(15, len(df_raw))):
-        row_vals = [str(v).strip() for v in df_raw.iloc[i].values if pd.notna(v) and str(v).strip()]
-        if "계정명" in row_vals:
+# 이름 기반 매핑 (pandas 중복 처리 .1 포함)
+_NAME_MAP = {
+    "매체사": "매체사", "담당자": "담당자",
+    "계정id": "account_id",
+    "계정번호customerid": "customer_id", "customerid": "customer_id",
+    "계정번호adaccountno": "ad_account_no", "adaccountno": "ad_account_no",
+    "계정명": "계정명",
+    # 광고비 (첫 번째 공급가/세액/합계금액)
+    "광고비공급가": "ad_supply", "공급가": "ad_supply",
+    "광고비세액":   "ad_vat",    "세액":    "ad_vat",
+    "광고비합계금액":"ad_total",  "합계금액": "ad_total",
+    # 수수료율
+    "수수료율": "comm_rate",
+    # 수수료 (두 번째 공급가/세액/합계금액 — pandas 중복시 .1 붙음)
+    "수수료공급가": "comm_supply", "공급가.1": "comm_supply",
+    "수수료세액":   "comm_vat",   "세액.1":   "comm_vat",
+    "수수료합계금액":"comm_total", "합계금액.1":"comm_total",
+}
+
+def _find_merged_sections(df_raw):
+    """병합헤더 행에서 '광고비', '수수료' 섹션 시작 위치 반환"""
+    for i in range(min(10, len(df_raw))):
+        vals = [str(v).strip() for v in df_raw.iloc[i].values]
+        ad_pos = comm_pos = None
+        for j, v in enumerate(vals):
+            if v == "광고비" and ad_pos is None:     ad_pos   = j
+            if "수수료" in v and comm_pos is None:   comm_pos = j
+        if ad_pos is not None and comm_pos is not None:
+            return i, ad_pos, comm_pos
+    return None, None, None
+
+def _find_header_row(df_raw, merged_row):
+    """실제 컬럼명 행 탐지 — '계정명' 정확 일치 우선"""
+    start = (merged_row + 1) if merged_row is not None else 0
+    for i in range(start, min(start + 5, len(df_raw))):
+        vals = [str(v).strip() for v in df_raw.iloc[i].values]
+        if "계정명" in vals:
             return i
-    # 2순위: CustomerID / AdAccountNo / 매체사 등 2개 이상 포함
-    spec = ["CustomerID","AdAccountNo","매체사","담당자","계정ID"]
-    for i in range(min(15, len(df_raw))):
-        row_str = " ".join(str(v) for v in df_raw.iloc[i].values if pd.notna(v))
-        if sum(1 for k in spec if k in row_str) >= 2:
+    # fallback
+    for i in range(min(10, len(df_raw))):
+        vals = [str(v).strip() for v in df_raw.iloc[i].values]
+        if "계정명" in vals:
             return i
-    return 3  # fallback
+    return (merged_row + 1) if merged_row is not None else 3
 
 def parse_excel(f):
     try:
@@ -127,80 +141,113 @@ def parse_excel(f):
     except Exception as e:
         return None, str(e), None, {}
 
-    # 헤더 행 탐지
-    hr = find_header_row(df_raw)
-    df = pd.read_excel(f, header=hr, engine="openpyxl")
+    merged_row, ad_pos, comm_pos = _find_merged_sections(df_raw)
+    hr = _find_header_row(df_raw, merged_row)
 
+    # pandas로 실제 헤더 행 기준 읽기 (중복 컬럼은 자동으로 .1, .2 처리)
+    df = pd.read_excel(f, header=hr, engine="openpyxl")
     orig_cols = df.columns.tolist()
-    col_map = {}   # 표준명 → 원본 컬럼명
+
+    # ── 컬럼 매핑: 이름 기반 우선 ─────────────────────────────────────────
+    col_map = {}  # std → orig_col
     for c in orig_cols:
         nc = norm(c)
-        std = _ALIAS_MAP.get(nc)
+        std = _NAME_MAP.get(nc)
         if std and std not in col_map:
             col_map[std] = c
 
+    # ── 위치 기반 보완 (이름 기반으로 못 찾은 경우) ─────────────────────
+    if ad_pos is not None and comm_pos is not None:
+        # 광고비 섹션: ad_pos, ad_pos+1, ad_pos+2
+        for std, offset in [("ad_supply",0),("ad_vat",1),("ad_total",2)]:
+            idx = ad_pos + offset
+            if std not in col_map and idx < len(orig_cols):
+                col_map[std] = orig_cols[idx]
+        # 수수료율: comm_pos 이전 (ad_pos+3)
+        cr_idx = ad_pos + 3
+        if "comm_rate" not in col_map and cr_idx < comm_pos and cr_idx < len(orig_cols):
+            col_map["comm_rate"] = orig_cols[cr_idx]
+        # 수수료 섹션: comm_pos 기준
+        # 첫 번째가 수수료율인지 공급가인지 판단
+        if comm_pos < len(orig_cols):
+            first_nc = norm(orig_cols[comm_pos])
+            if "수수료율" in first_nc or first_nc in ["수수료율","율"]:
+                offsets = [("comm_rate",0),("comm_supply",1),("comm_vat",2),("comm_total",3)]
+            else:
+                offsets = [("comm_supply",0),("comm_vat",1),("comm_total",2)]
+            for std, offset in offsets:
+                idx = comm_pos + offset
+                if std not in col_map and idx < len(orig_cols):
+                    col_map[std] = orig_cols[idx]
+
     debug = {
-        "header_row":  hr,
-        "orig_cols":   orig_cols,
-        "norm_cols":   [norm(c) for c in orig_cols],
-        "col_map":     col_map,
+        "merged_row": merged_row, "header_row": hr,
+        "ad_pos": ad_pos, "comm_pos": comm_pos,
+        "orig_cols": orig_cols,
+        "norm_cols": [norm(c) for c in orig_cols],
+        "col_map": {k: str(v) for k, v in col_map.items()},
     }
 
     # 계정명 컬럼 확인
     name_col = col_map.get("계정명")
     if not name_col:
-        # Fallback: 컬럼에서 직접 탐색
         for c in orig_cols:
-            if "계정명" in str(c):
-                name_col = c; col_map["계정명"] = c; break
-
+            if "계정명" in str(c): name_col = c; col_map["계정명"] = c; break
     if not name_col:
-        return None, f"'계정명' 컬럼을 찾을 수 없습니다.\n원본 컬럼: {orig_cols}", df, debug
+        return None, f"'계정명' 컬럼 없음.\n원본 컬럼: {orig_cols}", df, debug
 
     # 빈 행 / 합계 행 제거
     df = df[df[name_col].notna()].copy()
-    df = df[~df[name_col].astype(str).str.contains(
-        r"^(합계|소계|TOTAL|합\s*계|nan)$", regex=True, na=False)]
-    df = df[df[name_col].astype(str).str.strip() != ""]
+    df = df[~df[name_col].astype(str).str.strip().str.match(
+        r"^(합계|소계|TOTAL|합\s*계)$", na=False)]
+    df = df[df[name_col].astype(str).str.strip().replace("nan","") != ""]
 
-    # 표준 컬럼으로 rename
-    df = df.rename(columns={v: k for k, v in col_map.items() if v in df.columns})
+    # rename
+    rename_dict = {v: k for k, v in col_map.items() if v in df.columns}
+    df = df.rename(columns=rename_dict)
 
-    # 숫자형 변환
-    for nc in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total","comm_rate"]:
-        if nc in df.columns:
-            df[nc] = pd.to_numeric(
-                df[nc].astype(str).str.replace(",","").str.replace("원","").str.strip(),
+    # 숫자 변환
+    num_std = ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total","comm_rate"]
+    for s in num_std:
+        if s in df.columns:
+            df[s] = pd.to_numeric(
+                df[s].astype(str).str.replace(",","").str.replace("원","").str.strip(),
                 errors="coerce").fillna(0)
+        else:
+            df[s] = 0.0
 
-    # ID 컬럼 문자열화
+    # ID 문자열화
     for ic in ["customer_id","ad_account_no","account_id"]:
         if ic in df.columns:
             df[ic] = df[ic].astype(str).str.strip().str.replace(r"\.0$","",regex=True)
         else:
             df[ic] = ""
 
-    # 계정명 정제 및 display_name 생성
+    # display_name
     def make_display(row):
         name = str(row.get("계정명","")).strip()
-        if name in ["-","","nan","None"] or not name:
+        if not name or name in ["-","nan","None","NaN"]:
             aid = str(row.get("account_id","")).strip()
-            return aid if aid and aid not in ["","nan"] else f"CID:{row.get('customer_id','')}"
+            return aid if aid not in ["","nan","None"] else f"CID:{row.get('customer_id','')}"
         return name
 
-    # 계정명 컬럼 표준화
-    if "계정명" not in df.columns and name_col in df.columns:
-        df["계정명"] = df[name_col]
-
+    if "계정명" not in df.columns:
+        df["계정명"] = ""
     df["display_name"] = df.apply(make_display, axis=1)
 
-    debug["raw_sample"] = df.head(10).to_dict("records")
-    debug["display_names"] = df["display_name"].head(20).tolist()
+    debug["raw_sample"] = df[
+        [c for c in ["display_name","customer_id","ad_account_no",
+                      "ad_supply","ad_vat","ad_total","comm_rate","comm_supply","comm_vat","comm_total"]
+         if c in df.columns]
+    ].head(20).to_dict("records")
+    debug["ad_supply_total"]   = float(df["ad_supply"].sum())
+    debug["ad_total_total"]    = float(df["ad_total"].sum())
+    debug["comm_supply_total"] = float(df["comm_supply"].sum())
+    debug["comm_total_total"]  = float(df["comm_total"].sum())
 
-    # CustomerID + AdAccountNo 기준 그룹핑
-    num_cols   = [c for c in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total"] if c in df.columns]
+    # 그룹핑 (CustomerID + AdAccountNo 기준)
+    num_cols   = [c for c in num_std if c != "comm_rate" and c in df.columns]
     first_cols = [c for c in ["comm_rate","계정명","display_name","매체사","account_id"] if c in df.columns]
-
     agg = {c: "sum" for c in num_cols}
     agg.update({c: "first" for c in first_cols})
 
@@ -208,29 +255,32 @@ def parse_excel(f):
         df_g = df.groupby(["customer_id","ad_account_no"], as_index=False).agg(agg)
     else:
         df_g = df.groupby(["계정명"], as_index=False).agg(agg)
-        df_g["customer_id"]   = ""
-        df_g["ad_account_no"] = ""
+        df_g["customer_id"] = df_g["ad_account_no"] = ""
 
     debug["group_count"] = len(df_g)
-    debug["ad_supply_total"]   = float(df_g["ad_supply"].sum())   if "ad_supply"   in df_g.columns else 0
-    debug["comm_supply_total"] = float(df_g["comm_supply"].sum()) if "comm_supply" in df_g.columns else 0
+    debug["group_sample"] = df_g.head(10).to_dict("records")
 
     return df_g, None, df, debug
 
-# ── 정산 계산 ─────────────────────────────────────────────────────────────────
+# ── 정산 계산 (3.3% 공제 포함) ────────────────────────────────────────────────
 def calc(ad_supply, comm_supply, fr_pct, rr_pct, is_own):
-    fr = fr_pct / 100
-    rr = rr_pct / 100
-    rebate_payout = round(ad_supply * rr)
+    fr  = fr_pct / 100
+    rr  = rr_pct / 100
+    eff = max(fr - rr, 0)
+    rebate_payout  = round(ad_supply * rr)
+    fl_gross       = round(ad_supply * eff)
+    fl_tax         = round(fl_gross * 0.033)
+    fl_net         = round(fl_gross * 0.967)
     if is_own:
-        return {"eff_pct": 0.0, "fl_payout": 0, "rebate_payout": rebate_payout,
-                "rep_revenue": round(comm_supply - rebate_payout), "warning": False}
-    eff = fr - rr
-    fl_payout = round(ad_supply * max(eff, 0))
-    return {"eff_pct": round(eff * 100, 2), "fl_payout": fl_payout,
+        return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
+                "rebate_payout": rebate_payout,
+                "rep_revenue": round(comm_supply - rebate_payout),
+                "warning": False}
+    return {"eff_pct": round(eff * 100, 2),
+            "fl_gross": fl_gross, "fl_tax": fl_tax, "fl_net": fl_net,
             "rebate_payout": rebate_payout,
-            "rep_revenue": round(comm_supply - fl_payout - rebate_payout),
-            "warning": eff < 0}
+            "rep_revenue": round(comm_supply - fl_gross - rebate_payout),
+            "warning": (fr - rr) < 0}
 
 # ── 기타비용/수익 헬퍼 ────────────────────────────────────────────────────────
 def get_expenses_for_month(ym): return [e for e in load_expenses() if e["year_month"] == ym]
@@ -362,14 +412,31 @@ with t_cl:
                                          float(ex.get("rebate_rate", 0)),
                                          step=0.5, key=f"rr_{wk}")
                 with c3:
-                    r = calc(ad_s, cm_s, fr, rr, is_own)
-                    eff = fr - rr
-                    if not is_own:
-                        if r["warning"]: st.error(f"⚠️ 실지급률 음수: {eff:.1f}%")
-                        else:            st.success(f"실지급률: **{eff:.1f}%**")
-                    st.metric("프리랜서 지급액",  f"{r['fl_payout']:,}원")
-                    st.metric("리베이트 지급액",   f"{r['rebate_payout']:,}원")
-                    st.metric("대표 수익",          f"{r['rep_revenue']:,}원")
+                    r      = calc(ad_s, cm_s, fr, rr, is_own)
+                    ad_vat = float(row.get("ad_vat",    0))
+                    ad_tot = float(row.get("ad_total",  0))
+                    cm_vat = float(row.get("comm_vat",  0))
+                    cm_tot = float(row.get("comm_total",0))
+                    cr_raw = float(row.get("comm_rate", 0))
+                    cr_pct = cr_raw * 100 if cr_raw < 1 else cr_raw
+
+                    st.markdown(f"""
+| 항목 | 금액 |
+|---|---:|
+| 광고비 공급가 | {ad_s:,.0f}원 |
+| 광고비 VAT | {ad_vat:,.0f}원 |
+| 광고비 합계 | {ad_tot:,.0f}원 |
+| 상위 수수료율 | {cr_pct:.2f}% |
+| 수수료 공급가 | {cm_s:,.0f}원 |
+| 수수료 VAT | {cm_vat:,.0f}원 |
+| 수수료 합계 | {cm_tot:,.0f}원 |
+| **프리랜서 실지급률** | **{r['eff_pct']:.2f}%** |
+| 프리랜서 공제전 지급액 | {r['fl_gross']:,}원 |
+| 프리랜서 공제후 실지급액 | {r['fl_net']:,}원 |
+| 리베이트 지급액 | {r['rebate_payout']:,}원 |
+| **대표 수익** | **{r['rep_revenue']:,}원** |
+""")
+                    if r["warning"]: st.error("⚠️ 실지급률 음수!")
 
                     if st.button("💾 저장", key=f"sv_{wk}", type="primary"):
                         upsert_mapping(cid, ano, aid, name, disp, fl, fr, rr, is_own)
@@ -464,7 +531,7 @@ with t_fl:
                             "수수료 공급가": int(cm_s),
                             "기본 정산율(%)": fr, "리베이트율(%)": rr,
                             "실지급률(%)": r["eff_pct"],
-                            "프리랜서 지급액": r["fl_payout"],
+                            "프리랜서 지급액": r["fl_gross"],
                             "리베이트 지급액": r["rebate_payout"],
                             "대표 수익": r["rep_revenue"],
                             "⚠️": "⚠️" if r["warning"] else ""})
@@ -475,7 +542,7 @@ with t_fl:
             g["광고비 공급가"]  += int(ad_s)
             g["광고비 합계"]    += int(ad_t)
             g["수수료 공급가"]  += int(cm_s)
-            g["프리랜서 지급액"] += r["fl_payout"]
+            g["프리랜서 지급액"] += r["fl_gross"]
             g["리베이트 지급액"] += r["rebate_payout"]
             g["대표 수익"]      += r["rep_revenue"]
 
