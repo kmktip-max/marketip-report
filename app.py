@@ -13,7 +13,7 @@ except ImportError:
     Image = None
 
 LOGO_PATH = next(
-    (os.path.join(ROOT, f) for f in ["logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]
+    (os.path.join(ROOT, f) for f in ["logo2.png", "logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]
      if os.path.exists(os.path.join(ROOT, f))),
     None,
 )
@@ -44,7 +44,7 @@ with st.sidebar:
     # 로고
     st.markdown('<div class="sb-logo-wrap">', unsafe_allow_html=True)
     if LOGO_PATH:
-        st.image(LOGO_PATH, width=110)
+        st.image(LOGO_PATH, width=160)
     else:
         st.markdown(
             '<div style="font-size:20px;font-weight:900;color:#006633;'
