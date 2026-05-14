@@ -191,8 +191,16 @@ with tab2:
                         total_rev    = sum(k["revenue"]     for k in kws)
                         total_cost   = sum(k["cost"]        for k in kws)
 
-                        with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=False):
-                            st.caption(f"사용 컬럼: clicks(clkCnt), impressions(impCnt), conversions(ccnt), revenue(salesAmt), cost(cpConv×ccnt), ctr, cpa, roas, avg_rnk")
+                        with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=True):
+                            sm = data.get("summary", {})
+                            st.markdown("**캠페인 레벨 (KPI 카드에 표시)**")
+                            col1, col2, col3, col4, col5 = st.columns(5)
+                            col1.metric("클릭수",   f"{sm.get('clicks',0):,}회")
+                            col2.metric("노출수",   f"{sm.get('impressions',0):,}회")
+                            col3.metric("전환수",   f"{sm.get('conversions',0):,}건")
+                            col4.metric("전환매출", f"{sm.get('revenue',0):,}원")
+                            col5.metric("추정비용", f"{sm.get('cost',0):,}원")
+                            st.markdown("**키워드 레벨 합산 (테이블 기준)**")
                             col1, col2, col3, col4, col5 = st.columns(5)
                             col1.metric("클릭수",   f"{total_clicks:,}회")
                             col2.metric("노출수",   f"{total_imps:,}회")
