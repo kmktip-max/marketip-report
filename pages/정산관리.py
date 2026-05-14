@@ -252,27 +252,28 @@ with t_cl:
         st.info("엑셀 업로드 탭에서 파일을 먼저 업로드해주세요.")
     else:
         st.caption("설정을 변경한 후 행별 **저장** 또는 하단 **일괄 저장**을 클릭하세요.")
-        for _, row in df.iterrows():
+        for ri, (_, row) in enumerate(df.iterrows()):
             cid  = str(row.get("customer_id","")).strip()
             ano  = str(row.get("ad_account_no","")).strip()
             name = str(row.get("계정명","")).strip()
             ex   = get_mapping(cid, ano, name) or {}
             ad_s = int(row.get("ad_supply", 0))
             cm_s = int(row.get("comm_supply", 0))
+            _k   = f"{ri}_{cid}_{ano}"          # 행 인덱스 포함 → 중복 방지
 
             with st.expander(f"**{name}** │ CID:{cid} │ 광고비:{ad_s:,}원 │ 수수료:{cm_s:,}원"):
                 r1c1, r1c2, r1c3 = st.columns([2, 2, 2])
                 with r1c1:
                     fl = st.selectbox("담당 프리랜서", FREELANCERS,
                         index=FREELANCERS.index(ex["freelancer"]) if ex.get("freelancer") in FREELANCERS else 0,
-                        key=f"fl_{cid}_{ano}")
+                        key=f"fl_{_k}")
                     is_own = st.checkbox("대표 직접 운영", ex.get("is_owner_managed", False),
-                                         key=f"own_{cid}_{ano}")
+                                         key=f"own_{_k}")
                 with r1c2:
                     fr = st.number_input("프리랜서 기본 정산율(%)", 0.0, 100.0,
-                        float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{cid}_{ano}")
+                        float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{_k}")
                     rr = st.number_input("리베이트율(%)", 0.0, 100.0,
-                        float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{cid}_{ano}")
+                        float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{_k}")
                 with r1c3:
                     eff = fr - rr
                     if not is_own:
@@ -284,23 +285,24 @@ with t_cl:
                     st.caption(f"프리랜서 지급액: {r['fl_payout']:,}원")
                     st.caption(f"리베이트 지급액: {r['rebate_payout']:,}원")
                     st.caption(f"대표 수익: {r['rep_revenue']:,}원")
-                    if st.button("💾 저장", key=f"sv_{cid}_{ano}"):
+                    if st.button("💾 저장", key=f"sv_{_k}"):
                         upsert_mapping(cid, ano, name, fl, fr, rr, is_own)
                         st.toast(f"✅ {name} 저장됨")
                         st.rerun()
 
         st.divider()
         if st.button("💾 전체 일괄 저장", type="primary", use_container_width=True):
-            for _, row in df.iterrows():
+            for ri, (_, row) in enumerate(df.iterrows()):
                 cid  = str(row.get("customer_id","")).strip()
                 ano  = str(row.get("ad_account_no","")).strip()
                 name = str(row.get("계정명","")).strip()
+                _k   = f"{ri}_{cid}_{ano}"
                 upsert_mapping(
                     cid, ano, name,
-                    st.session_state.get(f"fl_{cid}_{ano}", "미분류"),
-                    float(st.session_state.get(f"fr_{cid}_{ano}", 0)),
-                    float(st.session_state.get(f"rr_{cid}_{ano}", 0)),
-                    bool(st.session_state.get(f"own_{cid}_{ano}", False)),
+                    st.session_state.get(f"fl_{_k}", "미분류"),
+                    float(st.session_state.get(f"fr_{_k}", 0)),
+                    float(st.session_state.get(f"rr_{_k}", 0)),
+                    bool(st.session_state.get(f"own_{_k}", False)),
                 )
             st.success("✅ 전체 저장 완료")
             st.rerun()
