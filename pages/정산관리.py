@@ -180,7 +180,7 @@ def w(n):   return f"{int(round(n)):,} 원"
 def pct(p): return f"{p:.1f}%"
 
 # ── 엑셀 파싱 ─────────────────────────────────────────────────────────────────
-def _norm(s): return re.sub(r'\s+', '', str(s)).lower()
+def _norm(s): return re.sub(r'[\s\(\)\[\]\{\}%]', '', str(s)).lower()
 
 def _find_sections(df_raw):
     for i in range(min(10, len(df_raw))):
@@ -188,8 +188,10 @@ def _find_sections(df_raw):
         ad_p = comm_p = None
         for j, v in enumerate(vals):
             sv = str(v).strip()
-            if sv == "광고비" and ad_p is None: ad_p = j
-            if "수수료" in sv and comm_p is None: comm_p = j
+            # 광고비 섹션: "광고비" 정확 일치 또는 "광고매출" 포함
+            if (sv == "광고비" or "광고매출" in sv) and ad_p is None: ad_p = j
+            # 수수료 섹션: "지급수수료" 또는 "수수료" 포함 (단, 지급수수료율 단독 컬럼은 제외)
+            if "수수료" in sv and "율" not in sv and comm_p is None: comm_p = j
         if ad_p is not None and comm_p is not None:
             return i, ad_p, comm_p
     return None, None, None
@@ -238,6 +240,18 @@ def parse_excel(f):
     merged_row, ad_p, comm_p = _find_sections(df_raw)
     hr = _find_header(df_raw, merged_row)
     df = pd.read_excel(f, header=hr, engine="openpyxl")
+
+    # ── Unnamed 컬럼 복원: 병합셀로 인해 헤더 행에 이름이 없는 컬럼은
+    #    위 행(df_raw)에서 의미 있는 텍스트를 역방향으로 탐색해 채움
+    _cols = list(df.columns)
+    for _ci, _col in enumerate(_cols):
+        if "Unnamed" in str(_col) or str(_col).strip() in ("", "nan", "None"):
+            for _ri in range(hr - 1, -1, -1):
+                if _ci < df_raw.shape[1]:
+                    _v = str(df_raw.iloc[_ri, _ci]).strip()
+                    if _v and _v.lower() not in ("nan","none") and "Unnamed" not in _v:
+                        _cols[_ci] = _v; break
+    df.columns = _cols
     orig = df.columns.tolist()
 
     debug = {
@@ -286,8 +300,10 @@ def parse_excel(f):
             "광고비세액":"ad_vat", "세액":"ad_vat", "vat":"ad_vat",
             # 광고비 합계 동의어
             "광고비합계금액":"ad_total", "합계금액":"ad_total", "total":"ad_total",
-            # 수수료율 동의어
+            # 수수료율 동의어 (괄호·% 등은 _norm()에서 제거 후 비교)
             "수수료율":"comm_rate", "지급수수료율":"comm_rate",
+            "지급수수료율":"comm_rate", "상위수수료율":"comm_rate",
+            "commissionrate":"comm_rate", "feerate":"comm_rate",
             # 수수료 공급가 동의어
             "수수료공급가":"comm_supply", "공급가.1":"comm_supply",
             # 수수료 VAT 동의어
@@ -370,6 +386,26 @@ def parse_excel(f):
         if len(non_zero) > 0 and non_zero.abs().max() < 2:
             df["comm_rate"] = df["comm_rate"] * 100   # 소수 → %
         df["comm_rate"] = df["comm_rate"].round(1)
+
+    # ── 수수료율 역산 fallback ──────────────────────────────────────────────
+    # comm_rate == 0인데 comm_supply / ad_supply 가 있으면 역산
+    if all(c in df.columns for c in ["comm_rate","comm_supply","ad_supply"]):
+        _mask = (df["comm_rate"] == 0) & (df["comm_supply"] > 0) & (df["ad_supply"] > 0)
+        if _mask.any():
+            df.loc[_mask, "comm_rate"] = (
+                df.loc[_mask, "comm_supply"] / df.loc[_mask, "ad_supply"] * 100
+            ).round(1)
+            debug["comm_rate_fallback"] = (
+                f"{_mask.sum()}개 계정에서 수수료율 역산 적용 "
+                f"(comm_supply / ad_supply × 100)"
+            )
+        # 역산 후에도 0이면 경고
+        _warn = (df["comm_rate"] == 0) & (df["comm_supply"] > 0)
+        if _warn.any():
+            debug["comm_rate_warn"] = (
+                "⚠️ 수수료 공급가는 있으나 수수료율 인식 실패: "
+                + ", ".join(df.loc[_warn, "display_name"].astype(str).head(5).tolist())
+            )
     # 매체사가 없으면 빈 문자열
     if "매체사" not in df.columns:
         df["매체사"] = ""
@@ -601,6 +637,10 @@ with t_up:
                             f"|  **실헤더 행**: {_last_dbg.get('header_row')}")
                 st.markdown("**원본 컬럼명**"); st.write(_last_dbg.get("orig_cols"))
                 st.markdown("**컬럼 매핑 결과**"); st.json(_last_dbg.get("rename_map",{}))
+                if _last_dbg.get("comm_rate_fallback"):
+                    st.info(f"🔄 {_last_dbg['comm_rate_fallback']}")
+                if _last_dbg.get("comm_rate_warn"):
+                    st.warning(_last_dbg["comm_rate_warn"])
                 st.markdown("**상위 20행**")
                 st.dataframe(pd.DataFrame(_last_dbg.get("raw_sample",[])), use_container_width=True)
                 st.markdown("**그룹핑 결과 상위 10행**")
