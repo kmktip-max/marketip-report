@@ -194,23 +194,39 @@ def _find_sections(df_raw):
             return i, ad_p, comm_p
     return None, None, None
 
+# 헤더 행 앵커 컬럼명 (어떤 것이 있으면 헤더 행으로 인식)
+_HEADER_ANCHORS = {
+    "계정명", "광고주명", "광고주 명", "광고주이름", "업체명",
+    "광고주ID", "광고주 ID", "광고주id", "광고주 id",
+}
+
 def _find_header(df_raw, merged_row):
+    """헤더 앵커 컬럼 중 하나라도 있는 행 반환 (다양한 포맷 지원)"""
     start = (merged_row + 1) if merged_row is not None else 0
-    for i in range(start, min(start + 6, len(df_raw))):
-        vals = [str(v).strip() for v in df_raw.iloc[i].values]
-        if "계정명" in vals: return i
-    for i in range(min(12, len(df_raw))):
-        vals = [str(v).strip() for v in df_raw.iloc[i].values]
-        if "계정명" in vals: return i
-    return (merged_row + 1) if merged_row is not None else 3
+    for i in range(start, min(start + 8, len(df_raw))):
+        vals = {str(v).strip() for v in df_raw.iloc[i].values}
+        if _HEADER_ANCHORS & vals: return i
+    for i in range(min(15, len(df_raw))):
+        vals = {str(v).strip() for v in df_raw.iloc[i].values}
+        if _HEADER_ANCHORS & vals: return i
+    return (merged_row + 1) if merged_row is not None else 0
+
+# 계정명 동의어 (순서대로 시도)
+_ACCOUNT_NAME_SYNONYMS = ["계정명", "광고주명", "광고주 명", "업체명", "광고주이름"]
 
 _FIXED_MAP = {
+    # 매체사
     "매체사":"매체사", "매체":"매체사",
     "담당자":"담당자",
+    # 계정 ID
     "계정id":"account_id",
-    "계정번호customerid":"customer_id","customerid":"customer_id",
-    "계정번호adaccountno":"ad_account_no","adaccountno":"ad_account_no",
-    "계정명":"계정명",
+    # customer_id 동의어
+    "계정번호customerid":"customer_id", "customerid":"customer_id",
+    "광고주id":"customer_id",           # 신규 포맷: 광고주 ID
+    # ad_account_no 동의어
+    "계정번호adaccountno":"ad_account_no", "adaccountno":"ad_account_no",
+    # 계정명 동의어 (정규화 후)
+    "계정명":"계정명", "광고주명":"계정명", "업체명":"계정명", "광고주이름":"계정명",
 }
 
 def parse_excel(f):
@@ -261,15 +277,24 @@ def parse_excel(f):
             _set(comm_p+1, "comm_vat")
             _set(comm_p+2, "comm_total")
     else:
+        # 이름 기반 폴백 — 다양한 대행사 포맷 지원
         _NAME = {
             **_FIXED_MAP,
-            "광고비공급가":"ad_supply","공급가":"ad_supply",
-            "광고비세액":"ad_vat","세액":"ad_vat",
-            "광고비합계금액":"ad_total","합계금액":"ad_total",
-            "수수료율":"comm_rate",
-            "수수료공급가":"comm_supply","공급가.1":"comm_supply",
-            "수수료세액":"comm_vat","세액.1":"comm_vat",
-            "수수료합계금액":"comm_total","합계금액.1":"comm_total",
+            # 광고비 공급가 동의어
+            "광고비공급가":"ad_supply", "공급가":"ad_supply", "공급가액":"ad_supply",
+            # 광고비 VAT 동의어
+            "광고비세액":"ad_vat", "세액":"ad_vat", "vat":"ad_vat",
+            # 광고비 합계 동의어
+            "광고비합계금액":"ad_total", "합계금액":"ad_total", "total":"ad_total",
+            # 수수료율 동의어
+            "수수료율":"comm_rate", "지급수수료율":"comm_rate",
+            # 수수료 공급가 동의어
+            "수수료공급가":"comm_supply", "공급가.1":"comm_supply",
+            # 수수료 VAT 동의어
+            "수수료세액":"comm_vat", "세액.1":"comm_vat", "수수료부가세":"comm_vat",
+            # 수수료 합계 동의어
+            "수수료합계금액":"comm_total", "합계금액.1":"comm_total",
+            "수수료합계":"comm_total",     "합계.1":"comm_total",
         }
         for c in orig:
             nc = _norm(c)
@@ -280,11 +305,24 @@ def parse_excel(f):
     debug["rename_map"] = {str(k): v for k, v in rename.items()}
     df = df.rename(columns=rename)
 
+    # 계정명 컬럼 확보 — 다양한 동의어 순서대로 시도
     if "계정명" not in df.columns:
-        for c in df.columns:
-            if "계정명" in str(c): df = df.rename(columns={c:"계정명"}); break
+        for _syn in _ACCOUNT_NAME_SYNONYMS:
+            if _syn in df.columns:
+                df = df.rename(columns={_syn: "계정명"}); break
+        else:
+            for c in df.columns:
+                nc2 = _norm(c)
+                if any(nc2 == _norm(s) for s in _ACCOUNT_NAME_SYNONYMS):
+                    df = df.rename(columns={c: "계정명"}); break
+    # 여전히 없으면 customer_id 또는 account_id로 대체
     if "계정명" not in df.columns:
-        return None, f"계정명 컬럼 없음. 원본: {orig}", df, debug
+        for _fb in ["customer_id", "account_id"]:
+            if _fb in df.columns:
+                df["계정명"] = df[_fb].astype(str)
+                break
+        else:
+            return None, f"계정명 컬럼 없음. 원본: {orig}", df, debug
 
     df = df[df["계정명"].notna()].copy()
     df = df[~df["계정명"].astype(str).str.strip().str.match(
@@ -463,10 +501,41 @@ t_up, t_cl, t_un, t_fl, t_ex, t_pnl, t_annual = st.tabs([
 ])
 
 # ─── 업로드 탭 ────────────────────────────────────────────────────────────────
+def _merge_uploads(existing: pd.DataFrame, new_df: pd.DataFrame) -> pd.DataFrame:
+    """두 개의 파싱된 DataFrame을 groupby 키 기준으로 합산 병합"""
+    combined = pd.concat([existing, new_df], ignore_index=True)
+    for col in ["customer_id","ad_account_no"]:
+        if col in combined.columns:
+            combined[col] = combined[col].astype(str).str.strip()
+        else:
+            combined[col] = ""
+    if "매체사" not in combined.columns:
+        combined["매체사"] = ""
+    else:
+        combined["매체사"] = combined["매체사"].fillna("").astype(str).str.strip()
+    if "comm_rate" not in combined.columns:
+        combined["comm_rate"] = 0.0
+    SUM_C   = [c for c in ["ad_supply","ad_vat","ad_total","comm_supply","comm_vat","comm_total"]
+               if c in combined.columns]
+    FIRST_C = [c for c in ["계정명","display_name","account_id"] if c in combined.columns]
+    agg = {c:"sum" for c in SUM_C}; agg.update({c:"first" for c in FIRST_C})
+    return combined.groupby(["customer_id","ad_account_no","매체사","comm_rate"],
+                            as_index=False).agg(agg)
+
 with t_up:
     st.subheader("상위대행사 정산 엑셀 업로드")
-    st.caption("헤더가 3~4행에 있는 병합셀 구조 xlsx 파일")
-    uf = st.file_uploader("파일 선택", type=["xlsx","xls","csv"])
+
+    _up_col1, _up_col2 = st.columns([3, 2])
+    with _up_col1:
+        st.caption("병합셀/단순 헤더 포맷 모두 지원 | 상위대행사별 엑셀 양식 자동 인식")
+    with _up_col2:
+        _append_mode = st.checkbox(
+            "기존 데이터에 추가 (다중 대행사 합산)",
+            value=False,
+            help="체크 시 이전 업로드 결과와 합산. 같은 업체·수수료율은 금액이 더해집니다.",
+        )
+
+    uf = st.file_uploader("파일 선택", type=["xlsx","xls","csv"], label_visibility="collapsed")
 
     if uf:
         df_g, err, df_detail, dbg = parse_excel(uf)
@@ -476,14 +545,25 @@ with t_up:
             with st.expander("🐛 디버그"):
                 st.write(dbg)
         else:
-            st.success(f"✅ {len(df_g)}개 계정 추출 (병합헤더:{dbg['merged_row']}행 → 실헤더:{dbg['header_row']}행)")
+            # 다중 대행사 합산 모드
+            if _append_mode and st.session_state.get("uploaded_df") is not None:
+                prev_cnt = len(st.session_state["uploaded_df"])
+                df_g = _merge_uploads(st.session_state["uploaded_df"], df_g)
+                st.success(f"✅ 합산 완료: 기존 {prev_cnt}개 + 신규 → 총 {len(df_g)}개 계정")
+            else:
+                st.success(f"✅ {len(df_g)}개 계정 추출 (병합헤더:{dbg['merged_row']}행 → 실헤더:{dbg['header_row']}행)")
+
             st.caption("※ 같은 업체라도 매체사·수수료율이 다르면 별개 계정으로 분리됩니다.")
 
             vc1, vc2, vc3, vc4 = st.columns(4)
-            vc1.metric("광고비 공급가 합계",  f"{dbg['ad_supply_sum']:,.0f}원")
-            vc2.metric("광고비 합계금액 합계", f"{dbg['ad_total_sum']:,.0f}원")
-            vc3.metric("수수료 공급가 합계",   f"{dbg['comm_supply_sum']:,.0f}원")
-            vc4.metric("수수료 합계금액 합계", f"{dbg['comm_total_sum']:,.0f}원")
+            _ts = df_g["ad_supply"].sum() if "ad_supply" in df_g.columns else 0
+            _tt = df_g["ad_total"].sum()  if "ad_total"  in df_g.columns else 0
+            _cs = df_g["comm_supply"].sum() if "comm_supply" in df_g.columns else 0
+            _ct = df_g["comm_total"].sum()  if "comm_total"  in df_g.columns else 0
+            vc1.metric("광고비 공급가 합계",   f"{_ts:,.0f}원")
+            vc2.metric("광고비 합계금액 합계", f"{_tt:,.0f}원")
+            vc3.metric("수수료 공급가 합계",   f"{_cs:,.0f}원")
+            vc4.metric("수수료 합계금액 합계", f"{_ct:,.0f}원")
 
             with st.expander("🐛 디버그 정보"):
                 st.markdown(f"**병합헤더 행**: {dbg['merged_row']}  |  **실헤더 행**: {dbg['header_row']}")
@@ -496,8 +576,8 @@ with t_up:
                 st.markdown("**그룹핑 결과 상위 10행**")
                 st.dataframe(pd.DataFrame(dbg["group_sample"]), use_container_width=True)
 
-            st.session_state["uploaded_df"]  = df_g
-            st.session_state["upload_dbg"]   = dbg
+            st.session_state["uploaded_df"] = df_g
+            st.session_state["upload_dbg"]  = dbg
 
             show = [c for c in ["display_name","customer_id","ad_account_no","매체사",
                                   "ad_supply","ad_total","comm_rate","comm_supply","comm_total"]
