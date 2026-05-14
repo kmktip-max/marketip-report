@@ -348,6 +348,25 @@ def _style_fl(col):
         return ["color: #dc2626; font-weight: 700"] * len(col)
     return [""] * len(col)
 
+# ── KPI 카드 HTML 헬퍼 ────────────────────────────────────────────────────────
+_KPI_CONFIGS = {
+    "neutral":  {"bg":"#FFFFFF","border":"#E5E8ED","lc":"#6B7280","vc":"#111827","vs":"19px","fw":"600"},
+    "negative": {"bg":"#FFF5F5","border":"#FCA5A5","lc":"#DC2626","vc":"#DC2626","vs":"19px","fw":"700"},
+    "primary":  {"bg":"#EFF6FF","border":"#93C5FD","lc":"#1D4ED8","vc":"#1D4ED8","vs":"26px","fw":"800"},
+    "secondary":{"bg":"#F0F9FF","border":"#BAE6FD","lc":"#0369A1","vc":"#0369A1","vs":"21px","fw":"700"},
+}
+
+def _kpi_card(label, value, variant="neutral", badge=None):
+    c = _KPI_CONFIGS.get(variant, _KPI_CONFIGS["neutral"])
+    bdg = (f'<span style="background:#DBEAFE;color:#1D4ED8;font-size:10px;font-weight:700;'
+           f'padding:1px 7px;border-radius:100px;margin-left:6px;">{badge}</span>') if badge else ""
+    return (f'<div style="background:{c["bg"]};border:1.5px solid {c["border"]};border-radius:12px;'
+            f'padding:16px 18px;height:100%;">'
+            f'<div style="font-size:12px;color:{c["lc"]};font-weight:600;margin-bottom:8px;">'
+            f'{label}{bdg}</div>'
+            f'<div style="font-size:{c["vs"]};color:{c["vc"]};font-weight:{c["fw"]};line-height:1.2;">'
+            f'{value}</div></div>')
+
 # ── 위젯 키 생성 (CID + AdNo + 매체 + 수수료율) ──────────────────────────────
 def _wk(cid, ano, media, rate):
     m = re.sub(r'\W+', '', str(media))
@@ -801,20 +820,24 @@ with t_pnl:
 
         st.divider()
 
-        r1 = st.columns(5)
-        r1[0].metric("검색광고 대표 직접수익",    w(search_owner_profit))
-        r1[1].metric("검색광고 프리랜서 계정수익", w(search_freelancer_profit))
-        r1[2].metric("검색광고 총수익",            w(search_total_profit))
-        r1[3].metric("플레이스",                   w(place_rev))
-        r1[4].metric("블로그",                     w(blog_rev))
+        exp_val = f"🔻 -{int(round(tot_exp)):,} 원" if tot_exp else "0 원"
 
-        r2 = st.columns(5)
-        r2[0].metric("총 수익",                  w(gross_total_profit))
-        r2[1].metric("총 수익 세후 추정",         w(gross_total_profit_after_tax))
-        r2[2].metric("기타비용 합계",             w(tot_exp),
-                     delta=f"-{tot_exp:,}" if tot_exp else None)
-        r2[3].metric("월 최종 순수익",            w(final_net_profit))
-        r2[4].metric("월 최종 세후 추정 순수익",  w(final_net_profit_after_tax))
+        c1 = st.columns(5)
+        c1[0].markdown(_kpi_card("검색광고 대표 직접수익",    w(search_owner_profit)),     unsafe_allow_html=True)
+        c1[1].markdown(_kpi_card("검색광고 프리랜서 계정수익", w(search_freelancer_profit)), unsafe_allow_html=True)
+        c1[2].markdown(_kpi_card("검색광고 총수익",            w(search_total_profit)),     unsafe_allow_html=True)
+        c1[3].markdown(_kpi_card("플레이스",                   w(place_rev)),               unsafe_allow_html=True)
+        c1[4].markdown(_kpi_card("블로그",                     w(blog_rev)),                unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
+
+        c2 = st.columns(5)
+        c2[0].markdown(_kpi_card("총 수익",             w(gross_total_profit)),             unsafe_allow_html=True)
+        c2[1].markdown(_kpi_card("총 수익 세후 추정",   w(gross_total_profit_after_tax)),   unsafe_allow_html=True)
+        c2[2].markdown(_kpi_card("기타비용 합계",        exp_val, "negative"),               unsafe_allow_html=True)
+        c2[3].markdown(_kpi_card("월 최종 순수익",       w(final_net_profit), "primary"),    unsafe_allow_html=True)
+        c2[4].markdown(_kpi_card("월 최종 세후 추정 순수익", w(final_net_profit_after_tax),
+                                 "secondary", badge="세후 추정"),                            unsafe_allow_html=True)
 
         if df is None:
             st.warning("엑셀 없음 — 검색광고 수익 0원으로 계산됩니다.")
