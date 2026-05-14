@@ -89,30 +89,25 @@ def upsert_pnl(ym, search_owner, search_fl, place, blog,
     # 연간 손익 탭에도 자동 반영
     try:
         yr, mo = int(ym[:4]), int(ym[5:7])
-        upsert_annual(
-            yr, mo,
-            int(round(net_after_tax)),   # 세후순수익 = 최종세후순수익
-            int(expenses),               # 기타비용
-            int(round(after_tax)),       # 기타비용 제외 금액 = 총수익세후추정
-        )
+        upsert_annual(yr, mo,
+                      int(round(net_after_tax)),  # 세후순수익
+                      int(expenses))              # 기타비용
     except Exception:
         pass
 
-def upsert_annual(year, month, after_tax_profit, other_expenses, before_expenses_amount):
+def upsert_annual(year, month, after_tax_profit, other_expenses):
     """
-    after_tax_profit       : 세후순수익 (세전 수익 × 0.8 추정)
-    other_expenses         : 기타비용 합계
-    before_expenses_amount : 기타비용 제외 금액 (차감 전)
-    after_expenses_amount  : 기타비용 포함 금액 = before - other (자동 계산)
+    after_tax_profit : 세후순수익 (입력값)
+    other_expenses   : 기타비용 (입력값)
+    net_amount       : 기타비용 제외 금액 = after_tax_profit - other_expenses (자동)
     """
     data = load_annual()
-    after_exp = max(0, int(before_expenses_amount) - int(other_expenses))
+    net  = max(0, int(after_tax_profit) - int(other_expenses))
     entry = {
         "year": int(year), "month": int(month),
-        "after_tax_profit":       int(after_tax_profit),
-        "other_expenses":         int(other_expenses),
-        "before_expenses_amount": int(before_expenses_amount),
-        "after_expenses_amount":  after_exp,
+        "after_tax_profit": int(after_tax_profit),
+        "other_expenses":   int(other_expenses),
+        "net_amount":       net,
     }
     for r in data:
         if r.get("year") == int(year) and r.get("month") == int(month):
@@ -956,19 +951,17 @@ with t_annual:
     # 데이터 로드
     _ann_raw = {r["month"]: r for r in load_annual() if r.get("year") == ann_year}
 
-    # 월별 집계
+    # 월별 집계 — 기타비용 제외 금액 = 세후순수익 - 기타비용 (자동)
     _ann_rows = []
     for _m in ann_months:
         _r   = _ann_raw.get(_m, {})
         _has = bool(_r)
-        _atp = int(_r.get("after_tax_profit",       0)) if _has else 0
-        _oth = int(_r.get("other_expenses",          0)) if _has else 0
-        _bef = int(_r.get("before_expenses_amount",  0)) if _has else 0
-        _aft = int(_r.get("after_expenses_amount",   max(0, _bef - _oth))) if _has else 0
+        _atp = int(_r.get("after_tax_profit", 0)) if _has else 0
+        _oth = int(_r.get("other_expenses",   0)) if _has else 0
+        _net = int(_r.get("net_amount", max(0, _atp - _oth))) if _has else 0
         _ann_rows.append({
             "month": _m, "월": f"{_m}월",
-            "세후순수익": _atp, "기타비용": _oth,
-            "기타비용 제외 금액": _bef, "기타비용 포함 금액": _aft,
+            "세후순수익": _atp, "기타비용": _oth, "기타비용 제외 금액": _net,
             "has_data": _has,
         })
     _ann_df = pd.DataFrame(_ann_rows)
@@ -977,24 +970,21 @@ with t_annual:
     _hd   = _ann_df[_ann_df["has_data"]]
     c_atp = _hd["세후순수익"].sum()
     c_oth = _hd["기타비용"].sum()
-    c_bef = _hd["기타비용 제외 금액"].sum()
-    c_aft = _hd["기타비용 포함 금액"].sum()
+    c_net = _hd["기타비용 제외 금액"].sum()
 
-    # ── KPI 카드 4개 ─────────────────────────────────────────────────────────
-    _kc = st.columns(4)
+    # ── KPI 카드 3개 ─────────────────────────────────────────────────────────
+    _kc = st.columns(3)
     _kc[0].markdown(_kpi_card(f"{ann_year}년 누적 세후순수익",
                               w(c_atp), "amber"), unsafe_allow_html=True)
     _kc[1].markdown(_kpi_card(f"{ann_year}년 누적 기타비용",
                               f"🔻 -{int(c_oth):,} 원" if c_oth else "0 원", "negative"),
                     unsafe_allow_html=True)
-    _kc[2].markdown(_kpi_card(f"{ann_year}년 누적 기타비용 제외",
-                              w(c_bef)), unsafe_allow_html=True)
-    _kc[3].markdown(_kpi_card(f"{ann_year}년 누적 기타비용 포함",
-                              w(c_aft), "green"), unsafe_allow_html=True)
+    _kc[2].markdown(_kpi_card(f"{ann_year}년 누적 기타비용 제외 금액",
+                              w(c_net), "green"), unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
 
-    # ── 차트: 세후순수익 / 기타비용 제외 / 기타비용 포함 ─────────────────────
+    # ── 차트: 세후순수익 / 기타비용 제외 금액 ───────────────────────────────
     def _cy(col):
         return [float(r[col]) if r["has_data"] else None for _, r in _ann_df.iterrows()]
 
@@ -1005,8 +995,7 @@ with t_annual:
         import plotly.graph_objects as go
         _chart_cfg = [
             ("세후순수익",        "#F59E0B", 2.0, "dot",   False),
-            ("기타비용 제외 금액", "#2563EB", 2.5, "solid", False),
-            ("기타비용 포함 금액", "#059669", 2.5, "solid", True),
+            ("기타비용 제외 금액", "#059669", 2.5, "solid", True),
         ]
         _fig = go.Figure()
         for _col, _clr, _lw, _dash, _fill in _chart_cfg:
@@ -1022,10 +1011,10 @@ with t_annual:
             ))
         _fig.update_layout(
             plot_bgcolor="white", paper_bgcolor="white",
-            margin=dict(l=8, r=8, t=36, b=8), height=270,
+            margin=dict(l=8, r=8, t=36, b=8), height=260,
             hovermode="x unified",
             legend=dict(orientation="h", yanchor="bottom", y=1.04, xanchor="right", x=1,
-                        font=dict(size=12), bgcolor="rgba(0,0,0,0)"),
+                        font=dict(size=13), bgcolor="rgba(0,0,0,0)"),
             xaxis=dict(showgrid=False, zeroline=False, tickfont=dict(size=12, color="#6B7280")),
             yaxis=dict(showgrid=True, gridcolor="#F3F4F6", zeroline=False,
                        tickformat=",.0f", tickfont=dict(size=11, color="#9CA3AF"), title=None),
@@ -1035,7 +1024,7 @@ with t_annual:
         st.plotly_chart(_fig, use_container_width=True, config={"displayModeBar": False})
         st.markdown("</div>", unsafe_allow_html=True)
     except ImportError:
-        st.line_chart(_ann_df.set_index("월")[["세후순수익","기타비용 제외 금액","기타비용 포함 금액"]])
+        st.line_chart(_ann_df.set_index("월")[["세후순수익","기타비용 제외 금액"]])
 
     st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
 
@@ -1045,27 +1034,25 @@ with t_annual:
     for _, _r in _ann_df.iterrows():
         _d = _r["has_data"]
         _tbl.append({
-            "월":            _r["월"],
-            "세후순수익":    w(_r["세후순수익"])         if _d else "—",
-            "기타비용":      w(_r["기타비용"])            if _d else "—",
-            "기타비용 제외": w(_r["기타비용 제외 금액"]) if _d else "—",
-            "기타비용 포함": w(_r["기타비용 포함 금액"]) if _d else "—",
+            "월":              _r["월"],
+            "세후순수익":      w(_r["세후순수익"])         if _d else "—",
+            "기타비용":        w(_r["기타비용"])            if _d else "—",
+            "기타비용 제외 금액": w(_r["기타비용 제외 금액"]) if _d else "—",
         })
     _tbl.append({"월":"합계",
-                 "세후순수익": w(c_atp), "기타비용": w(c_oth),
-                 "기타비용 제외": w(c_bef), "기타비용 포함": w(c_aft)})
+                 "세후순수익": w(c_atp), "기타비용": w(c_oth), "기타비용 제외 금액": w(c_net)})
 
     def _ann_style(sdf):
         out = pd.DataFrame("", index=sdf.index, columns=sdf.columns)
-        out["세후순수익"]    = "color:#92400E;font-weight:600;"
-        out["기타비용"]      = "color:#DC2626;font-weight:600;"
-        out["기타비용 포함"] = "color:#059669;font-weight:700;"
+        out["세후순수익"]        = "color:#92400E;font-weight:600;"
+        out["기타비용"]          = "color:#DC2626;font-weight:600;"
+        out["기타비용 제외 금액"] = "color:#059669;font-weight:700;"
         last = len(sdf) - 1
         for _c in sdf.columns:
             out.iloc[last, sdf.columns.get_loc(_c)] = "font-weight:800;"
-        out.iloc[last, sdf.columns.get_loc("세후순수익")]    = "font-weight:800;color:#92400E;"
-        out.iloc[last, sdf.columns.get_loc("기타비용")]      = "font-weight:800;color:#DC2626;"
-        out.iloc[last, sdf.columns.get_loc("기타비용 포함")] = "font-weight:800;color:#059669;"
+        out.iloc[last, sdf.columns.get_loc("세후순수익")]        = "font-weight:800;color:#92400E;"
+        out.iloc[last, sdf.columns.get_loc("기타비용")]          = "font-weight:800;color:#DC2626;"
+        out.iloc[last, sdf.columns.get_loc("기타비용 제외 금액")] = "font-weight:800;color:#059669;"
         return out
 
     st.dataframe(
@@ -1076,7 +1063,7 @@ with t_annual:
     # ── 수동 입력 폼 ─────────────────────────────────────────────────────────
     st.divider()
     st.markdown("**월별 수동 입력** (수정 또는 확정 저장이 없는 달 직접 입력)")
-    _fi1, _fi2, _fi3 = st.columns(3)
+    _fi1, _fi2, _fi3, _fi4 = st.columns([1, 2, 2, 2])
     with _fi1:
         _man_m = st.selectbox("월 선택", ann_months,
                               format_func=lambda x: f"{x}월", key="ann_man_month")
@@ -1091,23 +1078,15 @@ with t_annual:
                                    value=int(_mex.get("other_expenses", 0)),
                                    min_value=0, step=10000, format="%d",
                                    key=f"ann_oth_{ann_year}_{_man_m}")
-
-    _fi4, _fi5, _fi6 = st.columns(3)
     with _fi4:
-        _man_bef = st.number_input("기타비용 제외 금액(원)",
-                                   value=int(_mex.get("before_expenses_amount", 0)),
-                                   min_value=0, step=100000, format="%d",
-                                   key=f"ann_bef_{ann_year}_{_man_m}")
-    with _fi5:
-        _preview_aft = max(0, _man_bef - _man_oth)
-        st.markdown(f"**기타비용 포함 금액 (자동)**")
-        st.markdown(f"<span style='font-size:18px;font-weight:700;color:#059669;'>"
-                    f"{_preview_aft:,} 원</span>", unsafe_allow_html=True)
-        st.caption("= 기타비용 제외 − 기타비용")
-    with _fi6:
-        st.write(""); st.write("")
-        if st.button("💾 저장", key=f"ann_sv_{ann_year}_{_man_m}",
-                     type="primary", use_container_width=True):
-            upsert_annual(ann_year, _man_m, _man_atp, _man_oth, _man_bef)
-            st.success(f"✅ {ann_year}년 {_man_m}월 저장 완료")
-            st.rerun()
+        _preview = max(0, _man_atp - _man_oth)
+        st.markdown("**기타비용 제외 금액 (자동)**")
+        st.markdown(f"<span style='font-size:20px;font-weight:800;color:#059669;'>"
+                    f"{_preview:,} 원</span>", unsafe_allow_html=True)
+        st.caption("= 세후순수익 − 기타비용")
+
+    if st.button("💾 저장", key=f"ann_sv_{ann_year}_{_man_m}",
+                 type="primary", use_container_width=True):
+        upsert_annual(ann_year, _man_m, _man_atp, _man_oth)
+        st.success(f"✅ {ann_year}년 {_man_m}월 저장 완료")
+        st.rerun()
