@@ -41,6 +41,7 @@ pg = st.navigation([
     st.Page("pages/월간보고서.py",    title="월간보고서"),
     st.Page("pages/광고주관리.py",    title="광고주관리"),
     st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
+    st.Page("pages/키워드도구.py",    title="키워드도구"),
     st.Page("pages/정산관리.py",      title="정산관리"),
 ])
 
@@ -67,6 +68,9 @@ with st.sidebar:
     st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
     st.page_link("pages/광고주관리.py", label="🏢  광고주 목록",       use_container_width=True)
     st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
+
+    st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
+    st.page_link("pages/키워드도구.py", label="🔍  키워드 도구",       use_container_width=True)
 
     # ── 하단 영역 (로그인된 경우) ──────────────────────────────────────────
     if st.session_state.get("authenticated"):
