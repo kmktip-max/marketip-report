@@ -475,6 +475,87 @@ def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
                 "owner": round(comm_supply - fl_gross - rebate),
                 "direct_comm": 0, "warn": (fr - rr) < 0, "direct": False}
 
+# ── 정산 공유 PNG 생성 ────────────────────────────────────────────────────────
+def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import matplotlib.font_manager as fm
+    from io import BytesIO
+
+    # 한글 폰트 탐색
+    _avail = {f.name for f in fm.fontManager.ttflist}
+    for _kf in ["Malgun Gothic","NanumGothic","Apple SD Gothic Neo","AppleGothic","나눔고딕"]:
+        if _kf in _avail:
+            plt.rcParams['font.family'] = _kf; break
+    plt.rcParams['axes.unicode_minus'] = False
+
+    yr = ym[:4]; mo = ym[5:7].lstrip("0") if len(ym) >= 7 else ""
+    n = len(rows)
+    FIG_W, ROW_H = 7.0, 1.15
+    FIG_H = 3.8 + n * ROW_H
+
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
+    ax.set_xlim(0, FIG_W); ax.set_ylim(0, FIG_H)
+    ax.axis('off'); fig.patch.set_facecolor('white')
+
+    y = FIG_H - 0.3
+
+    # 빨간 헤더
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (0.15, y - 0.55), FIG_W - 0.3, 0.62,
+        boxstyle="round,pad=0.05", fc="#CC0000", ec="none", zorder=2))
+    ax.text(FIG_W/2, y - 0.22, f"마케팁 정산 안내  |  {yr}년 {mo}월",
+            ha="center", va="center", color="white", fontsize=13, fontweight="bold", zorder=3)
+    y -= 0.9
+
+    ax.text(0.3, y, f"{fl_name} 프리랜서님",
+            fontsize=12, fontweight="bold", color="#111827")
+    y -= 0.65
+
+    # 업체별 (노란 카드)
+    for r in rows:
+        ax.add_patch(mpatches.FancyBboxPatch(
+            (0.15, y - 0.88), FIG_W - 0.3, 0.98,
+            boxstyle="round,pad=0.06", fc="#FFFBEB", ec="#FDE68A", lw=1.2, zorder=1))
+        ax.text(0.35, y - 0.15, r["업체명"],
+                fontsize=10, fontweight="bold", color="#111827", zorder=2)
+        ax.text(0.35, y - 0.52,
+                f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:.0f}%",
+                fontsize=8.5, color="#6B7280", zorder=2)
+        ax.text(FIG_W - 0.3, y - 0.32, f"{r['공제후 실수령액']:,}원",
+                ha="right", fontsize=11, fontweight="bold", color="#1D4ED8", zorder=2)
+        y -= ROW_H
+
+    ax.plot([0.2, FIG_W - 0.2], [y + 0.08, y + 0.08], '-', color="#E5E7EB", lw=0.8)
+    y -= 0.42
+
+    # 소계
+    ax.text(0.35, y, "공제전 정산액", fontsize=10, color="#374151")
+    ax.text(FIG_W - 0.3, y, f"{total_gross:,}원", ha="right", fontsize=10, color="#374151")
+    y -= 0.45
+    ax.text(0.35, y, "3.3% 공제액", fontsize=10, color="#DC2626")
+    ax.text(FIG_W - 0.3, y, f"-{total_tax:,}원", ha="right", fontsize=10, color="#DC2626")
+    y -= 0.55
+
+    # 파란 실수령액 박스
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (0.15, y - 0.58), FIG_W - 0.3, 0.70,
+        boxstyle="round,pad=0.06", fc="#EFF6FF", ec="#93C5FD", lw=1.5, zorder=1))
+    ax.text(0.35, y - 0.17, "공제후 실수령액",
+            fontsize=11, fontweight="bold", color="#1D4ED8", zorder=2)
+    ax.text(FIG_W - 0.3, y - 0.17, f"{total_net:,}원",
+            ha="right", fontsize=14, fontweight="bold", color="#1D4ED8", zorder=2)
+    y -= 0.9
+
+    ax.text(FIG_W/2, y, "입금 예정입니다",
+            ha="center", fontsize=10, color="#9CA3AF")
+
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
+    plt.close(fig)
+    return buf.getvalue()
+
 # ── Styler 헬퍼 ───────────────────────────────────────────────────────────────
 def _style_fl(col):
     if col.name == "프리랜서 지급액":
@@ -535,9 +616,9 @@ with _mc:
 sel_ym = f"{_sel_year}-{_sel_month:02d}"
 st.divider()
 
-t_up, t_cl, t_un, t_fl, t_ex, t_pnl, t_annual = st.tabs([
+t_up, t_cl, t_un, t_fl, t_share, t_ex, t_pnl, t_annual = st.tabs([
     "📤 엑셀 업로드", "🏢 업체 분류", "❓ 미분류",
-    "👤 프리랜서 정산", "💰 기타비용", "📈 월 손익", "📊 월/연간 손익",
+    "👤 프리랜서 정산", "📨 정산 공유", "💰 기타비용", "📈 월 손익", "📊 월/연간 손익",
 ])
 
 # ─── 업로드 탭 ────────────────────────────────────────────────────────────────
@@ -949,6 +1030,159 @@ with t_fl:
         st.download_button("📥 CSV 다운로드",
             d_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
             file_name=f"정산_{sel_ym or 'all'}.csv", mime="text/csv")
+
+# ─── 정산 공유 탭 ─────────────────────────────────────────────────────────────
+with t_share:
+    st.subheader("프리랜서 정산 공유")
+    st.caption("대표 수익·리베이트 등 내부 정보는 제외된 프리랜서 공유용 정산서입니다.")
+    _sdf = st.session_state.get("uploaded_df")
+    if _sdf is None:
+        st.info("엑셀을 먼저 업로드해주세요.")
+    else:
+        # 프리랜서 목록 (미분류·대표 직접 제외)
+        _all_fls = sorted({
+            m.get("freelancer","")
+            for m in load_mapping()
+            if m.get("freelancer","") not in ["","미분류","대표 직접"]
+        })
+        if not _all_fls:
+            st.info("업체 분류 탭에서 프리랜서를 먼저 지정해주세요.")
+        else:
+            _sc1, _sc2 = st.columns([2, 5])
+            with _sc1:
+                _sel_fl = st.selectbox("프리랜서 선택", _all_fls, key="share_fl")
+
+            # 해당 프리랜서 업체 집계
+            _fl_rows = []
+            for _, _row in _sdf.iterrows():
+                _cid   = str(_row.get("customer_id","")).strip()
+                _ano   = str(_row.get("ad_account_no","")).strip()
+                _media = _norm_media(_row.get("매체사",""))
+                _cr    = float(_row.get("comm_rate", 0))
+                _crp   = _cr * 100 if _cr < 1 else _cr
+                _m     = get_mapping(_cid, _ano, _media, _crp) or {}
+                if _m.get("freelancer") != _sel_fl: continue
+                _fr    = float(_m.get("freelancer_rate", 0))
+                _rr    = float(_m.get("rebate_rate", 0))
+                _is_o  = _m.get("is_owner_managed", False)
+                _dm    = _m.get("direct_commission_mode", False)
+                _dr    = float(_m.get("direct_commission_rate", 0))
+                _ad_s  = float(_row.get("ad_supply", 0))
+                _ad_t  = float(_row.get("ad_total", 0))
+                _cm_s  = float(_row.get("comm_supply", 0))
+                _r     = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
+                _fl_rows.append({
+                    "업체명":       str(_row.get("display_name","")).strip(),
+                    "매체사":       _media or "—",
+                    "광고비 공급가": int(_ad_s),
+                    "정산율(%)":    _fr,
+                    "공제전 지급액": _r["fl_gross"],
+                    "3.3% 공제액":  _r["fl_tax"],
+                    "공제후 실수령액": _r["fl_net"],
+                })
+
+            if not _fl_rows:
+                st.info(f"{_sel_fl} 프리랜서에게 배정된 업체가 없습니다.")
+            else:
+                _t_gross = sum(r["공제전 지급액"]    for r in _fl_rows)
+                _t_tax   = sum(r["3.3% 공제액"]      for r in _fl_rows)
+                _t_net   = sum(r["공제후 실수령액"]   for r in _fl_rows)
+                _ym_lbl  = sel_ym or "YYYY-MM"
+                _yr      = _ym_lbl[:4]
+                _mo      = _ym_lbl[5:7].lstrip("0") if len(_ym_lbl) >= 7 else ""
+
+                # ── HTML 프리뷰 카드 ──────────────────────────────────────────
+                _rows_html = ""
+                for _r in _fl_rows:
+                    _rows_html += f"""
+<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
+            padding:12px 16px;margin-bottom:8px;
+            display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <div style="font-size:14px;font-weight:700;color:#111;margin-bottom:4px;">
+      {_r['업체명']}
+    </div>
+    <div style="font-size:12px;color:#6B7280;">
+      광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:.0f}%
+    </div>
+  </div>
+  <div style="font-size:15px;font-weight:800;color:#1D4ED8;">
+    {_r['공제후 실수령액']:,}원
+  </div>
+</div>"""
+
+                st.markdown(f"""
+<div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
+            padding:24px 28px;max-width:560px;">
+  <div style="background:#CC0000;color:white;padding:12px 18px;
+              border-radius:10px;font-size:15px;font-weight:800;margin-bottom:18px;">
+    마케팁 정산 안내 &nbsp;|&nbsp; {_yr}년 {_mo}월
+  </div>
+  <div style="font-size:15px;font-weight:700;margin-bottom:14px;">{_sel_fl} 프리랜서님</div>
+  {_rows_html}
+  <hr style="border:none;border-top:1px solid #E5E8ED;margin:14px 0;">
+  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+    <span style="font-size:13px;color:#374151;">공제전 정산액</span>
+    <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
+    <span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>
+    <span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>
+  </div>
+  <div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
+              padding:14px 18px;display:flex;justify-content:space-between;
+              align-items:center;">
+    <span style="font-size:14px;font-weight:700;color:#1D4ED8;">공제후 실수령액</span>
+    <span style="font-size:22px;font-weight:900;color:#1D4ED8;">{_t_net:,}원</span>
+  </div>
+  <div style="text-align:center;margin-top:14px;font-size:13px;color:#9CA3AF;">
+    입금 예정입니다 🙏
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+                st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+
+                # ── 카톡 복사용 텍스트 ───────────────────────────────────────
+                st.markdown("**📋 카톡 복사용 텍스트**")
+                _lines = [
+                    f"📌 {_yr}년 {_mo}월 정산 안내",
+                    "",
+                    f"{_sel_fl} 프리랜서님",
+                    "",
+                    "■ 업체별 정산",
+                ]
+                for _r in _fl_rows:
+                    _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
+                    _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
+                    _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
+                    _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
+                _lines += [
+                    "",
+                    "━━━━━━━━━━━━━━━━",
+                    "",
+                    f"공제전 정산액: {_t_gross:,}원",
+                    f"3.3% 공제 후 실수령액: {_t_net:,}원",
+                    "",
+                    "입금 예정입니다 🙏",
+                ]
+                _kakao_text = "\n".join(_lines)
+                st.code(_kakao_text, language=None)
+
+                # ── PNG 다운로드 ─────────────────────────────────────────────
+                st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+                try:
+                    _png = _gen_share_png(_sel_fl, _ym_lbl, _fl_rows,
+                                          _t_gross, _t_tax, _t_net)
+                    st.download_button(
+                        "🖼 PNG 저장",
+                        _png,
+                        file_name=f"{_sel_fl}_{_ym_lbl}_정산.png",
+                        mime="image/png",
+                        use_container_width=False,
+                    )
+                except Exception as _e:
+                    st.caption(f"PNG 생성 실패: {_e}")
 
 # ─── 기타비용 탭 ──────────────────────────────────────────────────────────────
 with t_ex:
