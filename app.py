@@ -39,6 +39,7 @@ st.set_page_config(
 pg = st.navigation([
     st.Page("pages/광고분석컨설팅.py", title="광고분석컨설팅"),
     st.Page("pages/월간보고서.py",    title="월간보고서"),
+    st.Page("pages/광고주관리.py",    title="광고주관리"),
     st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
     st.Page("pages/정산관리.py",      title="정산관리"),
 ])
@@ -63,8 +64,8 @@ with st.sidebar:
     st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
     st.page_link("pages/월간보고서.py",     label="📩  월간보고서",      use_container_width=True)
 
-    st.markdown('<span class="sb-label" id="section-payback">정산 관리</span>',
-                unsafe_allow_html=True)
+    st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
+    st.page_link("pages/광고주관리.py", label="🏢  광고주 목록",       use_container_width=True)
     st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
     # ── 하단 영역 (로그인된 경우) ──────────────────────────────────────────
