@@ -750,17 +750,6 @@ def _wk(cid, ano, media, rate):
 # ═════════════════════════════════════════════════════════════════════════════
 # UI
 # ═════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<style>
-.block-container {
-    max-width: 100% !important;
-    padding-left: 1.5rem !important;
-    padding-right: 1.5rem !important;
-    padding-top: 1rem !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 hc1, hc2 = st.columns([5, 1])
 with hc1: st.title("📊 정산 관리")
 with hc2:
