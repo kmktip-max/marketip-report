@@ -484,85 +484,137 @@ def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
                 "owner": round(comm_supply - fl_gross - rebate),
                 "direct_comm": 0, "warn": (fr - rr) < 0, "direct": False}
 
-# ── 정산 공유 PNG 생성 ────────────────────────────────────────────────────────
+# ── 정산 공유 PNG 생성 (Pillow 기반 — 한글 안정 렌더링) ──────────────────────
 def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    import matplotlib.font_manager as fm
+    from PIL import Image, ImageDraw, ImageFont
     from io import BytesIO
+    import os
 
-    # 한글 폰트 탐색
-    _avail = {f.name for f in fm.fontManager.ttflist}
-    for _kf in ["Malgun Gothic","NanumGothic","Apple SD Gothic Neo","AppleGothic","나눔고딕"]:
-        if _kf in _avail:
-            plt.rcParams['font.family'] = _kf; break
-    plt.rcParams['axes.unicode_minus'] = False
+    # 한글 TTF 폰트 탐색 (Bold / Regular)
+    _FONT_CANDS = {
+        "bold": [
+            "C:/Windows/Fonts/malgunbd.ttf",          # Windows Malgun Gothic Bold
+            "C:/Windows/Fonts/malgun.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        ],
+        "regular": [
+            "C:/Windows/Fonts/malgun.ttf",
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        ],
+    }
+
+    def _font(size, bold=False):
+        for p in _FONT_CANDS["bold" if bold else "regular"]:
+            if os.path.exists(p):
+                try: return ImageFont.truetype(p, size)
+                except: pass
+        try: return ImageFont.truetype(size)
+        except: return ImageFont.load_default()
+
+    def _rr(draw, xy, r, fill=None, outline=None, lw=1):
+        """rounded_rectangle 호환 래퍼 (Pillow < 8.2 fallback)"""
+        try:
+            draw.rounded_rectangle(xy, radius=r, fill=fill, outline=outline, width=lw)
+        except AttributeError:
+            draw.rectangle(xy, fill=fill, outline=outline, width=lw)
+
+    def _tw(draw, text, font):
+        try:
+            bb = draw.textbbox((0,0), text, font=font)
+            return bb[2] - bb[0]
+        except AttributeError:
+            return draw.textsize(text, font=font)[0]
 
     yr = ym[:4]; mo = ym[5:7].lstrip("0") if len(ym) >= 7 else ""
-    n = len(rows)
-    FIG_W, ROW_H = 7.0, 1.15
-    FIG_H = 3.8 + n * ROW_H
+    W = 620; PAD = 28; ROW_H = 92
 
-    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
-    ax.set_xlim(0, FIG_W); ax.set_ylim(0, FIG_H)
-    ax.axis('off'); fig.patch.set_facecolor('white')
+    f_hdr  = _font(19, bold=True)
+    f_name = _font(16, bold=True)
+    f_co   = _font(14, bold=True)
+    f_med  = _font(11)
+    f_sub  = _font(12)
+    f_amt  = _font(15, bold=True)
+    f_lbl  = _font(13)
+    f_nlbl = _font(14, bold=True)
+    f_nval = _font(22, bold=True)
+    f_foot = _font(12)
 
-    y = FIG_H - 0.3
+    HDR_H  = 62
+    NAME_H = 50
+    SEP_H  = 26
+    SUM_H  = 40 + 40 + 76   # 공제전 + 공제액 + 실수령박스
+    FOOT_H = 44
+    IMG_H  = HDR_H + NAME_H + len(rows) * ROW_H + SEP_H + SUM_H + FOOT_H + 30
 
-    # 빨간 헤더
-    ax.add_patch(mpatches.FancyBboxPatch(
-        (0.15, y - 0.55), FIG_W - 0.3, 0.62,
-        boxstyle="round,pad=0.05", fc="#CC0000", ec="none", zorder=2))
-    ax.text(FIG_W/2, y - 0.22, f"마케팁 정산 안내  |  {yr}년 {mo}월",
-            ha="center", va="center", color="white", fontsize=13, fontweight="bold", zorder=3)
-    y -= 0.9
+    img  = Image.new("RGB", (W, IMG_H), "#FFFFFF")
+    draw = ImageDraw.Draw(img)
 
-    ax.text(0.3, y, f"{fl_name} 프리랜서님",
-            fontsize=12, fontweight="bold", color="#111827")
-    y -= 0.65
+    y = 10
 
-    # 업체별 (노란 카드)
+    # ── 빨간 헤더 ────────────────────────────────────────────────────────────
+    _rr(draw, (PAD, y, W-PAD, y+HDR_H-10), r=10, fill="#CC0000")
+    title = f"마케팁 정산 안내  |  {yr}년 {mo}월"
+    draw.text(((W - _tw(draw, title, f_hdr))//2, y+18), title, font=f_hdr, fill="white")
+    y += HDR_H + 6
+
+    # ── 프리랜서명 ────────────────────────────────────────────────────────────
+    draw.text((PAD, y), f"{fl_name} 프리랜서님", font=f_name, fill="#111827")
+    y += NAME_H
+
+    # ── 업체별 카드 ───────────────────────────────────────────────────────────
     for r in rows:
-        ax.add_patch(mpatches.FancyBboxPatch(
-            (0.15, y - 0.88), FIG_W - 0.3, 0.98,
-            boxstyle="round,pad=0.06", fc="#FFFBEB", ec="#FDE68A", lw=1.2, zorder=1))
-        ax.text(0.35, y - 0.15, r["업체명"],
-                fontsize=10, fontweight="bold", color="#111827", zorder=2)
-        ax.text(0.35, y - 0.52,
-                f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:.0f}%",
-                fontsize=8.5, color="#6B7280", zorder=2)
-        ax.text(FIG_W - 0.3, y - 0.32, f"{r['공제후 실수령액']:,}원",
-                ha="right", fontsize=11, fontweight="bold", color="#1D4ED8", zorder=2)
-        y -= ROW_H
+        _rr(draw, (PAD, y, W-PAD, y+ROW_H-6), r=10, fill="#FFFBEB", outline="#FDE68A", lw=1)
+        draw.text((PAD+14, y+12), r["업체명"], font=f_co, fill="#111827")
 
-    ax.plot([0.2, FIG_W - 0.2], [y + 0.08, y + 0.08], '-', color="#E5E7EB", lw=0.8)
-    y -= 0.42
+        # 매체사 뱃지 (업체명 오른쪽)
+        _med = r["매체사"] if r["매체사"] and r["매체사"] != "—" else ""
+        if _med:
+            _co_w = _tw(draw, r["업체명"], f_co)
+            _mb_x = PAD + 14 + _co_w + 10
+            _mb_w = _tw(draw, _med, f_med) + 16
+            _rr(draw, (_mb_x, y+13, _mb_x+_mb_w, y+30), r=8, fill="#E0E7FF")
+            draw.text((_mb_x+8, y+14), _med, font=f_med, fill="#3730A3")
 
-    # 소계
-    ax.text(0.35, y, "공제전 정산액", fontsize=10, color="#374151")
-    ax.text(FIG_W - 0.3, y, f"{total_gross:,}원", ha="right", fontsize=10, color="#374151")
-    y -= 0.45
-    ax.text(0.35, y, "3.3% 공제액", fontsize=10, color="#DC2626")
-    ax.text(FIG_W - 0.3, y, f"-{total_tax:,}원", ha="right", fontsize=10, color="#DC2626")
-    y -= 0.55
+        _sub = f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:.0f}%"
+        draw.text((PAD+14, y+42), _sub, font=f_sub, fill="#6B7280")
 
-    # 파란 실수령액 박스
-    ax.add_patch(mpatches.FancyBboxPatch(
-        (0.15, y - 0.58), FIG_W - 0.3, 0.70,
-        boxstyle="round,pad=0.06", fc="#EFF6FF", ec="#93C5FD", lw=1.5, zorder=1))
-    ax.text(0.35, y - 0.17, "공제후 실수령액",
-            fontsize=11, fontweight="bold", color="#1D4ED8", zorder=2)
-    ax.text(FIG_W - 0.3, y - 0.17, f"{total_net:,}원",
-            ha="right", fontsize=14, fontweight="bold", color="#1D4ED8", zorder=2)
-    y -= 0.9
+        _as = f"{r['공제후 실수령액']:,}원"
+        draw.text((W-PAD-14-_tw(draw, _as, f_amt), y+28), _as, font=f_amt, fill="#1D4ED8")
+        y += ROW_H
 
-    ax.text(FIG_W/2, y, "입금 예정입니다",
-            ha="center", fontsize=10, color="#9CA3AF")
+    # ── 구분선 ────────────────────────────────────────────────────────────────
+    y += 8
+    draw.line((PAD, y, W-PAD, y), fill="#E5E7EB", width=1)
+    y += 18
+
+    # ── 소계 ─────────────────────────────────────────────────────────────────
+    draw.text((PAD, y), "공제전 정산액", font=f_lbl, fill="#374151")
+    _gs = f"{total_gross:,}원"
+    draw.text((W-PAD-_tw(draw, _gs, f_lbl), y), _gs, font=f_lbl, fill="#374151")
+    y += 40
+
+    draw.text((PAD, y), "3.3% 공제액", font=f_lbl, fill="#DC2626")
+    _tx = f"-{total_tax:,}원"
+    draw.text((W-PAD-_tw(draw, _tx, f_lbl), y), _tx, font=f_lbl, fill="#DC2626")
+    y += 46
+
+    # ── 파란 실수령액 박스 ────────────────────────────────────────────────────
+    _rr(draw, (PAD, y, W-PAD, y+70), r=10, fill="#EFF6FF", outline="#93C5FD", lw=2)
+    draw.text((PAD+16, y+18), "공제후 실수령액", font=f_nlbl, fill="#1D4ED8")
+    _nv = f"{total_net:,}원"
+    draw.text((W-PAD-16-_tw(draw, _nv, f_nval), y+16), _nv, font=f_nval, fill="#1D4ED8")
+    y += 84
+
+    # ── 푸터 ─────────────────────────────────────────────────────────────────
+    _ft = "입금 예정입니다"
+    draw.text(((W-_tw(draw, _ft, f_foot))//2, y), _ft, font=f_foot, fill="#9CA3AF")
 
     buf = BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight',
-                facecolor='white', edgecolor='none')
-    plt.close(fig)
+    img.crop((0, 0, W, y + FOOT_H)).save(buf, format="PNG")
     return buf.getvalue()
 
 # ── Styler 헬퍼 ───────────────────────────────────────────────────────────────
@@ -1104,13 +1156,19 @@ with t_share:
                 # ── HTML 프리뷰 카드 ──────────────────────────────────────────
                 _rows_html = ""
                 for _r in _fl_rows:
+                    _media_badge = (
+                        f'<span style="display:inline-block;background:#E0E7FF;color:#3730A3;'
+                        f'font-size:11px;font-weight:600;padding:2px 8px;'
+                        f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
+                        f'{_r["매체사"]}</span>'
+                    ) if _r["매체사"] and _r["매체사"] != "—" else ""
                     _rows_html += f"""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
             padding:12px 16px;margin-bottom:8px;
             display:flex;justify-content:space-between;align-items:center;">
   <div>
     <div style="font-size:14px;font-weight:700;color:#111;margin-bottom:4px;">
-      {_r['업체명']}
+      {_r['업체명']}{_media_badge}
     </div>
     <div style="font-size:12px;color:#6B7280;">
       광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:.0f}%
