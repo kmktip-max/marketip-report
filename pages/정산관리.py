@@ -1253,26 +1253,29 @@ with t_share:
                     "공제후 실수령액": _r["fl_net"],
                 })
 
-            if not _fl_rows:
-                st.info(f"{_sel_fl} 프리랜서에게 배정된 업체가 없습니다.")
-            else:
-                _t_gross = sum(r["공제전 지급액"]    for r in _fl_rows)
-                _t_tax   = sum(r["3.3% 공제액"]      for r in _fl_rows)
-                _t_net   = sum(r["공제후 실수령액"]   for r in _fl_rows)
-                _ym_lbl  = sel_ym or "YYYY-MM"
-                _yr      = _ym_lbl[:4]
-                _mo      = _ym_lbl[5:7].lstrip("0") if len(_ym_lbl) >= 7 else ""
+            _col_left, _col_right = st.columns(2)
 
-                # ── HTML 프리뷰 카드 ──────────────────────────────────────────
-                _rows_html = ""
-                for _r in _fl_rows:
-                    _media_badge = (
-                        f'<span style="display:inline-block;background:#E0E7FF;color:#3730A3;'
-                        f'font-size:11px;font-weight:600;padding:2px 8px;'
-                        f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
-                        f'{_r["매체사"]}</span>'
-                    ) if _r["매체사"] and _r["매체사"] != "—" else ""
-                    _rows_html += f"""
+            with _col_left:
+                if not _fl_rows:
+                    st.info(f"{_sel_fl} 프리랜서에게 배정된 업체가 없습니다.")
+                else:
+                    _t_gross = sum(r["공제전 지급액"]    for r in _fl_rows)
+                    _t_tax   = sum(r["3.3% 공제액"]      for r in _fl_rows)
+                    _t_net   = sum(r["공제후 실수령액"]   for r in _fl_rows)
+                    _ym_lbl  = sel_ym or "YYYY-MM"
+                    _yr      = _ym_lbl[:4]
+                    _mo      = _ym_lbl[5:7].lstrip("0") if len(_ym_lbl) >= 7 else ""
+
+                    # ── HTML 프리뷰 카드 ──────────────────────────────────────────
+                    _rows_html = ""
+                    for _r in _fl_rows:
+                        _media_badge = (
+                            f'<span style="display:inline-block;background:#E0E7FF;color:#3730A3;'
+                            f'font-size:11px;font-weight:600;padding:2px 8px;'
+                            f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
+                            f'{_r["매체사"]}</span>'
+                        ) if _r["매체사"] and _r["매체사"] != "—" else ""
+                        _rows_html += f"""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
             padding:12px 16px;margin-bottom:8px;
             display:flex;justify-content:space-between;align-items:center;">
@@ -1289,7 +1292,7 @@ with t_share:
   </div>
 </div>"""
 
-                st.markdown(f"""
+                    st.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
             padding:24px 28px;max-width:560px;">
   <div style="background:#CC0000;color:white;padding:12px 18px;
@@ -1319,123 +1322,122 @@ with t_share:
 </div>
 """, unsafe_allow_html=True)
 
-                st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
 
-                # ── 카톡 복사용 텍스트 ───────────────────────────────────────
-                st.markdown("**📋 카톡 복사용 텍스트**")
-                _lines = [
-                    f"📌 {_yr}년 {_mo}월 정산 안내",
-                    "",
-                    f"{_sel_fl} 프리랜서님",
-                    "",
-                    "■ 업체별 정산",
-                ]
-                for _r in _fl_rows:
-                    _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
-                    _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
-                    _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
-                    _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
-                _lines += [
-                    "",
-                    "━━━━━━━━━━━━━━━━",
-                    "",
-                    f"공제전 정산액: {_t_gross:,}원",
-                    f"3.3% 공제 후 실수령액: {_t_net:,}원",
-                    "",
-                    "입금 예정입니다 🙏",
-                ]
-                _kakao_text = "\n".join(_lines)
-                st.code(_kakao_text, language=None)
+                    # ── 카톡 복사용 텍스트 ───────────────────────────────────────
+                    st.markdown("**📋 카톡 복사용 텍스트**")
+                    _lines = [
+                        f"📌 {_yr}년 {_mo}월 정산 안내",
+                        "",
+                        f"{_sel_fl} 프리랜서님",
+                        "",
+                        "■ 업체별 정산",
+                    ]
+                    for _r in _fl_rows:
+                        _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
+                        _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
+                        _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
+                        _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
+                    _lines += [
+                        "",
+                        "━━━━━━━━━━━━━━━━",
+                        "",
+                        f"공제전 정산액: {_t_gross:,}원",
+                        f"3.3% 공제 후 실수령액: {_t_net:,}원",
+                        "",
+                        "입금 예정입니다 🙏",
+                    ]
+                    _kakao_text = "\n".join(_lines)
+                    st.code(_kakao_text, language=None)
 
-                # ── HTML 저장 ────────────────────────────────────────────────
-                st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
-                _html_str = _gen_share_html(
-                    _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
-                )
-                st.download_button(
-                    "📄 HTML 저장 (브라우저에서 열면 정상 표시)",
-                    _html_str.encode("utf-8"),
-                    file_name=f"{_sel_fl}_{_ym_lbl}_정산.html",
-                    mime="text/html",
-                )
+                    # ── HTML 저장 ────────────────────────────────────────────────
+                    st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+                    _html_str = _gen_share_html(
+                        _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
+                    )
+                    st.download_button(
+                        "📄 HTML 저장 (브라우저에서 열면 정상 표시)",
+                        _html_str.encode("utf-8"),
+                        file_name=f"{_sel_fl}_{_ym_lbl}_정산.html",
+                        mime="text/html",
+                    )
 
-        # ── 세무사 보고용 ─────────────────────────────────────────────────────
-        st.divider()
-        st.markdown("### 🧾 세무사 보고용")
-        st.caption("전체 프리랜서 입금 내역을 세무사 전달용 텍스트로 자동 생성합니다.")
+            with _col_right:
+                st.markdown("### 🧾 세무사 보고용")
+                st.caption("전체 프리랜서 입금 내역을 세무사 전달용 텍스트로 자동 생성합니다.")
 
-        if _sdf is None:
-            st.info("엑셀을 먼저 업로드해주세요.")
-        else:
-            # 프리랜서별 fl_net 합산 (권혁우·미분류·대표 직접 제외)
-            _tax_sum = {}  # {fl_name: fl_net_total}
-            for _, _row in _sdf.iterrows():
-                _cid2   = str(_row.get("customer_id","")).strip()
-                _ano2   = str(_row.get("ad_account_no","")).strip()
-                _media2 = _norm_media(_row.get("매체사",""))
-                _cr2    = float(_row.get("comm_rate", 0))
-                _crp2   = _cr2 * 100 if _cr2 < 1 else _cr2
-                _m2     = get_mapping(_cid2, _ano2, _media2, _crp2) or {}
-                _fl2    = _m2.get("freelancer","미분류")
-                if _fl2 in ["", "미분류", "대표 직접", OWNER_FL]: continue
-                _r2 = calc(
-                    float(_row.get("ad_supply",0)), float(_row.get("ad_total",0)),
-                    float(_row.get("comm_supply",0)),
-                    float(_m2.get("freelancer_rate",0)), float(_m2.get("rebate_rate",0)),
-                    _m2.get("is_owner_managed",False),
-                    _m2.get("direct_commission_mode",False),
-                    float(_m2.get("direct_commission_rate",0)),
-                )
-                _tax_sum[_fl2] = _tax_sum.get(_fl2, 0) + _r2["fl_net"]
-
-            if not _tax_sum:
-                st.info("분류된 프리랜서 데이터가 없습니다.")
-            else:
-                _ym_lbl2 = sel_ym or "YYYY-MM"
-                _yr2 = _ym_lbl2[:4]; _mo2 = _ym_lbl2[5:7].lstrip("0") if len(_ym_lbl2) >= 7 else ""
-                _today_day = date.today().day
-
-                # 입금완료 체크박스
-                st.markdown("**입금 완료 여부 선택**")
-                _paid = {}
-                _chk_cols = st.columns(min(len(_tax_sum), 4))
-                for _ci2, (_fn, _famt) in enumerate(sorted(_tax_sum.items())):
-                    with _chk_cols[_ci2 % len(_chk_cols)]:
-                        _paid[_fn] = st.checkbox(
-                            f"{_fn}  {int(round(_famt)):,}원",
-                            value=True,
-                            key=f"tax_paid_{_ym_lbl2}_{_fn}",
+                if _sdf is None:
+                    st.info("엑셀을 먼저 업로드해주세요.")
+                else:
+                    # 프리랜서별 fl_net 합산 (권혁우·미분류·대표 직접 제외)
+                    _tax_sum = {}  # {fl_name: fl_net_total}
+                    for _, _row in _sdf.iterrows():
+                        _cid2   = str(_row.get("customer_id","")).strip()
+                        _ano2   = str(_row.get("ad_account_no","")).strip()
+                        _media2 = _norm_media(_row.get("매체사",""))
+                        _cr2    = float(_row.get("comm_rate", 0))
+                        _crp2   = _cr2 * 100 if _cr2 < 1 else _cr2
+                        _m2     = get_mapping(_cid2, _ano2, _media2, _crp2) or {}
+                        _fl2    = _m2.get("freelancer","미분류")
+                        if _fl2 in ["", "미분류", "대표 직접", OWNER_FL]: continue
+                        _r2 = calc(
+                            float(_row.get("ad_supply",0)), float(_row.get("ad_total",0)),
+                            float(_row.get("comm_supply",0)),
+                            float(_m2.get("freelancer_rate",0)), float(_m2.get("rebate_rate",0)),
+                            _m2.get("is_owner_managed",False),
+                            _m2.get("direct_commission_mode",False),
+                            float(_m2.get("direct_commission_rate",0)),
                         )
+                        _tax_sum[_fl2] = _tax_sum.get(_fl2, 0) + _r2["fl_net"]
 
-                # 포함 대상만 필터
-                _included = {fn: amt for fn, amt in sorted(_tax_sum.items()) if _paid.get(fn)}
-                _total_net = sum(_included.values())
+                    if not _tax_sum:
+                        st.info("분류된 프리랜서 데이터가 없습니다.")
+                    else:
+                        _ym_lbl2 = sel_ym or "YYYY-MM"
+                        _yr2 = _ym_lbl2[:4]; _mo2 = _ym_lbl2[5:7].lstrip("0") if len(_ym_lbl2) >= 7 else ""
+                        _today_day = date.today().day
 
-                # 텍스트 생성
-                _tax_lines = [
-                    "안녕하세요 세무사님~",
-                    "좋은 아침입니다.",
-                    "",
-                    f"{_yr2}년 {_mo2}월 프리랜서 비용 전달드립니다.",
-                    "",
-                ]
-                for _fn, _famt in _included.items():
-                    _tax_lines.append(_fn)
-                    _tax_lines.append(f"{int(round(_famt)):,}원")
-                    _tax_lines.append("")
-                _tax_lines += [
-                    "━━━━━━━━━━━━━━━━",
-                    "",
-                    f"{_mo2}월 프리랜서 총 입금액:",
-                    f"{int(round(_total_net)):,}원",
-                    "",
-                    f"{_yr2}년 {_mo2}월 {_today_day}일 프리랜서 비용 입금 완료입니다.",
-                    "감사합니다.",
-                ]
-                _tax_text = "\n".join(_tax_lines)
+                        # 입금완료 체크박스
+                        st.markdown("**입금 완료 여부 선택**")
+                        _paid = {}
+                        _chk_cols = st.columns(min(len(_tax_sum), 4))
+                        for _ci2, (_fn, _famt) in enumerate(sorted(_tax_sum.items())):
+                            with _chk_cols[_ci2 % len(_chk_cols)]:
+                                _paid[_fn] = st.checkbox(
+                                    f"{_fn}  {int(round(_famt)):,}원",
+                                    value=True,
+                                    key=f"tax_paid_{_ym_lbl2}_{_fn}",
+                                )
 
-                st.markdown("**📋 세무사 전달 텍스트**")
-                st.code(_tax_text, language=None)
+                        # 포함 대상만 필터
+                        _included = {fn: amt for fn, amt in sorted(_tax_sum.items()) if _paid.get(fn)}
+                        _total_net = sum(_included.values())
+
+                        # 텍스트 생성
+                        _tax_lines = [
+                            "안녕하세요 세무사님~",
+                            "좋은 아침입니다.",
+                            "",
+                            f"{_yr2}년 {_mo2}월 프리랜서 비용 전달드립니다.",
+                            "",
+                        ]
+                        for _fn, _famt in _included.items():
+                            _tax_lines.append(_fn)
+                            _tax_lines.append(f"{int(round(_famt)):,}원")
+                            _tax_lines.append("")
+                        _tax_lines += [
+                            "━━━━━━━━━━━━━━━━",
+                            "",
+                            f"{_mo2}월 프리랜서 총 입금액:",
+                            f"{int(round(_total_net)):,}원",
+                            "",
+                            f"{_yr2}년 {_mo2}월 {_today_day}일 프리랜서 비용 입금 완료입니다.",
+                            "감사합니다.",
+                        ]
+                        _tax_text = "\n".join(_tax_lines)
+
+                        st.markdown("**📋 세무사 전달 텍스트**")
+                        st.code(_tax_text, language=None)
 
 # ─── 기타비용 탭 ──────────────────────────────────────────────────────────────
 with t_ex:
