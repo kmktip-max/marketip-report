@@ -1053,7 +1053,7 @@ with t_share:
         _all_fls = sorted({
             m.get("freelancer","")
             for m in load_mapping()
-            if m.get("freelancer","") not in ["","미분류","대표 직접"]
+            if m.get("freelancer","") not in ["","미분류","대표 직접", OWNER_FL]
         })
         if not _all_fls:
             st.info("업체 분류 탭에서 프리랜서를 먼저 지정해주세요.")
