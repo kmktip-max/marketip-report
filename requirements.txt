@@ -12,5 +12,6 @@ kaleido>=0.2.1
 fpdf2>=2.7.0
 Pillow>=10.0.0
 matplotlib>=3.7.0
+playwright>=1.44.0
 gspread>=6.0.0
 google-auth>=2.0.0

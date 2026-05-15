@@ -617,6 +617,103 @@ def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
     img.crop((0, 0, W, y + FOOT_H)).save(buf, format="PNG")
     return buf.getvalue()
 
+# ── 정산 공유 HTML 생성 (Playwright PNG 소스 겸 다운로드용) ───────────────────
+def _gen_share_html(fl_name, ym, rows, total_gross, total_tax, total_net):
+    yr = ym[:4]; mo = ym[5:7].lstrip("0") if len(ym) >= 7 else ""
+
+    rows_html = ""
+    for r in rows:
+        media = r["매체사"] if r["매체사"] and r["매체사"] != "—" else ""
+        mbadge = (f'<span class="mbadge">{media}</span>') if media else ""
+        rows_html += f"""
+<div class="acc-row">
+  <div class="acc-info">
+    <div class="acc-name">{r['업체명']}{mbadge}</div>
+    <div class="acc-sub">광고비 {r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {r['정산율(%)']:.0f}%</div>
+  </div>
+  <div class="acc-amt">{r['공제후 실수령액']:,}원</div>
+</div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#fff;display:flex;justify-content:center;padding:36px;
+     font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;}}
+#settlement-card{{width:680px;border:1.5px solid #E5E8ED;border-radius:16px;overflow:hidden;background:#fff;}}
+.hdr{{background:#CC0000;color:#fff;padding:18px 28px;font-size:18px;font-weight:800;text-align:center;}}
+.body{{padding:24px 28px;}}
+.fl-name{{font-size:16px;font-weight:700;color:#111827;margin-bottom:18px;}}
+.acc-row{{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
+          padding:14px 16px;margin-bottom:10px;
+          display:flex;justify-content:space-between;align-items:center;}}
+.acc-name{{font-size:14px;font-weight:700;color:#111;margin-bottom:5px;}}
+.acc-sub{{font-size:12px;color:#6B7280;}}
+.acc-amt{{font-size:15px;font-weight:800;color:#1D4ED8;white-space:nowrap;margin-left:12px;}}
+.mbadge{{display:inline-block;background:#E0E7FF;color:#3730A3;
+         font-size:11px;font-weight:600;padding:2px 8px;border-radius:100px;margin-left:8px;}}
+.sep{{border:none;border-top:1px solid #E5E7EB;margin:16px 0;}}
+.srow{{display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;}}
+.net-box{{background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
+          padding:16px 18px;display:flex;justify-content:space-between;
+          align-items:center;margin:12px 0 16px;}}
+.net-lbl{{font-size:14px;font-weight:700;color:#1D4ED8;}}
+.net-val{{font-size:22px;font-weight:900;color:#1D4ED8;}}
+.foot{{text-align:center;font-size:13px;color:#9CA3AF;padding-bottom:4px;}}
+</style>
+</head>
+<body>
+<div id="settlement-card">
+  <div class="hdr">마케팁 정산 안내 | {yr}년 {mo}월</div>
+  <div class="body">
+    <div class="fl-name">{fl_name} 프리랜서님</div>
+    {rows_html}
+    <hr class="sep">
+    <div class="srow"><span style="color:#374151;">공제전 정산액</span>
+                      <span style="color:#374151;">{total_gross:,}원</span></div>
+    <div class="srow"><span style="color:#DC2626;">3.3% 공제액</span>
+                      <span style="color:#DC2626;">-{total_tax:,}원</span></div>
+    <div class="net-box">
+      <span class="net-lbl">공제후 실수령액</span>
+      <span class="net-val">{total_net:,}원</span>
+    </div>
+    <div class="foot">입금 예정입니다</div>
+  </div>
+</div>
+</body></html>"""
+
+# ── Playwright 기반 PNG 생성 ──────────────────────────────────────────────────
+def _gen_png_playwright(html_str):
+    import tempfile, os
+    from playwright.sync_api import sync_playwright
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".html", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        f.write(html_str); tmp = f.name
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(
+                viewport={"width": 760, "height": 1400},
+                device_scale_factor=2,
+            )
+            # file:// URL (Windows/Unix 모두 호환)
+            file_url = "file:///" + tmp.replace("\\", "/").lstrip("/")
+            page.goto(file_url)
+            page.wait_for_load_state("networkidle", timeout=8000)
+            png = page.locator("#settlement-card").screenshot()
+            browser.close()
+        return png
+    finally:
+        try: os.unlink(tmp)
+        except: pass
+
 # ── Styler 헬퍼 ───────────────────────────────────────────────────────────────
 def _style_fl(col):
     if col.name == "프리랜서 지급액":
@@ -1237,20 +1334,57 @@ with t_share:
                 _kakao_text = "\n".join(_lines)
                 st.code(_kakao_text, language=None)
 
-                # ── PNG 다운로드 ─────────────────────────────────────────────
-                st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+                # ── 다운로드 버튼 ────────────────────────────────────────────
+                st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+                _html_str = _gen_share_html(
+                    _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
+                )
+                _fname = f"{_sel_fl}_{_ym_lbl}_정산"
+
+                _dc1, _dc2 = st.columns(2)
+
+                # PNG: Playwright 우선, 실패 시 Pillow fallback
+                _png_bytes  = None
+                _png_method = ""
                 try:
-                    _png = _gen_share_png(_sel_fl, _ym_lbl, _fl_rows,
-                                          _t_gross, _t_tax, _t_net)
+                    _png_bytes  = _gen_png_playwright(_html_str)
+                    _png_method = "Playwright (브라우저 렌더링)"
+                except Exception:
+                    try:
+                        _png_bytes  = _gen_share_png(
+                            _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
+                        )
+                        _png_method = "Pillow (한글 폰트 필요)"
+                    except Exception as _pe:
+                        _png_method = f"실패: {_pe}"
+
+                with _dc1:
+                    if _png_bytes:
+                        st.download_button(
+                            "🖼 PNG 저장",
+                            _png_bytes,
+                            file_name=f"{_fname}.png",
+                            mime="image/png",
+                            use_container_width=True,
+                        )
+                    else:
+                        st.warning(f"PNG 생성 불가 — {_png_method}")
+                        st.caption("playwright install chromium 실행 필요")
+
+                with _dc2:
                     st.download_button(
-                        "🖼 PNG 저장",
-                        _png,
-                        file_name=f"{_sel_fl}_{_ym_lbl}_정산.png",
-                        mime="image/png",
-                        use_container_width=False,
+                        "📄 HTML 저장 (브라우저에서 열기)",
+                        _html_str.encode("utf-8"),
+                        file_name=f"{_fname}.html",
+                        mime="text/html",
+                        use_container_width=True,
                     )
-                except Exception as _e:
-                    st.caption(f"PNG 생성 실패: {_e}")
+
+                # PNG 미리보기
+                if _png_bytes:
+                    st.caption(f"렌더링 방식: {_png_method}")
+                    st.markdown("**미리보기**")
+                    st.image(_png_bytes, use_container_width=False, width=480)
 
 # ─── 기타비용 탭 ──────────────────────────────────────────────────────────────
 with t_ex:
