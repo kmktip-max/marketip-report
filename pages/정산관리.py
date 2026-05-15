@@ -65,6 +65,19 @@ def _save(p, d):
 
 load_mapping  = lambda: _load(F_MAPPING)
 save_mapping  = lambda d: _save(F_MAPPING, d)
+
+# ── 프리랜서명 오타 마이그레이션 (임예솔 → 임예슬) ──────────────────────────
+def _migrate_mapping():
+    _RENAME = {"임예솔": "임예슬"}
+    data = load_mapping()
+    changed = False
+    for m in data:
+        if m.get("freelancer") in _RENAME:
+            m["freelancer"] = _RENAME[m["freelancer"]]
+            changed = True
+    if changed:
+        save_mapping(data)
+_migrate_mapping()
 load_expenses = lambda: _load(F_EXPENSES)
 save_expenses = lambda d: _save(F_EXPENSES, d)
 load_extra    = lambda: _load(F_EXTRA)
