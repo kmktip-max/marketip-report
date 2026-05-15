@@ -1334,57 +1334,17 @@ with t_share:
                 _kakao_text = "\n".join(_lines)
                 st.code(_kakao_text, language=None)
 
-                # ── 다운로드 버튼 ────────────────────────────────────────────
+                # ── HTML 저장 ────────────────────────────────────────────────
                 st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
                 _html_str = _gen_share_html(
                     _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
                 )
-                _fname = f"{_sel_fl}_{_ym_lbl}_정산"
-
-                _dc1, _dc2 = st.columns(2)
-
-                # PNG: Playwright 우선, 실패 시 Pillow fallback
-                _png_bytes  = None
-                _png_method = ""
-                try:
-                    _png_bytes  = _gen_png_playwright(_html_str)
-                    _png_method = "Playwright (브라우저 렌더링)"
-                except Exception:
-                    try:
-                        _png_bytes  = _gen_share_png(
-                            _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
-                        )
-                        _png_method = "Pillow (한글 폰트 필요)"
-                    except Exception as _pe:
-                        _png_method = f"실패: {_pe}"
-
-                with _dc1:
-                    if _png_bytes:
-                        st.download_button(
-                            "🖼 PNG 저장",
-                            _png_bytes,
-                            file_name=f"{_fname}.png",
-                            mime="image/png",
-                            use_container_width=True,
-                        )
-                    else:
-                        st.warning(f"PNG 생성 불가 — {_png_method}")
-                        st.caption("playwright install chromium 실행 필요")
-
-                with _dc2:
-                    st.download_button(
-                        "📄 HTML 저장 (브라우저에서 열기)",
-                        _html_str.encode("utf-8"),
-                        file_name=f"{_fname}.html",
-                        mime="text/html",
-                        use_container_width=True,
-                    )
-
-                # PNG 미리보기
-                if _png_bytes:
-                    st.caption(f"렌더링 방식: {_png_method}")
-                    st.markdown("**미리보기**")
-                    st.image(_png_bytes, use_container_width=False, width=480)
+                st.download_button(
+                    "📄 HTML 저장 (브라우저에서 열면 정상 표시)",
+                    _html_str.encode("utf-8"),
+                    file_name=f"{_sel_fl}_{_ym_lbl}_정산.html",
+                    mime="text/html",
+                )
 
 # ─── 기타비용 탭 ──────────────────────────────────────────────────────────────
 with t_ex:
