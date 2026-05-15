@@ -3,7 +3,7 @@
 엑셀 업로드 → 업체 분류 → 프리랜서 정산 → 기타비용 → 월 손익
 """
 import streamlit as st
-import json, os, sys, uuid, re
+import json, os, sys, uuid, re, hashlib
 import pandas as pd
 from datetime import date
 
@@ -31,16 +31,25 @@ def _admin_pw():
         pass
     return os.getenv("SETTLEMENT_ADMIN_PW", "1471028690")
 
+def _sat_token():
+    """세션 토큰 — 비밀번호 해시 기반 (URL 저장용)"""
+    return hashlib.sha256(f"mktip-sat-{_admin_pw()}".encode()).hexdigest()[:24]
+
+# 새로고침해도 로그인 유지: URL ?sat=<token> 확인
 if not st.session_state.get("settlement_auth"):
-    st.title("🔐 정산 관리 — 관리자 전용")
-    pw = st.text_input("비밀번호", type="password")
-    if st.button("로그인", type="primary"):
-        if pw == _admin_pw():
-            st.session_state.settlement_auth = True
-            st.rerun()
-        else:
-            st.error("비밀번호가 틀렸습니다.")
-    st.stop()
+    if st.query_params.get("sat", "") == _sat_token():
+        st.session_state.settlement_auth = True
+    else:
+        st.title("🔐 정산 관리 — 관리자 전용")
+        pw = st.text_input("비밀번호", type="password")
+        if st.button("로그인", type="primary"):
+            if pw == _admin_pw():
+                st.session_state.settlement_auth = True
+                st.query_params["sat"] = _sat_token()   # URL에 토큰 저장
+                st.rerun()
+            else:
+                st.error("비밀번호가 틀렸습니다.")
+        st.stop()
 
 # ── 스토리지 헬퍼 ─────────────────────────────────────────────────────────────
 def _load(p):
@@ -598,6 +607,7 @@ with hc2:
     st.write("")
     if st.button("로그아웃"):
         for k in ["settlement_auth","uploaded_df","upload_dbg"]: st.session_state.pop(k, None)
+        st.query_params.clear()
         st.rerun()
 
 _today      = date.today()
