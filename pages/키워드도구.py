@@ -3,6 +3,7 @@ import streamlit as st
 import re
 import os
 import sys
+import json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -351,6 +352,95 @@ def _kpi_bar(before, after, removed):
     )
 
 # ══════════════════════════════════════════════════════════════════════════════
+# AI 헬퍼 (키워드 추출기용)
+# ══════════════════════════════════════════════════════════════════════════════
+def _get_ai_client():
+    try:
+        api_key = ""
+        if hasattr(st, "secrets"):
+            api_key = st.secrets.get("OPENAI_API_KEY", "")
+        if not api_key:
+            api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            return None
+        from openai import OpenAI
+        return OpenAI(api_key=api_key)
+    except Exception:
+        return None
+
+def _fetch_page(url, timeout=8):
+    try:
+        import requests as _req
+        resp = _req.get(url, timeout=timeout,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; KeywordResearch/1.0)"})
+        resp.raise_for_status()
+        text = resp.text
+        text = re.sub(r'<style[^>]*>.*?</style>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'&[a-zA-Z]+;', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:4000]
+    except Exception as e:
+        return f"(URL 접속 실패: {e})"
+
+def _ai_extract(client, business_name, url, industry, hints, location, page_text, model):
+    sys_msg = (
+        "당신은 네이버/구글 검색광고 전문 키워드 플래너입니다. "
+        "업체 정보와 사이트 내용을 분석해서 실무에 바로 쓸 수 있는 "
+        "한국어 검색광고 키워드를 생성합니다. 반드시 JSON으로만 응답하세요."
+    )
+    loc_line  = f"\n지역 타깃: {location}" if location else ""
+    hint_line = f"\n메인 키워드 힌트: {hints}" if hints else ""
+    page_snip = page_text[:3000] if page_text and not page_text.startswith("(URL") else "(내용 추출 불가)"
+
+    usr_msg = f"""
+업체명: {business_name}
+URL: {url}
+업종: {industry or '자동 분석'}{loc_line}{hint_line}
+
+사이트 내용 (자동 추출):
+{page_snip}
+
+위 정보를 기반으로 네이버 검색광고용 키워드를 생성하세요.
+반드시 아래 JSON 형식으로만 응답하세요:
+
+{{
+  "service_summary": "서비스/상품 분석 결과 2~3문장",
+  "target_customer": "타깃 고객 분석 1문장",
+  "ad_categories": ["광고그룹 카테고리1", "카테고리2"],
+  "핵심키워드": ["키워드1", "키워드2"],
+  "롱테일키워드": ["키워드1", "키워드2"],
+  "질문형키워드": ["키워드1", "키워드2"],
+  "정보성키워드": ["키워드1", "키워드2"],
+  "계절트렌드키워드": ["키워드1"] 또는 "추천없음",
+  "경쟁사키워드": ["키워드1", "키워드2"],
+  "오탈자확장형": ["키워드1", "키워드2"]
+}}
+
+규칙:
+- ad_categories: 10~20개. 광고그룹으로 나눌 서비스/문제 영역 (키워드 유형이 아님)
+- 핵심키워드: 50개. 전환 의도 높은 직접 검색어
+- 롱테일키워드: 50개. 구체적 니즈 기반, 3~6단어 조합
+- 질문형키워드: 50개. 실제 검색자가 물어볼 자연스러운 질문형
+- 정보성키워드: 50개. 블로그/콘텐츠/SEO 활용
+- 계절트렌드키워드: 50개. 해당 없으면 "추천없음" 문자열
+- 경쟁사키워드: 10~20개. 동종업계 브랜드/업체명 후보
+- 오탈자확장형: 10~20개. 오탈자/유사발음/띄어쓰기 변형
+- 모든 키워드는 한국어, 실제 네이버 검색에서 쓸 법한 자연스러운 형태
+"""
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": sys_msg},
+            {"role": "user",   "content": usr_msg},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.7,
+    )
+    return json.loads(resp.choices[0].message.content)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE
 # ══════════════════════════════════════════════════════════════════════════════
 st.title("🔍 키워드 도구")
@@ -368,203 +458,189 @@ t_extract, t_combine, t_clean = st.tabs([
 with t_extract:
     col_in, col_opts, col_out = st.columns([2, 2, 3], gap="large")
 
+    # ── 입력 ─────────────────────────────────────────────────────────────
     with col_in:
         st.markdown("#### 입력")
-        ex_industry = st.text_input("업종", placeholder="예: 법률, 성형외과, 인테리어",
+        ex_biz  = st.text_input("업체명 *", placeholder="예: 법무법인 마케팁", key="ex_biz")
+        ex_url  = st.text_input("URL *",    placeholder="https://example.com",  key="ex_url")
+        ex_industry = st.text_input("업종 (선택)",
+                                    placeholder="예: 법률, 성형외과, 인테리어",
                                     key="ex_industry")
-        ex_kws_raw  = st.text_area("메인 키워드 (줄바꿈 구분)",
-                                   placeholder="이혼변호사\n상간녀소송\n재산분할",
-                                   height=200, key="ex_kws_raw")
-        ex_brand    = st.text_input("브랜드명 (브랜드형 생성 시)",
-                                    placeholder="예: 마케팁", key="ex_brand")
-        ex_comp     = st.text_input("경쟁사명 (경쟁사형 생성 시)",
-                                    placeholder="예: 타사이름", key="ex_comp")
+        ex_hints = st.text_area(
+            "메인 키워드 힌트 (선택)",
+            placeholder="이혼변호사\n상간녀소송\n재산분할\n\n비워도 URL 기반으로 자동 분석됩니다.",
+            height=140, key="ex_hints",
+        )
 
+    # ── 옵션 ─────────────────────────────────────────────────────────────
     with col_opts:
-        st.markdown("#### 생성 유형")
-        opt_conv  = st.checkbox("🟢 전환형",   value=True,  key="ex_conv")
-        opt_quest = st.checkbox("🟢 질문형",   value=True,  key="ex_quest")
-        opt_info  = st.checkbox("🟡 정보형",   value=False, key="ex_info")
-        opt_long  = st.checkbox("🟡 롱테일형", value=False, key="ex_long")
-        opt_brand = st.checkbox("🟡 브랜드형", value=False, key="ex_brand_opt")
-        opt_comp  = st.checkbox("🔴 경쟁사형", value=False, key="ex_comp_opt")
+        st.markdown("#### 분석 옵션")
+        ex_location = st.text_input("지역 타깃 (선택)",
+                                    placeholder="예: 서울, 인천, 전국",
+                                    key="ex_location")
+        ex_model_sel = st.selectbox(
+            "AI 모델",
+            ["gpt-4o-mini  (빠름·권장)", "gpt-4o  (정확·느림)"],
+            key="ex_model",
+        )
+        ex_model_id = "gpt-4o" if "gpt-4o  (정확" in ex_model_sel else "gpt-4o-mini"
 
         st.markdown("---")
-        st.markdown("#### 확장형 키워드")
-        opt_expand = st.checkbox("확장형 생성", value=False, key="ex_expand")
-        if opt_expand:
-            st.caption("• 숫자 → 한글/영문 발음 변환\n• 띄어쓰기 변형 추가")
-
+        st.markdown(
+            '<div style="font-size:12px;color:#6B7280;line-height:2;">'
+            '생성 항목<br>'
+            '📊 카테고리 추천 10~20개<br>'
+            '🟢 핵심 키워드 50개<br>'
+            '🟢 롱테일 키워드 50개<br>'
+            '🟢 질문형 키워드 50개<br>'
+            '🟡 정보성 키워드 50개<br>'
+            '🟡 계절/트렌드 키워드 50개<br>'
+            '🔴 경쟁사 키워드 10~20개<br>'
+            '🟡 오탈자/확장형 10~20개'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown("---")
-        run_extract = st.button("🚀 키워드 생성", type="primary",
+        run_extract = st.button("🚀 URL 분석 후 키워드 생성", type="primary",
                                 use_container_width=True, key="run_extract")
 
+    # ── 결과 ─────────────────────────────────────────────────────────────
     with col_out:
         st.markdown("#### 결과")
 
         if run_extract:
-            seeds = [k.strip() for k in ex_kws_raw.splitlines() if k.strip()]
-            if not seeds:
-                st.warning("메인 키워드를 입력해주세요.")
+            if not ex_biz.strip():
+                st.warning("업체명을 입력해주세요.")
+            elif not ex_url.strip():
+                st.warning("URL을 입력해주세요.")
             else:
-                sec = {}
-                sec["핵심"] = [(kw, "🟢") for kw in seeds]
-                for kw in seeds:
-                    if opt_conv:
-                        sec.setdefault("전환형",   []).extend(_gen_conv(kw))
-                    if opt_quest:
-                        sec.setdefault("질문형",   []).extend(_gen_quest(kw))
-                    if opt_info:
-                        sec.setdefault("정보형",   []).extend(_gen_info(kw))
-                    if opt_long:
-                        sec.setdefault("롱테일형", []).extend(_gen_longtail(kw))
-                    if opt_brand:
-                        sec.setdefault("브랜드형", []).extend(_gen_brand(kw, ex_brand))
-                    if opt_comp:
-                        sec.setdefault("경쟁사형", []).extend(_gen_competitor(kw, ex_comp))
-                    if opt_expand:
-                        sec.setdefault("확장형",   []).extend(_gen_expansion(kw))
-                st.session_state["ex_sections"] = sec
+                client = _get_ai_client()
+                if not client:
+                    st.error("OpenAI API 키가 없습니다. Streamlit Secrets에 OPENAI_API_KEY를 등록해주세요.")
+                else:
+                    with st.spinner("🔍 사이트 내용 분석 중..."):
+                        page_text = _fetch_page(ex_url.strip())
+                    with st.spinner("🤖 AI 키워드 생성 중... (30~60초 소요)"):
+                        try:
+                            result = _ai_extract(
+                                client,
+                                ex_biz.strip(), ex_url.strip(),
+                                ex_industry.strip(), ex_hints.strip(),
+                                ex_location.strip(), page_text,
+                                ex_model_id,
+                            )
+                            st.session_state["ex_ai_result"]  = result
+                            st.session_state.pop("ex_sections", None)
+                        except Exception as e:
+                            st.error(f"키워드 생성 실패: {e}")
 
-        sec = st.session_state.get("ex_sections", {})
-        if not sec:
-            st.caption("좌측에서 키워드를 입력하고 '키워드 생성'을 누르세요.")
+        result = st.session_state.get("ex_ai_result")
+        if not result:
+            st.caption("업체명·URL을 입력하고 '키워드 생성'을 누르세요.")
         else:
-            # ── 전체 요약 바 ───────────────────────────────────────────────
-            total    = sum(len(v) for v in sec.values())
-            green_n  = sum(1 for pairs in sec.values() for _, t in pairs if t == "🟢")
-            yellow_n = sum(1 for pairs in sec.values() for _, t in pairs if t == "🟡")
-            red_n    = sum(1 for pairs in sec.values() for _, t in pairs if t == "🔴")
+            # ── 서비스 분석 요약 ─────────────────────────────────────────
             st.markdown(
                 f'<div style="background:#F8FAFC;border:1.5px solid #E5E8ED;border-radius:12px;'
-                f'padding:12px 16px;margin-bottom:10px;">'
-                f'<div style="font-size:13px;font-weight:700;color:#111;margin-bottom:6px;">'
-                f'총 {total}개 생성됨</div>'
-                f'<div style="display:flex;gap:14px;font-size:12px;color:#374151;">'
-                f'<span>🟢 광고 추천 <b>{green_n}개</b></span>'
-                f'<span>🟡 테스트 <b>{yellow_n}개</b></span>'
-                + (f'<span>🔴 비추천 <b>{red_n}개</b></span>' if red_n else '')
-                + f'</div></div>',
+                f'padding:14px 18px;margin-bottom:12px;">'
+                f'<div style="font-size:11px;font-weight:700;color:#6B7280;margin-bottom:6px;">🔍 사이트 분석 결과</div>'
+                f'<div style="font-size:13px;color:#111;line-height:1.7;">{result.get("service_summary","")}</div>'
+                f'<div style="margin-top:8px;font-size:12px;color:#6B7280;">'
+                f'🎯 타깃: {result.get("target_customer","")}</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
 
-            # ── 전체 다운로드 + 조합기 보내기 ─────────────────────────────
-            all_kws = _all_kws(sec)
-            gc1, gc2, gc3 = st.columns(3)
-            with gc1:
-                st.download_button("⬇️ 전체 TXT", _txt_bytes(all_kws),
-                                   "keywords.txt", "text/plain", key="ex_dl_txt")
-            with gc2:
-                st.download_button("⬇️ 전체 CSV", _csv_bytes(sec),
-                                   "keywords.csv", "text/csv",   key="ex_dl_csv")
-            with gc3:
-                if st.button("➡️ 조합기로", use_container_width=True, key="ex_to_comb"):
-                    st.session_state["comb_import"] = "\n".join(
-                        k for k, _ in sec.get("핵심", [])
-                    )
-                    st.success("핵심 키워드 → 조합기 전달 완료")
+            # ── 카테고리 추천 (기본 펼침) ─────────────────────────────────
+            cats = result.get("ad_categories", [])
+            with st.expander(f"📊 광고그룹 카테고리 추천  ·  {len(cats)}개", expanded=True):
+                st.caption("아래 카테고리를 기준으로 광고그룹을 나누세요.")
+                tags_html = "".join(
+                    f'<span style="display:inline-block;background:#EFF6FF;color:#1D4ED8;'
+                    f'font-size:13px;font-weight:600;padding:5px 14px;border-radius:100px;'
+                    f'margin:4px 4px;">{c}</span>'
+                    for c in cats
+                )
+                st.markdown(f'<div style="line-height:2.4;">{tags_html}</div>',
+                            unsafe_allow_html=True)
+                if cats:
+                    st.download_button("⬇️ TXT", _txt_bytes(cats),
+                                       "categories.txt", "text/plain", key="ex_cat_txt")
 
-            st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
+            # ── 키워드 섹션 정의 ──────────────────────────────────────────
+            _SECS = [
+                ("핵심키워드",       "🟢", "핵심 키워드",        "전환 의도 높음 — 광고 ON 필수"),
+                ("롱테일키워드",     "🟢", "롱테일 키워드",      "구체적 니즈 — 볼륨 낮고 경쟁 약함"),
+                ("질문형키워드",     "🟢", "질문형 키워드",      "탐색 → 전환 흐름 — 랜딩 최적화 필요"),
+                ("정보성키워드",     "🟡", "정보성 키워드",      "블로그/콘텐츠/SEO 활용"),
+                ("계절트렌드키워드", "🟡", "계절/트렌드 키워드", "시즌·이슈 기반 — 선제적 세팅 권장"),
+                ("경쟁사키워드",     "🔴", "경쟁사 키워드",      "⚠️ 등록 전 광고 정책·법적 검토 필수"),
+                ("오탈자확장형",     "🟡", "오탈자/확장형",      "오탈자·변형 — 예산 소진 방어용"),
+            ]
 
-            # ── 카테고리 추천 (기본 펼침) ──────────────────────────────────
-            _CAT_META = {
-                "핵심":    ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
-                            "직접 전환 가능성 높음 — 광고 반드시 ON"),
-                "전환형":  ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
-                            "구매/상담 의도 명확 — CPA 효율 최우선"),
-                "질문형":  ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
-                            "정보 탐색 + 전환 혼합 — 볼륨 크고 경쟁 낮음"),
-                "정보형":  ("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
-                            "콘텐츠/블로그용 — 광고는 소량 테스트 먼저"),
-                "롱테일형":("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
-                            "세부 의도 파악 — 소량 테스트 권장"),
-                "브랜드형":("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
-                            "브랜드 인지도 확인 시 활용"),
-                "경쟁사형":("🔴 비추천",    "#FFF5F5", "#FCA5A5", "#DC2626",
-                            "광고 정책 위반 위험 — 주의 필요"),
-                "확장형":  ("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
-                            "오탈자/변형 포함 — 예산 소진 방어용"),
-            }
-            with st.expander("📊 카테고리 추천", expanded=True):
-                for sname, pairs in sec.items():
-                    kws  = [k for k, _ in pairs]
-                    meta = _CAT_META.get(sname, ("🟡 테스트", "#FFFBEB", "#FDE68A", "#92400E", ""))
-                    rec_lbl, bg, bd, tc, desc = meta
-                    st.markdown(
-                        f'<div style="background:{bg};border:1px solid {bd};border-radius:8px;'
-                        f'padding:10px 14px;margin-bottom:6px;'
-                        f'display:flex;justify-content:space-between;align-items:center;">'
-                        f'<div>'
-                        f'<span style="font-size:13px;font-weight:700;color:#111;">{sname}</span>'
-                        f'<span style="font-size:11px;color:#6B7280;'
-                        f'background:rgba(0,0,0,.05);padding:1px 7px;border-radius:100px;'
-                        f'margin-left:8px;">{len(kws)}개</span>'
-                        f'<div style="font-size:12px;color:#6B7280;margin-top:3px;">{desc}</div>'
-                        f'</div>'
-                        f'<span style="font-size:11px;font-weight:700;color:{tc};'
-                        f'white-space:nowrap;margin-left:12px;">{rec_lbl}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+            all_kws = []
+            for data_key, tag, display, desc in _SECS:
+                raw = result.get(data_key, [])
 
-            # ── 카테고리별 접힘/펼침 카드 ─────────────────────────────────
-            for sname, pairs in sec.items():
-                kws  = [k for k, _ in pairs] if pairs and isinstance(pairs[0], tuple) else list(pairs)
-                tags = [t for _, t in pairs] if pairs and isinstance(pairs[0], tuple) else []
-                tag  = tags[0] if tags else ""
-                g_n  = tags.count("🟢")
-                y_n  = tags.count("🟡")
-                r_n  = tags.count("🔴")
+                if isinstance(raw, str):
+                    with st.expander(f"{tag} {display}  ·  추천없음", expanded=False):
+                        st.caption("해당 업종은 이 유형의 키워드가 적합하지 않습니다.")
+                    continue
+                if not isinstance(raw, list) or not raw:
+                    continue
 
-                preview = ", ".join(kws[:5])
-                if len(kws) > 5:
-                    preview += f" 외 {len(kws)-5}개"
+                all_kws.extend(raw)
+                preview = ", ".join(raw[:5]) + (f" 외 {len(raw)-5}개" if len(raw) > 5 else "")
 
-                with st.expander(f"{tag} {sname}  ·  {len(kws)}개", expanded=False):
-                    # 대표 미리보기
+                with st.expander(f"{tag} {display}  ·  {len(raw)}개", expanded=False):
                     st.caption(f"대표: {preview}")
-
-                    # 내부 요약
-                    sm_parts = []
-                    if g_n: sm_parts.append(f"🟢 광고추천 {g_n}개")
-                    if y_n: sm_parts.append(f"🟡 테스트 {y_n}개")
-                    if r_n: sm_parts.append(f"🔴 비추천 {r_n}개")
                     st.markdown(
                         f'<div style="background:#F8FAFC;border-radius:6px;padding:5px 12px;'
-                        f'font-size:12px;color:#6B7280;margin-bottom:8px;">'
-                        + " &nbsp;|&nbsp; ".join(sm_parts or [f"총 {len(kws)}개"])
-                        + '</div>',
+                        f'font-size:12px;color:#6B7280;margin-bottom:8px;">{tag} {desc}</div>',
                         unsafe_allow_html=True,
                     )
+                    st.code("\n".join(raw), language=None)
 
-                    # 전체 키워드
-                    st.code("\n".join(kws), language=None)
-
-                    # 버튼
                     bc1, bc2, bc3 = st.columns(3)
                     with bc1:
-                        st.download_button(
-                            "⬇️ TXT", _txt_bytes(kws),
-                            f"{sname}.txt", "text/plain",
-                            key=f"ex_dtxt_{sname}",
-                        )
+                        st.download_button("⬇️ TXT", _txt_bytes(raw),
+                                           f"{display}.txt", "text/plain",
+                                           key=f"ex_dtxt_{data_key}")
                     with bc2:
-                        csv_data = ("키워드,추천도\n"
-                                    + "\n".join(f"{k},{t}" for k, t in pairs)).encode("utf-8-sig")
                         st.download_button(
-                            "⬇️ CSV", csv_data,
-                            f"{sname}.csv", "text/csv",
-                            key=f"ex_dcsv_{sname}",
+                            "⬇️ CSV",
+                            ("키워드\n" + "\n".join(raw)).encode("utf-8-sig"),
+                            f"{display}.csv", "text/csv",
+                            key=f"ex_dcsv_{data_key}",
                         )
                     with bc3:
-                        if st.button("➡️ 정리기로", key=f"ex_clean_{sname}",
+                        if st.button("➡️ 정리기로", key=f"ex_clean_{data_key}",
                                      use_container_width=True):
                             existing = st.session_state.get("clean_import", "")
-                            new_text = "\n".join(kws)
+                            new_text = "\n".join(raw)
                             st.session_state["clean_import"] = (
                                 existing + "\n" + new_text if existing else new_text
                             )
-                            st.success(f"{sname} → 정리기에 추가했습니다.")
+                            st.success(f"{display} → 정리기에 추가했습니다.")
+
+            # ── 전체 다운로드 + 조합기 보내기 ─────────────────────────────
+            if all_kws:
+                st.markdown("---")
+                gc1, gc2, gc3 = st.columns(3)
+                with gc1:
+                    st.download_button("⬇️ 전체 TXT", _txt_bytes(all_kws),
+                                       "keywords_all.txt", "text/plain", key="ex_all_txt")
+                with gc2:
+                    st.download_button(
+                        "⬇️ 전체 CSV",
+                        ("키워드\n" + "\n".join(all_kws)).encode("utf-8-sig"),
+                        "keywords_all.csv", "text/csv", key="ex_all_csv",
+                    )
+                with gc3:
+                    if st.button("➡️ 핵심→조합기", use_container_width=True, key="ex_to_comb"):
+                        core = result.get("핵심키워드", [])
+                        if isinstance(core, list):
+                            st.session_state["comb_import"] = "\n".join(core)
+                            st.success("핵심 키워드 → 조합기에 전달했습니다.")
 
 
 # ════════════════════════════════════════════════════════════════════════════
