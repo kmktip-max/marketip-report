@@ -427,33 +427,144 @@ with t_extract:
                 st.session_state["ex_sections"] = sec
 
         sec = st.session_state.get("ex_sections", {})
-        if sec:
-            total = sum(len(v) for v in sec.values())
-            parts = " · ".join(f"{k} {len(v)}개" for k, v in sec.items())
+        if not sec:
+            st.caption("좌측에서 키워드를 입력하고 '키워드 생성'을 누르세요.")
+        else:
+            # ── 전체 요약 바 ───────────────────────────────────────────────
+            total    = sum(len(v) for v in sec.values())
+            green_n  = sum(1 for pairs in sec.values() for _, t in pairs if t == "🟢")
+            yellow_n = sum(1 for pairs in sec.values() for _, t in pairs if t == "🟡")
+            red_n    = sum(1 for pairs in sec.values() for _, t in pairs if t == "🔴")
             st.markdown(
-                f'<div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;'
-                f'padding:10px 16px;margin-bottom:8px;">'
-                f'<b style="color:#1D4ED8;">총 {total}개</b>'
-                f'<span style="color:#6B7280;font-size:12px;margin-left:8px;">{parts}</span></div>',
+                f'<div style="background:#F8FAFC;border:1.5px solid #E5E8ED;border-radius:12px;'
+                f'padding:12px 16px;margin-bottom:10px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#111;margin-bottom:6px;">'
+                f'총 {total}개 생성됨</div>'
+                f'<div style="display:flex;gap:14px;font-size:12px;color:#374151;">'
+                f'<span>🟢 광고 추천 <b>{green_n}개</b></span>'
+                f'<span>🟡 테스트 <b>{yellow_n}개</b></span>'
+                + (f'<span>🔴 비추천 <b>{red_n}개</b></span>' if red_n else '')
+                + f'</div></div>',
                 unsafe_allow_html=True,
             )
-            for sname, pairs in sec.items():
-                _section(sname, pairs)
 
+            # ── 전체 다운로드 + 조합기 보내기 ─────────────────────────────
             all_kws = _all_kws(sec)
-            dc1, dc2, dc3 = st.columns(3)
-            with dc1:
-                st.download_button("⬇️ TXT", _txt_bytes(all_kws),
+            gc1, gc2, gc3 = st.columns(3)
+            with gc1:
+                st.download_button("⬇️ 전체 TXT", _txt_bytes(all_kws),
                                    "keywords.txt", "text/plain", key="ex_dl_txt")
-            with dc2:
-                st.download_button("⬇️ CSV", _csv_bytes(sec),
-                                   "keywords.csv", "text/csv", key="ex_dl_csv")
-            with dc3:
-                if st.button("➡️ 조합기로 보내기", use_container_width=True, key="ex_to_comb"):
+            with gc2:
+                st.download_button("⬇️ 전체 CSV", _csv_bytes(sec),
+                                   "keywords.csv", "text/csv",   key="ex_dl_csv")
+            with gc3:
+                if st.button("➡️ 조합기로", use_container_width=True, key="ex_to_comb"):
                     st.session_state["comb_import"] = "\n".join(
                         k for k, _ in sec.get("핵심", [])
                     )
-                    st.success("조합기 탭에 핵심 키워드를 전달했습니다.")
+                    st.success("핵심 키워드 → 조합기 전달 완료")
+
+            st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
+
+            # ── 카테고리 추천 (기본 펼침) ──────────────────────────────────
+            _CAT_META = {
+                "핵심":    ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
+                            "직접 전환 가능성 높음 — 광고 반드시 ON"),
+                "전환형":  ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
+                            "구매/상담 의도 명확 — CPA 효율 최우선"),
+                "질문형":  ("🟢 광고 추천", "#F0FFF4", "#86EFAC", "#16A34A",
+                            "정보 탐색 + 전환 혼합 — 볼륨 크고 경쟁 낮음"),
+                "정보형":  ("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
+                            "콘텐츠/블로그용 — 광고는 소량 테스트 먼저"),
+                "롱테일형":("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
+                            "세부 의도 파악 — 소량 테스트 권장"),
+                "브랜드형":("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
+                            "브랜드 인지도 확인 시 활용"),
+                "경쟁사형":("🔴 비추천",    "#FFF5F5", "#FCA5A5", "#DC2626",
+                            "광고 정책 위반 위험 — 주의 필요"),
+                "확장형":  ("🟡 테스트",    "#FFFBEB", "#FDE68A", "#92400E",
+                            "오탈자/변형 포함 — 예산 소진 방어용"),
+            }
+            with st.expander("📊 카테고리 추천", expanded=True):
+                for sname, pairs in sec.items():
+                    kws  = [k for k, _ in pairs]
+                    meta = _CAT_META.get(sname, ("🟡 테스트", "#FFFBEB", "#FDE68A", "#92400E", ""))
+                    rec_lbl, bg, bd, tc, desc = meta
+                    st.markdown(
+                        f'<div style="background:{bg};border:1px solid {bd};border-radius:8px;'
+                        f'padding:10px 14px;margin-bottom:6px;'
+                        f'display:flex;justify-content:space-between;align-items:center;">'
+                        f'<div>'
+                        f'<span style="font-size:13px;font-weight:700;color:#111;">{sname}</span>'
+                        f'<span style="font-size:11px;color:#6B7280;'
+                        f'background:rgba(0,0,0,.05);padding:1px 7px;border-radius:100px;'
+                        f'margin-left:8px;">{len(kws)}개</span>'
+                        f'<div style="font-size:12px;color:#6B7280;margin-top:3px;">{desc}</div>'
+                        f'</div>'
+                        f'<span style="font-size:11px;font-weight:700;color:{tc};'
+                        f'white-space:nowrap;margin-left:12px;">{rec_lbl}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            # ── 카테고리별 접힘/펼침 카드 ─────────────────────────────────
+            for sname, pairs in sec.items():
+                kws  = [k for k, _ in pairs] if pairs and isinstance(pairs[0], tuple) else list(pairs)
+                tags = [t for _, t in pairs] if pairs and isinstance(pairs[0], tuple) else []
+                tag  = tags[0] if tags else ""
+                g_n  = tags.count("🟢")
+                y_n  = tags.count("🟡")
+                r_n  = tags.count("🔴")
+
+                preview = ", ".join(kws[:5])
+                if len(kws) > 5:
+                    preview += f" 외 {len(kws)-5}개"
+
+                with st.expander(f"{tag} {sname}  ·  {len(kws)}개", expanded=False):
+                    # 대표 미리보기
+                    st.caption(f"대표: {preview}")
+
+                    # 내부 요약
+                    sm_parts = []
+                    if g_n: sm_parts.append(f"🟢 광고추천 {g_n}개")
+                    if y_n: sm_parts.append(f"🟡 테스트 {y_n}개")
+                    if r_n: sm_parts.append(f"🔴 비추천 {r_n}개")
+                    st.markdown(
+                        f'<div style="background:#F8FAFC;border-radius:6px;padding:5px 12px;'
+                        f'font-size:12px;color:#6B7280;margin-bottom:8px;">'
+                        + " &nbsp;|&nbsp; ".join(sm_parts or [f"총 {len(kws)}개"])
+                        + '</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # 전체 키워드
+                    st.code("\n".join(kws), language=None)
+
+                    # 버튼
+                    bc1, bc2, bc3 = st.columns(3)
+                    with bc1:
+                        st.download_button(
+                            "⬇️ TXT", _txt_bytes(kws),
+                            f"{sname}.txt", "text/plain",
+                            key=f"ex_dtxt_{sname}",
+                        )
+                    with bc2:
+                        csv_data = ("키워드,추천도\n"
+                                    + "\n".join(f"{k},{t}" for k, t in pairs)).encode("utf-8-sig")
+                        st.download_button(
+                            "⬇️ CSV", csv_data,
+                            f"{sname}.csv", "text/csv",
+                            key=f"ex_dcsv_{sname}",
+                        )
+                    with bc3:
+                        if st.button("➡️ 정리기로", key=f"ex_clean_{sname}",
+                                     use_container_width=True):
+                            existing = st.session_state.get("clean_import", "")
+                            new_text = "\n".join(kws)
+                            st.session_state["clean_import"] = (
+                                existing + "\n" + new_text if existing else new_text
+                            )
+                            st.success(f"{sname} → 정리기에 추가했습니다.")
 
 
 # ════════════════════════════════════════════════════════════════════════════
