@@ -13,7 +13,10 @@ except ImportError:
     pass
 
 from components.style import SIDEBAR_CSS
-from auth import verify_admin, verify_client, create_session, verify_session, delete_session
+from auth import (
+    verify_admin, verify_client, create_session, verify_session, delete_session,
+    register_pending, normalize_permissions, enabled_perm_keys, PERM_CATALOG,
+)
 
 try:
     from PIL import Image
@@ -42,7 +45,7 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 로그인 화면
+# 로그인 / 회원가입 화면
 # ══════════════════════════════════════════════════════════════════════════════
 def _login_page():
     st.markdown("""
@@ -67,7 +70,11 @@ section[data-testid="stSidebar"] { display: none !important; }
   <div style="font-size:13px;color:#6B7280;margin-top:6px;">광고 운영 관리 시스템</div>
 </div>""", unsafe_allow_html=True)
 
-        tab_admin, tab_client = st.tabs(["🔑  관리자 로그인", "🏢  광고주 로그인"])
+        tab_admin, tab_client, tab_join = st.tabs([
+            "🔑  관리자 로그인",
+            "🏢  광고주 로그인",
+            "📝  광고주 가입 신청",
+        ])
 
         with tab_admin:
             a_id = st.text_input("아이디", key="la_id", placeholder="관리자 아이디")
@@ -96,25 +103,64 @@ section[data-testid="stSidebar"] { display: none !important; }
             if st.button("로그인", type="primary", use_container_width=True, key="lc_btn"):
                 client = verify_client(c_id.strip(), c_pw)
                 if client:
-                    token = create_session(
-                        c_id.strip(), "client",
-                        client.get("permissions", []), client,
-                    )
+                    perms_dict  = normalize_permissions(client.get("permissions", {}))
+                    perm_keys   = enabled_perm_keys(perms_dict)
+                    token = create_session(c_id.strip(), "client", perm_keys, client)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "client",
                         "auth_username":    c_id.strip(),
                         "auth_client":      client,
-                        "auth_permissions": client.get("permissions", []),
+                        "auth_permissions": perm_keys,
                         "_session_token":   token,
                     })
                     st.query_params["token"] = token
                     st.rerun()
                 else:
-                    st.error("아이디 또는 비밀번호를 확인해주세요.")
+                    acc_list = __import__("auth", fromlist=["load_accounts"]).load_accounts()
+                    pending  = next((a for a in acc_list if a.get("username") == c_id.strip()
+                                     and not a.get("approved", True)), None)
+                    if pending:
+                        st.warning("가입 승인 대기 중입니다. 관리자 승인 후 로그인 가능합니다.")
+                    else:
+                        st.error("아이디 또는 비밀번호를 확인해주세요.")
+
+        with tab_join:
+            st.caption("가입 신청 후 관리자 승인을 받으면 서비스를 이용할 수 있습니다.")
+            with st.form("join_form", clear_on_submit=True):
+                j_biz     = st.text_input("업체명 *",    placeholder="예: 법무법인 재현")
+                j_contact = st.text_input("담당자명 *",  placeholder="예: 홍길동")
+                j_id      = st.text_input("아이디 *",    placeholder="영문+숫자 조합")
+                j_pw1     = st.text_input("비밀번호 *",  type="password")
+                j_pw2     = st.text_input("비밀번호 확인 *", type="password")
+                j_phone   = st.text_input("연락처 (선택)", placeholder="010-0000-0000")
+
+                if st.form_submit_button("가입 신청", type="primary",
+                                         use_container_width=True):
+                    if not j_biz.strip():
+                        st.error("업체명을 입력해주세요.")
+                    elif not j_contact.strip():
+                        st.error("담당자명을 입력해주세요.")
+                    elif not j_id.strip():
+                        st.error("아이디를 입력해주세요.")
+                    elif not j_pw1:
+                        st.error("비밀번호를 입력해주세요.")
+                    elif j_pw1 != j_pw2:
+                        st.error("비밀번호가 일치하지 않습니다.")
+                    else:
+                        ok, msg = register_pending(
+                            j_biz, j_id, j_pw1, j_contact, j_phone
+                        )
+                        if ok:
+                            st.success(
+                                "✅ 가입 신청이 완료됐습니다.\n\n"
+                                "관리자 승인 후 로그인 탭에서 접속하세요."
+                            )
+                        else:
+                            st.error(msg)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 세션 복원 — URL 토큰으로 복원 (F5 포함)
+# 세션 복원
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.get("authenticated"):
     token = st.query_params.get("token", "")
@@ -130,18 +176,12 @@ if not st.session_state.get("authenticated"):
                 "settlement_auth":  sess["user_type"] == "admin",
                 "_session_token":   token,
             })
-            # st.rerun() 제거 — rerun하면 Streamlit이 페이지 컨텍스트를 잃고
-            # 첫 번째 페이지로 이동함. 스크립트를 그대로 계속 실행하면 URL 경로 유지.
 
 if not st.session_state.get("authenticated"):
     _login_page()
     st.stop()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 토큰을 URL에 항상 유지 (페이지 이동 후에도 F5 동작 보장)
-# st.page_link 이동 시 URL에서 ?token=... 이 사라지므로
-# 매 렌더마다 세션 토큰을 URL에 다시 씁니다.
-# ══════════════════════════════════════════════════════════════════════════════
+# URL 에 토큰 항상 유지 (페이지 이동 후 F5 대비)
 _active_token = st.session_state.get("_session_token", "")
 if _active_token and st.query_params.get("token", "") != _active_token:
     st.query_params["token"] = _active_token
@@ -152,12 +192,6 @@ auth_perms = st.session_state.get("auth_permissions", [])
 # ══════════════════════════════════════════════════════════════════════════════
 # 네비게이션 구성
 # ══════════════════════════════════════════════════════════════════════════════
-_PERM_PAGES = [
-    ("structure_consulting", "pages/광고분석컨설팅.py", "광고구조 컨설팅"),
-    ("report_view",          "pages/월간보고서.py",     "월간보고서"),
-    ("payback",              "pages/페이백신청.py",     "광고비 페이백신청"),
-]
-
 if auth_type == "admin":
     pg = st.navigation([
         st.Page("pages/광고분석컨설팅.py", title="광고구조 컨설팅"),
@@ -170,16 +204,17 @@ if auth_type == "admin":
         st.Page("pages/계정관리.py",      title="계정관리"),
     ])
 else:
-    client_pages = [
-        st.Page(path, title=title)
-        for perm, path, title in _PERM_PAGES
-        if perm in auth_perms
-    ]
+    # 권한 있는 페이지만 navigation에 추가
+    client_pages = []
+    for perm_key, (path, title, _icon) in PERM_CATALOG.items():
+        if perm_key in auth_perms:
+            client_pages.append(st.Page(path, title=title))
+
     if not client_pages:
         st.warning("접근 가능한 메뉴가 없습니다. 관리자에게 문의하세요.")
         if st.button("🚪  로그아웃"):
-            st.session_state.clear()
             st.query_params.clear()
+            st.session_state.clear()
             st.rerun()
         st.stop()
     pg = st.navigation(client_pages)
@@ -237,11 +272,9 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
         st.markdown('<span class="sb-label">내 메뉴</span>', unsafe_allow_html=True)
-        for perm, path, title in _PERM_PAGES:
-            if perm in auth_perms:
-                icons = {"structure_consulting":"📈","report_view":"📩","payback":"💸"}
-                st.page_link(path, label=f"{icons.get(perm,'')}  {title}",
-                             use_container_width=True)
+        for perm_key, (path, title, icon) in PERM_CATALOG.items():
+            if perm_key in auth_perms:
+                st.page_link(path, label=f"{icon}  {title}", use_container_width=True)
 
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
     uname = "관리자" if auth_type == "admin" else st.session_state.get("auth_username", "")
