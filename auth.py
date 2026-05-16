@@ -8,6 +8,13 @@ from datetime import date
 ROOT = os.path.dirname(os.path.abspath(__file__))
 F_ACCOUNTS = os.path.join(ROOT, "client_accounts.json")
 
+# .env 로드 (app.py 로드보다 먼저 실행될 수 있으므로 여기서도 독립 로드)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(ROOT, ".env"))
+except Exception:
+    pass
+
 # ── 유틸 ──────────────────────────────────────────────────────────────────
 def _hash(pw):
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
