@@ -133,6 +133,7 @@ if auth_type == "admin":
         st.Page("pages/광고주관리.py",    title="광고주관리"),
         st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
         st.Page("pages/키워드도구.py",    title="키워드도구"),
+        st.Page("pages/광고소재.py",      title="광고소재생성기"),
         st.Page("pages/정산관리.py",      title="정산관리"),
         st.Page("pages/계정관리.py",      title="계정관리"),
     ])
@@ -183,7 +184,8 @@ with st.sidebar:
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
-        st.page_link("pages/키워드도구.py", label="🔍  키워드 도구", use_container_width=True)
+        st.page_link("pages/키워드도구.py", label="🔍  키워드 도구",       use_container_width=True)
+        st.page_link("pages/광고소재.py",   label="✍️  광고 소재 생성기",  use_container_width=True)
 
         st.markdown("""
 <div style="padding:12px 20px 8px;margin-top:8px;">
