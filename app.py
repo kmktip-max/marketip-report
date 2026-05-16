@@ -66,7 +66,7 @@ section[data-testid="stSidebar"] { display: none !important; }
 
         st.markdown("""
 <div style="text-align:center;margin:16px 0 32px;">
-  <div style="font-size:28px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 OS</div>
+  <div style="font-size:28px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 전용</div>
   <div style="font-size:13px;color:#6B7280;margin-top:6px;">광고 운영 관리 시스템</div>
 </div>""", unsafe_allow_html=True)
 
