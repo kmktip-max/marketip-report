@@ -427,7 +427,7 @@ with col_in:
     industry   = st.text_input("업종 *", placeholder="예: 이혼전문변호사, 피부과, 헬스장")
     url        = st.text_input("랜딩페이지 URL (선택)", placeholder="https://...")
     strengths  = st.multiselect("서비스 강점 (복수 가능)", _STRENGTHS)
-    target     = st.multiselect("주 고객층 (복수 가능)",   _TARGETS)
+    target     = st.text_input("주 고객층", placeholder="예: 30~40대 직장인 여성, 이혼 고민 중인 분")
     goal       = st.selectbox("광고 목표", ["선택"] + _GOALS)
     budget     = st.selectbox("광고 예산", ["선택"] + _BUDGETS)
     extra      = st.text_area("추가 정보 (선택)", height=80,
