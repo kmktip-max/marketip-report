@@ -20,17 +20,6 @@ try:
 except ImportError:
     Image = None
 
-try:
-    from streamlit_cookies_controller import CookieController
-    _cookie = CookieController()
-    _COOKIE_KEY = "mktip_auth"
-    _COOKIE_MAX_AGE = 7 * 24 * 3600   # 7일
-    _USE_COOKIE = True
-except Exception:
-    _cookie = None
-    _COOKIE_KEY = "mktip_auth"
-    _USE_COOKIE = False
-
 LOGO_PATH = next(
     (os.path.join(ROOT, f) for f in ["logo2.png", "logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]
      if os.path.exists(os.path.join(ROOT, f))),
@@ -53,29 +42,43 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 쿠키 읽기 헬퍼
+# 쿠키 컨트롤러 초기화
 # ══════════════════════════════════════════════════════════════════════════════
-def _get_cookie_token():
-    if _USE_COOKIE and _cookie:
-        try:
-            return _cookie.get(_COOKIE_KEY) or ""
-        except Exception:
-            pass
-    return ""
+_COOKIE_KEY = "mktip_auth"
+_COOKIE_MAX_AGE = 7 * 24 * 3600
 
-def _set_cookie_token(token):
-    if _USE_COOKIE and _cookie:
-        try:
-            _cookie.set(_COOKIE_KEY, token, max_age=_COOKIE_MAX_AGE)
-        except Exception:
-            pass
+try:
+    from streamlit_cookies_controller import CookieController
+    _cookie = CookieController()
+    _USE_COOKIE = True
+except Exception:
+    _cookie = None
+    _USE_COOKIE = False
 
-def _remove_cookie_token():
-    if _USE_COOKIE and _cookie:
-        try:
-            _cookie.remove(_COOKIE_KEY)
-        except Exception:
-            pass
+def _cookie_get_all():
+    """쿠키 전체 반환. None=아직 로드 안됨, {}=로드됐지만 없음."""
+    if not _USE_COOKIE:
+        return {}
+    try:
+        return _cookie.getAll()
+    except Exception:
+        return {}
+
+def _cookie_set(token: str):
+    if not _USE_COOKIE:
+        return
+    try:
+        _cookie.set(_COOKIE_KEY, token, max_age=_COOKIE_MAX_AGE)
+    except Exception:
+        pass
+
+def _cookie_remove():
+    if not _USE_COOKIE:
+        return
+    try:
+        _cookie.remove(_COOKIE_KEY)
+    except Exception:
+        pass
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 로그인 화면
@@ -91,7 +94,6 @@ section[data-testid="stSidebar"] { display: none !important; }
     _, cc, _ = st.columns([1, 1.1, 1])
     with cc:
         st.markdown("<div style='height:60px;'></div>", unsafe_allow_html=True)
-
         if LOGO_PATH and Image:
             try:
                 st.image(LOGO_PATH, width=110)
@@ -113,7 +115,7 @@ section[data-testid="stSidebar"] { display: none !important; }
             if st.button("로그인", type="primary", use_container_width=True, key="la_btn"):
                 if verify_admin(a_id.strip(), a_pw):
                     token = create_session(a_id.strip(), "admin", ["all"])
-                    _set_cookie_token(token)
+                    _cookie_set(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "admin",
@@ -137,7 +139,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         c_id.strip(), "client",
                         client.get("permissions", []), client,
                     )
-                    _set_cookie_token(token)
+                    _cookie_set(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "client",
@@ -151,10 +153,24 @@ section[data-testid="stSidebar"] { display: none !important; }
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 인증 복원 (쿠키 → session_state)
+# 세션 복원 (쿠키 기반)
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.get("authenticated"):
-    token = _get_cookie_token()
+
+    all_cookies = _cookie_get_all()
+
+    if all_cookies is None:
+        # 쿠키 컨트롤러가 아직 브라우저에서 값을 받아오지 못한 첫 번째 렌더.
+        # 로그인 페이지 대신 로딩 화면을 보여줘서 flash 방지.
+        st.markdown(
+            '<div style="display:flex;justify-content:center;align-items:center;height:70vh;">'
+            '<span style="font-size:14px;color:#9CA3AF;">인증 확인 중...</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
+    token = all_cookies.get(_COOKIE_KEY, "")
     if token:
         sess = verify_session(token)
         if sess:
@@ -169,7 +185,7 @@ if not st.session_state.get("authenticated"):
             })
             st.rerun()
         else:
-            _remove_cookie_token()
+            _cookie_remove()
 
 if not st.session_state.get("authenticated"):
     _login_page()
@@ -222,7 +238,7 @@ st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 def _logout():
     delete_session(st.session_state.get("_session_token"))
-    _remove_cookie_token()
+    _cookie_remove()
     st.session_state.clear()
     st.rerun()
 
