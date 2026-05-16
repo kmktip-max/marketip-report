@@ -103,6 +103,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_permissions": ["all"],
                         "settlement_auth":  True,
                         "_session_token":   token,
+                        "user_id":          "admin",   # 광고분석컨설팅 무제한
                     })
                     st.query_params["token"] = token
                     st.rerun()
@@ -126,6 +127,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_client":      client,
                         "auth_permissions": perm_keys,
                         "_session_token":   token,
+                        "user_id":          c_id.strip(),  # 광고분석컨설팅 월 3회 제한
                     })
                     st.query_params["token"] = token
                     st.rerun()
@@ -180,14 +182,16 @@ if not st.session_state.get("authenticated"):
     if token:
         sess = verify_session(token)
         if sess:
+            is_adm = sess["user_type"] == "admin"
             st.session_state.update({
                 "authenticated":    True,
                 "auth_type":        sess["user_type"],
                 "auth_username":    sess["username"],
                 "auth_permissions": sess["permissions"],
                 "auth_client":      sess.get("client_data", {}),
-                "settlement_auth":  sess["user_type"] == "admin",
+                "settlement_auth":  is_adm,
                 "_session_token":   token,
+                "user_id":          "admin" if is_adm else sess["username"],
             })
 
 if not st.session_state.get("authenticated"):
