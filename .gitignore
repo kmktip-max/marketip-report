@@ -1,5 +1,6 @@
 .env
 .streamlit/secrets.toml
+sessions.json
 __pycache__/
 *.pyc
 .DS_Store

@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 from components.style import SIDEBAR_CSS
-from auth import verify_admin, verify_client
+from auth import verify_admin, verify_client, create_session, verify_session, delete_session
 
 try:
     from PIL import Image
@@ -78,13 +78,16 @@ section[data-testid="stSidebar"] { display: none !important; }
                                  placeholder="관리자 비밀번호")
             if st.button("로그인", type="primary", use_container_width=True, key="la_btn"):
                 if verify_admin(a_id.strip(), a_pw):
+                    token = create_session(a_id.strip(), "admin", ["all"])
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "admin",
                         "auth_username":    a_id.strip(),
                         "auth_permissions": ["all"],
-                        "settlement_auth":  True,   # 기존 정산관리 인증 자동 통과
+                        "settlement_auth":  True,
+                        "_session_token":   token,
                     })
+                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
@@ -96,20 +99,43 @@ section[data-testid="stSidebar"] { display: none !important; }
             if st.button("로그인", type="primary", use_container_width=True, key="lc_btn"):
                 client = verify_client(c_id.strip(), c_pw)
                 if client:
+                    token = create_session(
+                        c_id.strip(), "client",
+                        client.get("permissions", []), client,
+                    )
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "client",
                         "auth_username":    c_id.strip(),
                         "auth_client":      client,
                         "auth_permissions": client.get("permissions", []),
+                        "_session_token":   token,
                     })
+                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 인증 확인
+# 인증 확인 (세션 토큰으로 새로고침 유지)
 # ══════════════════════════════════════════════════════════════════════════════
+if not st.session_state.get("authenticated"):
+    # URL 쿼리 파라미터에 토큰이 있으면 자동 복원
+    token = st.query_params.get("token", "")
+    if token:
+        sess = verify_session(token)
+        if sess:
+            st.session_state.update({
+                "authenticated":    True,
+                "auth_type":        sess["user_type"],
+                "auth_username":    sess["username"],
+                "auth_permissions": sess["permissions"],
+                "auth_client":      sess.get("client_data", {}),
+                "settlement_auth":  sess["user_type"] == "admin",
+                "_session_token":   token,
+            })
+            st.rerun()
+
 if not st.session_state.get("authenticated"):
     _login_page()
     st.stop()
@@ -160,6 +186,8 @@ st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 # 사이드바
 # ══════════════════════════════════════════════════════════════════════════════
 def _logout():
+    delete_session(st.session_state.get("_session_token"))
+    st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 

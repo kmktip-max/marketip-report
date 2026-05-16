@@ -2,11 +2,13 @@
 import hashlib
 import json
 import os
+import time
 import uuid
 from datetime import date
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT       = os.path.dirname(os.path.abspath(__file__))
 F_ACCOUNTS = os.path.join(ROOT, "client_accounts.json")
+F_SESSIONS = os.path.join(ROOT, "sessions.json")
 
 # .env 로드 (app.py 로드보다 먼저 실행될 수 있으므로 여기서도 독립 로드)
 try:
@@ -98,3 +100,64 @@ def delete_account(username):
         save_accounts(new)
         return True
     return False
+
+# ── 세션 관리 (새로고침 유지) ─────────────────────────────────────────────
+_SESSION_DAYS = 7   # 세션 유효 기간
+
+def _load_sessions():
+    try:
+        if os.path.exists(F_SESSIONS):
+            with open(F_SESSIONS, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_sessions(data):
+    with open(F_SESSIONS, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+def create_session(username, user_type, permissions, client_data=None):
+    """로그인 성공 시 세션 토큰 생성 후 저장, 토큰 반환"""
+    secret = os.getenv("SESSION_SECRET", "mktip_session_key_2026")
+    token  = hashlib.sha256(
+        f"{username}{user_type}{time.time()}{secret}".encode("utf-8")
+    ).hexdigest()
+
+    now      = time.time()
+    sessions = _load_sessions()
+    # 만료된 세션 정리
+    sessions = {k: v for k, v in sessions.items() if v.get("expires_at", 0) > now}
+    sessions[token] = {
+        "username":    username,
+        "user_type":   user_type,
+        "permissions": permissions,
+        "client_data": client_data or {},
+        "created_at":  now,
+        "expires_at":  now + 86400 * _SESSION_DAYS,
+    }
+    _save_sessions(sessions)
+    return token
+
+def verify_session(token):
+    """토큰이 유효하면 세션 dict 반환, 아니면 None"""
+    if not token:
+        return None
+    sessions = _load_sessions()
+    sess = sessions.get(token)
+    if not sess:
+        return None
+    if sess.get("expires_at", 0) < time.time():
+        del sessions[token]
+        _save_sessions(sessions)
+        return None
+    return sess
+
+def delete_session(token):
+    """로그아웃 시 세션 삭제"""
+    if not token:
+        return
+    sessions = _load_sessions()
+    if token in sessions:
+        del sessions[token]
+        _save_sessions(sessions)
