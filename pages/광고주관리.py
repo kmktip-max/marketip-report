@@ -7,24 +7,9 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# ── 관리자 인증 ───────────────────────────────────────────────────────────────
-def _admin_pw():
-    try:
-        if hasattr(st, "secrets") and "SETTLEMENT_ADMIN_PW" in st.secrets:
-            return str(st.secrets["SETTLEMENT_ADMIN_PW"])
-    except Exception:
-        pass
-    return os.getenv("SETTLEMENT_ADMIN_PW", "1471028690")
-
-if not st.session_state.get("settlement_auth"):
-    st.title("🔐 광고주 관리 — 관리자 전용")
-    pw = st.text_input("비밀번호", type="password")
-    if st.button("로그인", type="primary"):
-        if pw == _admin_pw():
-            st.session_state.settlement_auth = True
-            st.rerun()
-        else:
-            st.error("비밀번호가 틀렸습니다.")
+# ── 관리자 전용 ───────────────────────────────────────────────────────────────
+if st.session_state.get("auth_type") != "admin":
+    st.error("🔒 관리자만 접근 가능합니다.")
     st.stop()
 
 # ── 경로 ─────────────────────────────────────────────────────────────────────
