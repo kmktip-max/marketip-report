@@ -124,21 +124,42 @@ button[aria-label="View fullscreen"] { display: none !important; }
     font-weight: 700 !important;
 }
 
-/* ══ 페이백신청 상시 강조 ══════════════════════════════════════════════ */
-.payback-marker + div [data-testid="stPageLink"] a,
-div:has(> .payback-marker) + div [data-testid="stPageLink"] a {
-    font-weight: 700 !important;
-    color: #1D4ED8 !important;
-}
-.payback-marker + div [data-testid="stPageLink"] a:hover,
-div:has(> .payback-marker) + div [data-testid="stPageLink"] a:hover {
-    background: #EFF6FF !important;
-}
+/* ══ 페이백신청 CTA 강조 ════════════════════════════════════════════════
+   Streamlit DOM: stElementContainer:has(.payback-marker) + stElementContainer
+   stPageLink a
+   ══════════════════════════════════════════════════════════════════════ */
 .payback-marker {
-    display: none;
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
     height: 0;
     margin: 0;
     padding: 0;
+}
+
+[data-testid="stElementContainer"]:has(.payback-marker)
+  + [data-testid="stElementContainer"]
+  [data-testid="stPageLink"] a {
+    background: #2563EB !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    padding: 0 18px !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.25) !important;
+    transition: background .15s, box-shadow .15s !important;
+}
+[data-testid="stElementContainer"]:has(.payback-marker)
+  + [data-testid="stElementContainer"]
+  [data-testid="stPageLink"] a:hover {
+    background: #3B82F6 !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(37,99,235,0.35) !important;
+}
+[data-testid="stElementContainer"]:has(.payback-marker)
+  + [data-testid="stElementContainer"]
+  [data-testid="stPageLink"] a[aria-current="page"] {
+    background: #1D4ED8 !important;
+    color: #ffffff !important;
 }
 
 /* ══ 사이드바 하단 영역 ══════════════════════════════════════════════ */
