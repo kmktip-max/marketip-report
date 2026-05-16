@@ -125,13 +125,20 @@ button[aria-label="View fullscreen"] { display: none !important; }
 }
 
 /* ══ 페이백신청 상시 강조 ══════════════════════════════════════════════ */
-#section-payback ~ div [data-testid="stPageLink"] a {
+.payback-marker + div [data-testid="stPageLink"] a,
+div:has(> .payback-marker) + div [data-testid="stPageLink"] a {
     font-weight: 700 !important;
-    color: #0055E0 !important;
+    color: #1D4ED8 !important;
 }
-#section-payback ~ div [data-testid="stPageLink"] a:hover,
-#section-payback ~ div [data-testid="stPageLink"] a[aria-current="page"] {
-    background: #EEF2F7 !important;
+.payback-marker + div [data-testid="stPageLink"] a:hover,
+div:has(> .payback-marker) + div [data-testid="stPageLink"] a:hover {
+    background: #EFF6FF !important;
+}
+.payback-marker {
+    display: none;
+    height: 0;
+    margin: 0;
+    padding: 0;
 }
 
 /* ══ 사이드바 하단 영역 ══════════════════════════════════════════════ */

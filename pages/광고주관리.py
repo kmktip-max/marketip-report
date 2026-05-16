@@ -99,7 +99,7 @@ def _badge(status):
 def _client_selector(tab_key):
     clients = load_clients()
     if not clients:
-        st.info("광고주 목록 탭에서 먼저 광고주를 등록해주세요.")
+        st.info("등록된 광고주가 없습니다.")
         return None, None
     names = [c["name"] for c in clients]
     default_idx = 0
@@ -125,8 +125,7 @@ with hc2:
         st.rerun()
 
 # ── 탭 ───────────────────────────────────────────────────────────────────────
-t_list, t_report, t_spend, t_rebate, t_improve, t_request = st.tabs([
-    "📋 광고주 목록",
+t_report, t_spend, t_rebate, t_improve, t_request = st.tabs([
     "📄 광고 리포트",
     "💰 광고비 흐름",
     "💸 리베이트",
@@ -135,156 +134,7 @@ t_list, t_report, t_spend, t_rebate, t_improve, t_request = st.tabs([
 ])
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 1. 광고주 목록
-# ═════════════════════════════════════════════════════════════════════════════
-with t_list:
-    st.subheader("광고주 목록")
-
-    clients = load_clients()
-
-    # ── 등록 폼 ───────────────────────────────────────────────────────────
-    with st.expander("➕ 광고주 등록", expanded=False):
-        with st.form("add_client", clear_on_submit=True):
-            nc1, nc2, nc3 = st.columns(3)
-            with nc1:
-                n_name     = st.text_input("광고주명 *")
-                n_contact  = st.text_input("담당자명")
-                n_email    = st.text_input("이메일")
-                n_phone    = st.text_input("연락처")
-            with nc2:
-                n_industry = st.text_input("업종")
-                n_ad_id    = st.text_input("광고 계정 ID")
-                n_cid      = st.text_input("CustomerID")
-                n_ano      = st.text_input("AdAccountNo")
-            with nc3:
-                n_status   = st.selectbox("이관 상태", TRANSFER_STATUSES)
-                n_rebate   = st.number_input("리베이트율(%)", 0.0, 100.0, 0.0, 0.1)
-                n_contract = st.date_input("계약 시작일", value=date.today())
-                n_memo     = st.text_area("메모", height=80)
-
-            if st.form_submit_button("저장", type="primary"):
-                if not n_name.strip():
-                    st.error("광고주명은 필수입니다.")
-                else:
-                    clients.append({
-                        "client_id":       str(uuid.uuid4()),
-                        "name":            n_name.strip(),
-                        "contact_name":    n_contact.strip(),
-                        "email":           n_email.strip(),
-                        "phone":           n_phone.strip(),
-                        "industry":        n_industry.strip(),
-                        "ad_account_id":   n_ad_id.strip(),
-                        "customer_id":     n_cid.strip(),
-                        "ad_account_no":   n_ano.strip(),
-                        "transfer_status": n_status,
-                        "rebate_rate":     n_rebate,
-                        "contract_start":  str(n_contract),
-                        "memo":            n_memo.strip(),
-                        "created_at":      str(date.today()),
-                    })
-                    save_clients(clients)
-                    st.success(f"✅ {n_name.strip()} 등록 완료")
-                    st.rerun()
-
-    # ── 목록 ──────────────────────────────────────────────────────────────
-    if not clients:
-        st.info("등록된 광고주가 없습니다. 위에서 등록해주세요.")
-    else:
-        lc1, lc2 = st.columns([2, 5])
-        with lc1:
-            filter_status = st.selectbox("상태 필터", ["전체"] + TRANSFER_STATUSES, key="cl_filter")
-        filtered = clients if filter_status == "전체" else [
-            c for c in clients if c.get("transfer_status") == filter_status
-        ]
-        st.caption(f"총 {len(filtered)}개 광고주")
-
-        for cl in filtered:
-            lrc1, lrc2, lrc3, lrc4 = st.columns([3, 2, 2, 1])
-            with lrc1:
-                st.markdown(
-                    f"**{cl['name']}** &nbsp;"
-                    f"<small style='color:#6B7280;'>{cl.get('industry','')}</small>",
-                    unsafe_allow_html=True,
-                )
-                st.caption(f"담당: {cl.get('contact_name','—')} | {cl.get('phone','—')}")
-            with lrc2:
-                st.markdown(_badge(cl.get("transfer_status", "—")), unsafe_allow_html=True)
-                st.caption(f"리베이트 {cl.get('rebate_rate', 0):.1f}%")
-            with lrc3:
-                st.caption(f"계약: {cl.get('contract_start','—')}")
-                st.caption(f"CID: {cl.get('customer_id','—')}")
-            with lrc4:
-                if st.button("선택", key=f"sel_{cl['client_id']}"):
-                    st.session_state["selected_client_id"] = cl["client_id"]
-                    st.rerun()
-            st.divider()
-
-        # ── 수정/삭제 ────────────────────────────────────────────────────
-        sel_id = st.session_state.get("selected_client_id")
-        if sel_id:
-            sel_cl = next((c for c in clients if c["client_id"] == sel_id), None)
-            if sel_cl:
-                with st.expander(f"✏️ {sel_cl['name']} 수정", expanded=True):
-                    with st.form("edit_client"):
-                        ec1, ec2, ec3 = st.columns(3)
-                        with ec1:
-                            e_name    = st.text_input("광고주명 *",  value=sel_cl.get("name",""))
-                            e_contact = st.text_input("담당자명",    value=sel_cl.get("contact_name",""))
-                            e_email   = st.text_input("이메일",      value=sel_cl.get("email",""))
-                            e_phone   = st.text_input("연락처",      value=sel_cl.get("phone",""))
-                        with ec2:
-                            e_industry = st.text_input("업종",       value=sel_cl.get("industry",""))
-                            e_ad_id    = st.text_input("광고 계정 ID", value=sel_cl.get("ad_account_id",""))
-                            e_cid      = st.text_input("CustomerID", value=sel_cl.get("customer_id",""))
-                            e_ano      = st.text_input("AdAccountNo",value=sel_cl.get("ad_account_no",""))
-                        with ec3:
-                            cur_st = sel_cl.get("transfer_status", TRANSFER_STATUSES[0])
-                            e_status  = st.selectbox("이관 상태", TRANSFER_STATUSES,
-                                                     index=TRANSFER_STATUSES.index(cur_st) if cur_st in TRANSFER_STATUSES else 0)
-                            e_rebate  = st.number_input("리베이트율(%)", 0.0, 100.0,
-                                                        float(sel_cl.get("rebate_rate", 0)), 0.1)
-                            try:
-                                e_contract = st.date_input("계약 시작일",
-                                                           value=date.fromisoformat(sel_cl.get("contract_start", str(date.today()))))
-                            except Exception:
-                                e_contract = st.date_input("계약 시작일", value=date.today())
-                            e_memo = st.text_area("메모", value=sel_cl.get("memo",""), height=80)
-
-                        btn_c1, btn_c2 = st.columns(2)
-                        with btn_c1:
-                            do_save = st.form_submit_button("💾 저장", type="primary")
-                        with btn_c2:
-                            do_del  = st.form_submit_button("🗑️ 삭제")
-
-                        if do_save:
-                            for c in clients:
-                                if c["client_id"] == sel_id:
-                                    c.update({
-                                        "name":            e_name.strip(),
-                                        "contact_name":    e_contact.strip(),
-                                        "email":           e_email.strip(),
-                                        "phone":           e_phone.strip(),
-                                        "industry":        e_industry.strip(),
-                                        "ad_account_id":   e_ad_id.strip(),
-                                        "customer_id":     e_cid.strip(),
-                                        "ad_account_no":   e_ano.strip(),
-                                        "transfer_status": e_status,
-                                        "rebate_rate":     e_rebate,
-                                        "contract_start":  str(e_contract),
-                                        "memo":            e_memo.strip(),
-                                    })
-                            save_clients(clients)
-                            st.success("저장 완료")
-                            st.rerun()
-
-                        if do_del:
-                            save_clients([c for c in clients if c["client_id"] != sel_id])
-                            st.session_state.pop("selected_client_id", None)
-                            st.success("삭제 완료")
-                            st.rerun()
-
-# ═════════════════════════════════════════════════════════════════════════════
-# 2. 광고 리포트
+# 1. 광고 리포트
 # ═════════════════════════════════════════════════════════════════════════════
 with t_report:
     st.subheader("광고 리포트")
