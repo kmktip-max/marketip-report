@@ -113,17 +113,23 @@ def _build_prompt(inp):
 
     # 플랫폼별 생성 지시
     sections = []
+    industry_ref = inp.get("industry", "")
     if has["naver_search"]:
         sections.append(
-            '"naver_search": [\n'
-            '  4세트:\n'
-            '  1) 소비자_문제상황형: 검색자가 지금 처한 상황·불안 직격\n'
-            '  2) 손실회피형: 대응 안 하면 불리하다는 긴급성\n'
-            '  3) 검색의도직격형: 검색 키워드 의도에 딱 맞는 직접적 문구\n'
-            '  4) 문의유도형: 부드럽지만 강한 CTA 중심\n'
-            '  각 세트 필드: type, title(15자이내), description(45자이내 꽉 채울 것), '
-            'additional_title(15자이내), additional_description(45자이내 꽉 채울 것), promo_text(14자이내)\n'
-            ']'
+            f'"naver_search": [\n'
+            f'  업종 "{industry_ref}"에 최적화된 4개 유형을 직접 설계하세요.\n'
+            f'  (아래 예시 참고 후 이 업종에 맞게 유형명 직접 작성)\n\n'
+            f'  [업종별 유형 예시 — 그대로 쓰지 말고 이 업종에 맞게 변형]\n'
+            f'  이혼/법률 → 여성공감형 / 재산분할공포형 / 양육권전략형 / 초기대응형\n'
+            f'  광고대행 → 광고비누수형 / 문의부재형 / 구조문제형 / 전환설계형\n'
+            f'  병원/의원 → 증상공감형 / 치료지연위험형 / 전문성강조형 / 빠른예약형\n'
+            f'  교육/학원 → 성적불안형 / 시간부족형 / 결과중심형 / 무료체험형\n'
+            f'  인테리어 → 비용걱정형 / 시공불신형 / 시간절약형 / 무료견적형\n'
+            f'  이커머스 → 가격비교형 / 품질보증형 / 빠른배송형 / 후기신뢰형\n\n'
+            f'  [유형명 규칙] "형"으로 끝나는 2~5글자 명사. 이 업종 소비자 심리 기반으로 직접 설계.\n\n'
+            f'  각 세트 필드: type, title(15자이내), description(45자이내 꽉 채울 것), '
+            f'additional_title(15자이내), additional_description(45자이내 꽉 채울 것), promo_text(14자이내)\n'
+            f']'
         )
     else:
         sections.append('"naver_search": []')
@@ -272,36 +278,85 @@ def _generate(client, inp):
 def _render_naver_search(sets):
     if not sets:
         return
+    import pandas as pd
     st.markdown("### 🔵 네이버 검색광고 (파워링크)")
-    for i, s in enumerate(sets):
-        t = s.get("type", f"세트 {i+1}")
-        title = s.get("title","")
-        desc  = s.get("description","")
-        add_t = s.get("additional_title","")
-        add_d = s.get("additional_description","")
-        promo = s.get("promo_text","")
-        rows  = [
-            (t, "제목", title),
-            (t, "설명", desc),
-            (t, "추가제목", add_t),
-            (t, "추가설명", add_d),
-            (t, "홍보문구", promo),
-        ]
-        txt = (f"[{t}]\n제목: {title}\n설명: {desc}\n"
-               f"추가제목: {add_t}\n추가설명: {add_d}\n홍보문구: {promo}")
-        with st.expander(f"**{t}**", expanded=(i == 0)):
-            _field_row("제목",     title, 15)
-            _field_row("설명",     desc,  45)
-            _field_row("추가제목", add_t, 15)
-            _field_row("추가설명", add_d, 45)
-            _field_row("홍보문구", promo, 14)
-            bc1, bc2, bc3 = st.columns(3)
-            with bc1:
-                st.code(txt, language=None)
-            with bc2:
-                _txt_dl(txt, f"naver_search_{i+1}.txt", f"ns_txt_{i}")
-            with bc3:
-                _csv_dl(rows, f"naver_search_{i+1}.csv", f"ns_csv_{i}")
+
+    # ── 테이블 ────────────────────────────────────────────────────────────
+    _LIMITS = {"제목(15)": 15, "설명(45)": 45, "추가제목(15)": 15, "추가설명(45)": 45, "홍보문구(14)": 14}
+
+    table_rows = []
+    for s in sets:
+        table_rows.append({
+            "유형":         s.get("type",""),
+            "제목(15)":     s.get("title",""),
+            "설명(45)":     s.get("description",""),
+            "추가제목(15)": s.get("additional_title",""),
+            "추가설명(45)": s.get("additional_description",""),
+            "홍보문구(14)": s.get("promo_text",""),
+        })
+    df = pd.DataFrame(table_rows)
+
+    def _style_table(df):
+        out = pd.DataFrame("", index=df.index, columns=df.columns)
+        for col, lim in _LIMITS.items():
+            if col in df.columns:
+                for idx in df.index:
+                    if len(str(df.at[idx, col])) > lim:
+                        out.at[idx, col] = "background-color:#FEE2E2;color:#DC2626;font-weight:600;"
+        return out
+
+    st.dataframe(
+        df.style.apply(_style_table, axis=None),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # ── 글자수 요약 ───────────────────────────────────────────────────────
+    with st.expander("🔢 글자수 확인", expanded=False):
+        for s in sets:
+            t = s.get("type","")
+            checks = [
+                ("제목",     s.get("title",""),                    15),
+                ("설명",     s.get("description",""),              45),
+                ("추가제목", s.get("additional_title",""),         15),
+                ("추가설명", s.get("additional_description",""),   45),
+                ("홍보문구", s.get("promo_text",""),               14),
+            ]
+            badges = []
+            for fname, fval, flimit in checks:
+                n  = len(fval)
+                ok = n <= flimit
+                c  = "#16A34A" if ok else "#DC2626"
+                ic = "✅" if ok else "❌"
+                badges.append(
+                    f'<span style="font-size:11px;color:{c};margin-right:10px;">'
+                    f'{ic} {fname} {n}/{flimit}자</span>'
+                )
+            st.markdown(
+                f'<div style="margin-bottom:6px;"><b style="font-size:12px;">{t}</b>&nbsp;&nbsp;'
+                + "".join(badges) + "</div>",
+                unsafe_allow_html=True,
+            )
+
+    # ── 전체 복붙용 텍스트 ────────────────────────────────────────────────
+    all_txt = ""
+    csv_rows = "유형,제목,설명,추가제목,추가설명,홍보문구\n"
+    for s in sets:
+        t, ti, de, at, ad, pr = (
+            s.get("type",""), s.get("title",""), s.get("description",""),
+            s.get("additional_title",""), s.get("additional_description",""),
+            s.get("promo_text",""),
+        )
+        all_txt  += f"[{t}]\n제목: {ti}\n설명: {de}\n추가제목: {at}\n추가설명: {ad}\n홍보문구: {pr}\n\n"
+        csv_rows += f'"{t}","{ti}","{de}","{at}","{ad}","{pr}"\n'
+
+    st.code(all_txt.strip(), language=None)
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        _txt_dl(all_txt, "naver_search.txt", "ns_all_txt")
+    with dl2:
+        st.download_button("⬇️ CSV", csv_rows.encode("utf-8-sig"),
+                           "naver_search.csv", "text/csv", key="ns_all_csv")
 
 def _render_naver_shopping(sets):
     if not sets:
