@@ -130,7 +130,8 @@ if not st.session_state.get("authenticated"):
                 "settlement_auth":  sess["user_type"] == "admin",
                 "_session_token":   token,
             })
-            st.rerun()
+            # st.rerun() 제거 — rerun하면 Streamlit이 페이지 컨텍스트를 잃고
+            # 첫 번째 페이지로 이동함. 스크립트를 그대로 계속 실행하면 URL 경로 유지.
 
 if not st.session_state.get("authenticated"):
     _login_page()
