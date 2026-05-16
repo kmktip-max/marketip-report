@@ -155,6 +155,7 @@ _PERM_PAGES = [
 if auth_type == "admin":
     pg = st.navigation([
         st.Page("pages/광고분석컨설팅.py", title="광고구조 컨설팅"),
+        st.Page("pages/상세페이지.py",    title="상세페이지기획분석"),
         st.Page("pages/월간보고서.py",    title="월간보고서"),
         st.Page("pages/광고주관리.py",    title="광고주관리"),
         st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
@@ -204,8 +205,9 @@ with st.sidebar:
     # ── 관리자 메뉴 ───────────────────────────────────────────────────────
     if auth_type == "admin":
         st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
-        st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
-        st.page_link("pages/월간보고서.py",     label="📩  월간보고서",      use_container_width=True)
+        st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅",   use_container_width=True)
+        st.page_link("pages/상세페이지.py",     label="📐  상세페이지 기획/분석", use_container_width=True)
+        st.page_link("pages/월간보고서.py",     label="📩  월간보고서",        use_container_width=True)
 
         st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
         st.page_link("pages/광고주관리.py", label="🏢  광고주 목록",       use_container_width=True)
