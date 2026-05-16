@@ -48,25 +48,23 @@ def _fetch_page(url, timeout=8):
 def _txt_dl(text, fname, key):
     st.download_button("⬇️ TXT", text.encode("utf-8"), fname, "text/plain", key=key)
 
-def _score_bar(label, score):
-    pct  = score * 10
-    c    = "#16A34A" if score >= 7 else ("#F59E0B" if score >= 5 else "#DC2626")
+def _step_header(num, title):
     st.markdown(
-        f'<div style="margin-bottom:8px;">'
-        f'<div style="display:flex;justify-content:space-between;margin-bottom:3px;">'
-        f'<span style="font-size:12px;color:#374151;">{label}</span>'
-        f'<span style="font-size:12px;font-weight:700;color:{c};">{score}/10</span></div>'
-        f'<div style="background:#E5E8ED;border-radius:100px;height:6px;">'
-        f'<div style="background:{c};border-radius:100px;height:6px;width:{pct}%;"></div>'
-        f'</div></div>',
+        f'<div style="display:flex;align-items:center;gap:12px;margin:28px 0 14px;">'
+        f'<div style="background:#111;color:#fff;font-size:11px;font-weight:800;'
+        f'padding:4px 10px;border-radius:100px;white-space:nowrap;">STEP {num}</div>'
+        f'<div style="font-size:16px;font-weight:800;color:#111;">{title}</div>'
+        f'</div>',
         unsafe_allow_html=True,
     )
 
-def _color_chip(hex_val, name):
-    return (
-        f'<span style="display:inline-block;width:16px;height:16px;border-radius:4px;'
-        f'background:{hex_val};border:1px solid #E5E8ED;vertical-align:middle;margin-right:6px;"></span>'
-        f'<b>{hex_val}</b>  {name}'
+def _consulting_block(text):
+    st.markdown(
+        f'<div style="font-size:14px;color:#1F2937;line-height:2.0;'
+        f'background:#F8FAFC;border-left:4px solid #1D4ED8;'
+        f'padding:16px 20px;border-radius:0 10px 10px 0;margin-bottom:12px;">'
+        f'{text.replace(chr(10), "<br>")}</div>',
+        unsafe_allow_html=True,
     )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -148,9 +146,11 @@ page_structure는 반드시 아래 9개 섹션 전부 포함:
 # ══════════════════════════════════════════════════════════════════════════════
 def _analyze(client, inp, page_text="", image_b64=None):
     sys_msg = (
-        "당신은 전환율 최적화 컨설턴트이자 상세페이지 분석 전문가입니다. "
-        "구매·문의 전환율을 저해하는 구조적 문제를 찾아내고 구체적 개선안을 제시합니다. "
-        "AIDA·PASONA·FAB 관점에서 분석하며 구매 퍼널 전체를 평가합니다. "
+        "당신은 10년 이상 경력의 상세페이지 전환율 최적화 컨설턴트입니다. "
+        "AI 자동 진단표가 아닌, 실제 컨설턴트처럼 분석합니다. "
+        "핵심은 '그래서 뭐가 문제인데?'에 답하는 것입니다. "
+        "왜 문제인지, 소비자는 어떻게 느끼는지, 왜 이탈하는지, 무엇을 바꿔야 하는지를 "
+        "구체적·설명적으로 서술합니다. '부족합니다' 같은 짧은 요약은 절대 금지입니다. "
         "반드시 JSON으로만 응답하세요."
     )
     page_snip = page_text[:3000] if page_text and not page_text.startswith("(URL") else "(내용 추출 불가)"
@@ -160,53 +160,112 @@ URL: {inp.get('url') or '없음'}
 페이지 내용 (자동 추출): {page_snip}
 추가 정보: {inp.get('extra') or '없음'}
 
-[분석 기준]
-1. 상세페이지 구조 (AIDA/PASONA 흐름)
-2. 구매 설득 구조
-3. 전환율 저해 요소
-4. 경쟁 대비 차별성
-5. 구매 장벽
-6. CTA 위치·강도
-7. 전체 구매 퍼널
+━━━ 컨설팅 원칙 ━━━
+- 짧은 요약 금지. 각 항목마다 왜 문제인지 / 소비자가 어떻게 느끼는지 / 왜 이탈하는지 / 무엇을 바꿔야 하는지 를 충분히 설명.
+- 실제 컨설턴트 문체: 설명형, 설득형, 구조 해석 중심, 소비자 심리 중심.
+- 카피 예시는 반드시 실제 쓸 수 있는 수준으로 구체적으로 작성.
+- "부족합니다" 한 줄 요약 절대 금지.
 
 반드시 아래 JSON만 반환하세요:
 {{
-  "problems": [
-    {{"rank": 1, "issue": "문제점", "reason": "왜 문제인지", "impact": "전환에 미치는 영향"}}
+  "top_problems": [
+    {{
+      "rank": 1,
+      "title": "문제 제목 (짧고 명확하게)",
+      "why_problem": "왜 이것이 문제인지 구체적 설명 (2~4문장)",
+      "consumer_feel": "이 상황에서 소비자가 어떻게 느끼는지",
+      "why_exit": "소비자가 왜 이탈하게 되는지",
+      "fix_hint": "무엇을 바꿔야 하는지 핵심 방향"
+    }}
   ],
-  "conversion_issues": "전환율이 낮은 핵심 이유 3~4문장",
-  "structure_improvement": [
-    {{"section": "섹션명", "current_problem": "현재 문제", "suggestion": "구체적 개선안"}}
-  ],
-  "copy_improvement": [
-    {{"location": "위치", "current": "현재 카피/문제", "improved": "개선 카피", "reason": "이유"}}
-  ],
-  "image_improvement": [
-    {{"section": "섹션", "issue": "현재 문제", "suggestion": "개선안"}}
-  ],
-  "color_improvement": {{
-    "current_issue": "현재 문제",
-    "suggestion": "개선 방향",
-    "recommended_main": "#컬러코드",
-    "recommended_cta": "#컬러코드"
+  "conversion_analysis": "전환이 낮아지는 이유를 소비자 심리 기반으로 충분히 설명 (5~8문장. 왜 클릭 후 이탈하는가 / 왜 문의가 안 나오는가 / 왜 신뢰가 약한가 / 왜 구매 행동이 안 나오는가 분석)",
+  "section_analysis": {{
+    "hero": {{
+      "title": "히어로 섹션",
+      "problem": "현재 문제 상황 설명",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "구체적 개선 방향"
+    }},
+    "problem_empathy": {{
+      "title": "문제 공감 섹션",
+      "problem": "현재 문제 상황 설명",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "구체적 개선 방향"
+    }},
+    "usp": {{
+      "title": "USP 섹션",
+      "problem": "현재 문제 상황 설명",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "구체적 개선 방향"
+    }},
+    "trust": {{
+      "title": "후기/신뢰 섹션",
+      "problem": "현재 문제 상황 설명",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "구체적 개선 방향"
+    }},
+    "cta": {{
+      "title": "CTA 섹션",
+      "problem": "현재 문제 상황 설명",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "구체적 개선 방향"
+    }},
+    "funnel": {{
+      "title": "구매 퍼널 흐름",
+      "problem": "전체 퍼널 흐름의 문제점",
+      "consumer_impact": "소비자에게 미치는 영향",
+      "fix": "퍼널 재설계 방향"
+    }}
   }},
-  "cta_improvement": [
-    {{"location": "위치", "current": "현재", "improved": "개선안", "reason": "이유"}}
+  "fix_directions": [
+    {{
+      "priority": "1순위",
+      "title": "수정 방향 제목",
+      "description": "구체적 설명 (2~3문장)",
+      "expected_effect": "기대 효과"
+    }}
   ],
-  "funnel_analysis": {{
-    "hero_score": 7,
-    "problem_empathy_score": 5,
-    "usp_score": 6,
-    "trust_score": 4,
-    "barrier_score": 3,
-    "cta_score": 5,
-    "overall_score": 5,
-    "summary": "종합 평가 2~3문장"
-  }},
-  "conversion_strategy": ["전략1","전략2","전략3","전략4","전략5"]
+  "copy_examples": [
+    {{
+      "location": "위치 (예: 히어로 헤드카피)",
+      "problem": "현재 문제 상황",
+      "example": "실제 개선 카피 예시 (바로 쓸 수 있는 수준)",
+      "reason": "왜 이 카피가 효과적인지"
+    }}
+  ],
+  "recommended_flow": [
+    {{
+      "step": 1,
+      "section": "섹션명",
+      "purpose": "이 섹션의 역할",
+      "key_message": "핵심 메시지 또는 카피 방향"
+    }}
+  ],
+  "image_guide": [
+    {{
+      "section": "섹션명",
+      "what": "어떤 이미지가 필요한지",
+      "text_on_image": "이미지에 넣을 문구",
+      "mood": "분위기/스타일"
+    }}
+  ],
+  "color_tone": {{
+    "main_color": "#컬러코드",
+    "main_color_name": "컬러명",
+    "sub_color": "#컬러코드",
+    "sub_color_name": "컬러명",
+    "cta_color": "#컬러코드",
+    "cta_color_name": "컬러명",
+    "tone": "톤앤매너 방향",
+    "reason": "이 업종에 이 컬러를 추천하는 이유"
+  }}
 }}
 
-problems는 반드시 10개 생성 (전환율 영향 큰 순으로).
+top_problems는 반드시 5개 (전환 영향 큰 순).
+fix_directions는 5~7개.
+copy_examples는 5개 이상 (히어로/CTA/문제공감/신뢰/후기 위치 포함).
+recommended_flow는 업종 맞춤형 흐름 7~10단계.
+image_guide는 주요 섹션별 4~6개.
 """
     content = [{"type": "text", "text": text_content}]
     if image_b64:
@@ -325,154 +384,181 @@ def _render_plan(result):
                 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 렌더 — 분석 결과
+# 렌더 — 분석 결과 (컨설팅 스타일)
 # ══════════════════════════════════════════════════════════════════════════════
 def _render_analysis(result):
-    # ── 구매 퍼널 점수 ────────────────────────────────────────────────────
-    funnel = result.get("funnel_analysis", {})
-    if funnel:
-        with st.expander("📊 구매 퍼널 분석", expanded=True):
-            overall = funnel.get("overall_score", 0)
-            oc = "#16A34A" if overall >= 7 else ("#F59E0B" if overall >= 5 else "#DC2626")
+    # ── STEP 1: 핵심 문제 TOP5 ────────────────────────────────────────────
+    _step_header(1, "현재 상세페이지 핵심 문제 TOP 5")
+    problems = result.get("top_problems", [])
+    for p in problems:
+        rank  = p.get("rank", "")
+        title = p.get("title", "")
+        bg    = "#FFF5F5" if rank == 1 else "#FFFBEB" if rank == 2 else "#F8FAFC"
+        bc    = "#FCA5A5" if rank == 1 else "#FDE68A" if rank == 2 else "#E5E8ED"
+        st.markdown(
+            f'<div style="background:{bg};border:1.5px solid {bc};border-radius:12px;'
+            f'padding:16px 20px;margin-bottom:12px;">'
+            f'<div style="font-size:13px;font-weight:800;color:#111;margin-bottom:10px;">'
+            f'#{rank}  {title}</div>'
+            f'<div style="font-size:13px;color:#1F2937;line-height:1.9;margin-bottom:8px;">'
+            f'<b style="color:#374151;">왜 문제인가</b><br>{p.get("why_problem","")}</div>'
+            f'<div style="font-size:13px;color:#1F2937;line-height:1.9;margin-bottom:8px;">'
+            f'<b style="color:#374151;">소비자는 이렇게 느낀다</b><br>{p.get("consumer_feel","")}</div>'
+            f'<div style="font-size:13px;color:#DC2626;line-height:1.9;margin-bottom:8px;">'
+            f'<b>이탈 이유</b>  {p.get("why_exit","")}</div>'
+            f'<div style="font-size:13px;color:#1D4ED8;line-height:1.9;">'
+            f'<b>수정 방향</b>  {p.get("fix_hint","")}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── STEP 2: 전환 낮은 이유 ───────────────────────────────────────────
+    _step_header(2, "왜 전환이 낮아지는가 — 소비자 심리 기반 분석")
+    ci = result.get("conversion_analysis", "")
+    if ci:
+        _consulting_block(ci)
+
+    # ── STEP 3: 섹션별 상세 분석 ─────────────────────────────────────────
+    _step_header(3, "섹션별 상세 분석")
+    sections = result.get("section_analysis", {})
+    _SEC_ICONS = {
+        "hero":            "🖼️",
+        "problem_empathy": "💬",
+        "usp":             "⭐",
+        "trust":           "🛡️",
+        "cta":             "🔔",
+        "funnel":          "🔄",
+    }
+    for key, icon in _SEC_ICONS.items():
+        sec = sections.get(key, {})
+        if not sec:
+            continue
+        with st.expander(f"{icon} {sec.get('title', key)}", expanded=False):
             st.markdown(
-                f'<div style="text-align:center;padding:16px 0 8px;">'
-                f'<div style="font-size:13px;color:#6B7280;margin-bottom:4px;">종합 전환 점수</div>'
-                f'<div style="font-size:42px;font-weight:900;color:{oc};">{overall}<span style="font-size:20px;">/10</span></div>'
+                f'<div style="margin-bottom:10px;">'
+                f'<div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:4px;">문제 상황</div>'
+                f'<div style="font-size:13px;color:#1F2937;line-height:1.9;">{sec.get("problem","")}</div>'
+                f'</div>'
+                f'<div style="margin-bottom:10px;">'
+                f'<div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:4px;">소비자 영향</div>'
+                f'<div style="font-size:13px;color:#1F2937;line-height:1.9;">{sec.get("consumer_impact","")}</div>'
+                f'</div>'
+                f'<div style="background:#EFF6FF;border-left:3px solid #1D4ED8;padding:12px 16px;border-radius:0 8px 8px 0;">'
+                f'<div style="font-size:12px;font-weight:700;color:#1D4ED8;margin-bottom:4px;">개선 방향</div>'
+                f'<div style="font-size:13px;color:#1F2937;line-height:1.9;">{sec.get("fix","")}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            st.caption(funnel.get("summary", ""))
-            st.markdown("---")
-            fc1, fc2 = st.columns(2)
-            with fc1:
-                _score_bar("첫 화면 구매 유도력",  funnel.get("hero_score", 0))
-                _score_bar("문제 공감 설계",        funnel.get("problem_empathy_score", 0))
-                _score_bar("USP 전달력",             funnel.get("usp_score", 0))
-            with fc2:
-                _score_bar("신뢰 구조",             funnel.get("trust_score", 0))
-                _score_bar("구매 장벽 제거",         funnel.get("barrier_score", 0))
-                _score_bar("CTA 위치/강도",          funnel.get("cta_score", 0))
 
-    # ── 문제점 TOP10 ──────────────────────────────────────────────────────
-    problems = result.get("problems", [])
-    if problems:
-        with st.expander(f"🚨 전환율 저해 문제점 TOP {len(problems)}", expanded=True):
-            for p in problems:
-                rank   = p.get("rank", "")
-                issue  = p.get("issue", "")
-                reason = p.get("reason", "")
-                impact = p.get("impact", "")
-                bg = "#FFF5F5" if rank <= 3 else "#FFFBEB" if rank <= 6 else "#F8FAFC"
-                bc = "#FCA5A5" if rank <= 3 else "#FDE68A" if rank <= 6 else "#E5E8ED"
-                st.markdown(
-                    f'<div style="background:{bg};border:1px solid {bc};border-radius:10px;'
-                    f'padding:12px 16px;margin-bottom:8px;">'
-                    f'<div style="font-size:13px;font-weight:700;color:#111;margin-bottom:4px;">'
-                    f'#{rank}  {issue}</div>'
-                    f'<div style="font-size:12px;color:#6B7280;">이유: {reason}</div>'
-                    f'<div style="font-size:12px;color:#DC2626;margin-top:3px;">전환 영향: {impact}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+    # ── STEP 4: 실제 수정 방향 ───────────────────────────────────────────
+    _step_header(4, "실제 수정 방향")
+    fixes = result.get("fix_directions", [])
+    for i, f in enumerate(fixes):
+        priority = f.get("priority", f"{i+1}순위")
+        st.markdown(
+            f'<div style="background:#F8FAFC;border:1.5px solid #E5E8ED;border-radius:12px;'
+            f'padding:14px 18px;margin-bottom:10px;">'
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            f'<span style="background:#111;color:#fff;font-size:11px;font-weight:700;'
+            f'padding:2px 10px;border-radius:100px;">{priority}</span>'
+            f'<span style="font-size:14px;font-weight:700;color:#111;">{f.get("title","")}</span>'
+            f'</div>'
+            f'<div style="font-size:13px;color:#1F2937;line-height:1.9;margin-bottom:6px;">{f.get("description","")}</div>'
+            f'<div style="font-size:12px;color:#16A34A;font-weight:600;">기대 효과: {f.get("expected_effect","")}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
-    # ── 전환율이 낮은 이유 ────────────────────────────────────────────────
-    ci = result.get("conversion_issues", "")
-    if ci:
-        with st.expander("📉 전환율이 낮은 핵심 이유", expanded=False):
+    # ── STEP 5: 카피 수정 예시 ───────────────────────────────────────────
+    _step_header(5, "실제 카피 수정 예시")
+    copy_ex = result.get("copy_examples", [])
+    all_copy_txt = ""
+    for ex in copy_ex:
+        loc     = ex.get("location", "")
+        problem = ex.get("problem", "")
+        example = ex.get("example", "")
+        reason  = ex.get("reason", "")
+        all_copy_txt += f"[{loc}]\n{example}\n\n"
+        with st.expander(f"📍 {loc}", expanded=False):
             st.markdown(
-                f'<div style="font-size:14px;color:#111;line-height:1.8;">{ci}</div>',
+                f'<div style="font-size:12px;color:#6B7280;line-height:1.8;margin-bottom:10px;">'
+                f'<b>현재 문제 상황</b><br>{problem}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown("**✅ 개선 카피 예시**")
+            st.code(example, language=None)
+            st.caption(f"💡 {reason}")
+    if all_copy_txt:
+        _txt_dl(all_copy_txt.strip(), "카피_수정예시.txt", "analyze_copy_dl")
+
+    # ── STEP 6: 추천 상세페이지 흐름 ─────────────────────────────────────
+    _step_header(6, "추천 상세페이지 흐름")
+    flow = result.get("recommended_flow", [])
+    if flow:
+        for item in flow:
+            step    = item.get("step", "")
+            section = item.get("section", "")
+            purpose = item.get("purpose", "")
+            msg     = item.get("key_message", "")
+            st.markdown(
+                f'<div style="display:flex;gap:14px;margin-bottom:10px;align-items:flex-start;">'
+                f'<div style="min-width:28px;height:28px;background:#1D4ED8;color:#fff;border-radius:50%;'
+                f'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;">{step}</div>'
+                f'<div style="flex:1;background:#F8FAFC;border-radius:10px;padding:12px 16px;">'
+                f'<div style="font-size:13px;font-weight:700;color:#111;margin-bottom:4px;">{section}</div>'
+                f'<div style="font-size:12px;color:#6B7280;margin-bottom:4px;">{purpose}</div>'
+                f'<div style="font-size:12px;color:#1D4ED8;font-weight:600;">{msg}</div>'
+                f'</div></div>',
                 unsafe_allow_html=True,
             )
 
-    # ── 구조 개선 제안 ────────────────────────────────────────────────────
-    struct_impr = result.get("structure_improvement", [])
-    if struct_impr:
-        with st.expander("🏗️ 구조 개선 제안", expanded=False):
-            for s in struct_impr:
-                st.markdown(f"**{s.get('section','')}**")
-                sc1, sc2 = st.columns(2)
-                with sc1:
-                    st.markdown(
-                        f'<div style="background:#FFF5F5;border:1px solid #FCA5A5;border-radius:8px;'
-                        f'padding:10px 12px;font-size:12px;color:#374151;">❌ {s.get("current_problem","")}</div>',
-                        unsafe_allow_html=True,
-                    )
-                with sc2:
-                    st.markdown(
-                        f'<div style="background:#F0FFF4;border:1px solid #86EFAC;border-radius:8px;'
-                        f'padding:10px 12px;font-size:12px;color:#374151;">✅ {s.get("suggestion","")}</div>',
-                        unsafe_allow_html=True,
-                    )
-                st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
+    # ── STEP 7: 이미지 구성 방향 ─────────────────────────────────────────
+    _step_header(7, "이미지 구성 방향")
+    img_guide = result.get("image_guide", [])
+    for ig in img_guide:
+        st.markdown(
+            f'<div style="background:#F8FAFC;border:1px solid #E5E8ED;border-radius:10px;'
+            f'padding:12px 16px;margin-bottom:8px;">'
+            f'<div style="font-size:13px;font-weight:700;color:#111;margin-bottom:6px;">{ig.get("section","")}</div>'
+            f'<div style="font-size:12px;color:#374151;line-height:1.8;">'
+            f'<b>필요한 이미지</b>  {ig.get("what","")}<br>'
+            f'<b>넣을 문구</b>  {ig.get("text_on_image","")}<br>'
+            f'<b>분위기</b>  {ig.get("mood","")}'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
 
-    # ── 카피 개선 제안 ────────────────────────────────────────────────────
-    copy_impr = result.get("copy_improvement", [])
-    if copy_impr:
-        with st.expander("✍️ 카피 개선 제안", expanded=False):
-            for c in copy_impr:
-                st.markdown(f"**📍 {c.get('location','')}**")
-                st.markdown(
-                    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
-                    f'<div style="background:#FFF5F5;border:1px solid #FCA5A5;border-radius:8px;padding:10px 12px;font-size:13px;">❌ {c.get("current","")}</div>'
-                    f'<div style="background:#F0FFF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 12px;font-size:13px;">✅ {c.get("improved","")}</div>'
-                    f'</div>'
-                    f'<div style="font-size:11px;color:#6B7280;margin-bottom:16px;">이유: {c.get("reason","")}</div>',
-                    unsafe_allow_html=True,
-                )
-
-    # ── 이미지·컬러·CTA 개선 ─────────────────────────────────────────────
-    img_impr = result.get("image_improvement", [])
-    if img_impr:
-        with st.expander("📸 이미지 개선 제안", expanded=False):
-            for im in img_impr:
-                st.markdown(
-                    f'<div style="background:#F8FAFC;border:1px solid #E5E8ED;border-radius:8px;'
-                    f'padding:10px 14px;margin-bottom:8px;">'
-                    f'<b>{im.get("section","")}</b><br>'
-                    f'<span style="color:#DC2626;font-size:12px;">❌ {im.get("issue","")}</span><br>'
-                    f'<span style="color:#16A34A;font-size:12px;">✅ {im.get("suggestion","")}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-    color_impr = result.get("color_improvement", {})
-    cta_impr   = result.get("cta_improvement", [])
-    if color_impr or cta_impr:
-        with st.expander("🎨 컬러/CTA 개선 제안", expanded=False):
-            if color_impr:
-                st.markdown("**컬러 개선**")
-                st.markdown(
-                    f'<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:12px;">'
-                    f'문제: {color_impr.get("current_issue","")}<br>'
-                    f'방향: {color_impr.get("suggestion","")}<br>'
-                    f'추천 메인: <code>{color_impr.get("recommended_main","")}</code>  '
-                    f'CTA: <code>{color_impr.get("recommended_cta","")}</code>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown("")
-            if cta_impr:
-                st.markdown("**CTA 개선**")
-                for ct in cta_impr:
-                    st.markdown(
-                        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">'
-                        f'<div style="background:#FFF5F5;border:1px solid #FCA5A5;border-radius:8px;padding:10px 12px;font-size:12px;">[{ct.get("location","")}]<br>❌ {ct.get("current","")}</div>'
-                        f'<div style="background:#F0FFF4;border:1px solid #86EFAC;border-radius:8px;padding:10px 12px;font-size:12px;">✅ {ct.get("improved","")}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-    # ── 전환율 상승 전략 ──────────────────────────────────────────────────
-    strategies = result.get("conversion_strategy", [])
-    if strategies:
-        with st.expander("🚀 전환율 상승 전략", expanded=False):
-            for i, s in enumerate(strategies, 1):
-                st.markdown(
-                    f'<div style="background:#EFF6FF;border-left:4px solid #1D4ED8;'
-                    f'padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:8px;">'
-                    f'<b>전략 {i}.</b> {s}</div>',
-                    unsafe_allow_html=True,
-                )
+    # ── STEP 8: 컬러 및 톤앤매너 ─────────────────────────────────────────
+    _step_header(8, "컬러 및 톤앤매너 제안")
+    ct = result.get("color_tone", {})
+    if ct:
+        cc1, cc2, cc3 = st.columns(3)
+        for col, key_c, key_n, label in [
+            (cc1, "main_color", "main_color_name", "메인 컬러"),
+            (cc2, "sub_color",  "sub_color_name",  "서브 컬러"),
+            (cc3, "cta_color",  "cta_color_name",  "CTA 버튼"),
+        ]:
+            hex_val = ct.get(key_c, "#CCCCCC")
+            name    = ct.get(key_n, "")
+            col.markdown(
+                f'<div style="text-align:center;">'
+                f'<div style="font-size:11px;color:#6B7280;margin-bottom:6px;">{label}</div>'
+                f'<div style="background:{hex_val};height:44px;border-radius:10px;margin-bottom:6px;'
+                f'border:1px solid #E5E8ED;"></div>'
+                f'<code style="font-size:11px;">{hex_val}</code>'
+                f'<div style="font-size:12px;color:#374151;margin-top:2px;">{name}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            f'<div style="background:#F8FAFC;border:1px solid #E5E8ED;border-radius:10px;'
+            f'padding:12px 16px;margin-top:12px;">'
+            f'<div style="font-size:13px;color:#111;margin-bottom:4px;">'
+            f'<b>톤앤매너</b>  {ct.get("tone","")}</div>'
+            f'<div style="font-size:12px;color:#6B7280;line-height:1.8;">{ct.get("reason","")}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE
