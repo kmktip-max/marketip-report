@@ -384,11 +384,11 @@ def _fetch_page(url, timeout=8):
     except Exception as e:
         return f"(URL 접속 실패: {e})"
 
-def _ai_extract(client, business_name, url, industry, hints, location, page_text, model):
+def _ai_extract(client, business_name, url, industry, hints, location, page_text):
     sys_msg = (
-        "당신은 네이버/구글 검색광고 전문 키워드 플래너입니다. "
-        "업체 정보와 사이트 내용을 분석해서 실무에 바로 쓸 수 있는 "
-        "한국어 검색광고 키워드를 생성합니다. 반드시 JSON으로만 응답하세요."
+        "당신은 네이버 검색광고 전문 키워드 플래너입니다. "
+        "업체 정보와 사이트 내용을 분석해 실무에 바로 쓸 수 있는 "
+        "한국어 검색광고 키워드를 정확하게 생성합니다. 반드시 JSON으로만 응답하세요."
     )
     loc_line  = f"\n지역 타깃: {location}" if location else ""
     hint_line = f"\n메인 키워드 힌트: {hints}" if hints else ""
@@ -402,41 +402,73 @@ URL: {url}
 사이트 내용 (자동 추출):
 {page_snip}
 
-위 정보를 기반으로 네이버 검색광고용 키워드를 생성하세요.
-반드시 아래 JSON 형식으로만 응답하세요:
+━━━ 출력 형식 (반드시 이 JSON 구조만 반환) ━━━
 
 {{
   "service_summary": "서비스/상품 분석 결과 2~3문장",
   "target_customer": "타깃 고객 분석 1문장",
-  "ad_categories": ["광고그룹 카테고리1", "카테고리2"],
-  "핵심키워드": ["키워드1", "키워드2"],
-  "롱테일키워드": ["키워드1", "키워드2"],
-  "질문형키워드": ["키워드1", "키워드2"],
-  "정보성키워드": ["키워드1", "키워드2"],
-  "계절트렌드키워드": ["키워드1"] 또는 "추천없음",
-  "경쟁사키워드": ["키워드1", "키워드2"],
-  "오탈자확장형": ["키워드1", "키워드2"]
+  "ad_categories": [
+    {{"name": "카테고리명", "desc": "이 카테고리를 광고그룹으로 나눠야 하는 이유 1문장"}},
+    ...
+  ],
+  "핵심키워드": ["키워드1", "키워드2", ...],
+  "롱테일키워드": ["키워드1", "키워드2", ...],
+  "질문형키워드": ["키워드1", "키워드2", ...],
+  "정보성키워드": ["키워드1", "키워드2", ...],
+  "계절트렌드키워드": ["키워드1", ...],
+  "경쟁사키워드": ["키워드1", ...],
+  "오탈자확장형": ["키워드1", ...]
 }}
 
-규칙:
-- ad_categories: 10~20개. 광고그룹으로 나눌 서비스/문제 영역 (키워드 유형이 아님)
-- 핵심키워드: 50개. 전환 의도 높은 직접 검색어
-- 롱테일키워드: 50개. 구체적 니즈 기반, 3~6단어 조합
-- 질문형키워드: 50개. 실제 검색자가 물어볼 자연스러운 질문형
-- 정보성키워드: 50개. 블로그/콘텐츠/SEO 활용
-- 계절트렌드키워드: 50개. 해당 없으면 "추천없음" 문자열
-- 경쟁사키워드: 10~20개. 동종업계 브랜드/업체명 후보
-- 오탈자확장형: 10~20개. 오탈자/유사발음/띄어쓰기 변형
-- 모든 키워드는 한국어, 실제 네이버 검색에서 쓸 법한 자연스러운 형태
+━━━ 각 항목 규칙 ━━━
+
+[ad_categories] 3~5개만 생성
+- 광고그룹을 나눌 서비스/문제 영역 기준 (키워드 유형이 아님)
+- 예: 이혼소송, 양육권/양육비, 재산분할/위자료, 상간소송
+- 단어 나열 금지. 반드시 name + desc 형식
+
+[핵심키워드] 50개
+- 짧고 직접적인 숏테일 전환형 키워드만
+- 지역명 포함 키워드 절대 금지 (지역 조합은 조합기에서 처리)
+- 상담/추천/비용/후기 등 확장어 포함 금지
+- 질문형 금지, 정보성 금지
+- 예: 이혼변호사, 이혼전문변호사, 가사전문변호사, 재산분할변호사
+
+[롱테일키워드] 50개
+- 구체적 니즈 + 서비스 조합. 2~4단어
+- 지역명 포함 금지
+- 예: 재산분할 이혼변호사, 양육권 소송 변호사, 협의이혼 상담 변호사
+
+[질문형키워드] 50개
+- 실제 검색자가 질문처럼 입력할 법한 자연스러운 형태
+- 예: 이혼소송 변호사 꼭 필요할까, 재산분할은 어떻게 나누나요
+
+[정보성키워드] 50개
+- 블로그/콘텐츠/SEO 활용 목적
+- 예: 이혼소송 절차, 재산분할 기준, 양육권 결정 방법
+
+[계절트렌드키워드] 최대 50개
+- 업종에 시즌성/이슈성이 약하면 10개 이하 생성 가능. 억지로 만들지 말 것
+- 생성할 내용이 없으면 빈 배열 [] 반환
+
+[경쟁사키워드] 10~20개
+- 동종업계 실제 업체명/브랜드명 후보
+- 불확실한 경우 키워드 뒤에 "(후보)" 표시 붙이기
+
+[오탈자확장형] 10~20개
+- 실제 사용자가 잘못 입력할 만한 변형만 생성
+- 숫자→한글/영문 발음, 띄어쓰기 변형, 축약형
+- 예: 이혼변호사 → 이혼 변호사 / 이혼전문 변호사
+- 억지 오탈자나 의미 없는 조합 절대 금지
 """
     resp = client.chat.completions.create(
-        model=model,
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": sys_msg},
             {"role": "user",   "content": usr_msg},
         ],
         response_format={"type": "json_object"},
-        temperature=0.7,
+        temperature=0.5,
     )
     return json.loads(resp.choices[0].message.content)
 
@@ -478,23 +510,16 @@ with t_extract:
         ex_location = st.text_input("지역 타깃 (선택)",
                                     placeholder="예: 서울, 인천, 전국",
                                     key="ex_location")
-        ex_model_sel = st.selectbox(
-            "AI 모델",
-            ["gpt-4o-mini  (빠름·권장)", "gpt-4o  (정확·느림)"],
-            key="ex_model",
-        )
-        ex_model_id = "gpt-4o" if "gpt-4o  (정확" in ex_model_sel else "gpt-4o-mini"
-
         st.markdown("---")
         st.markdown(
-            '<div style="font-size:12px;color:#6B7280;line-height:2;">'
-            '생성 항목<br>'
-            '📊 카테고리 추천 10~20개<br>'
+            '<div style="font-size:12px;color:#6B7280;line-height:2.2;">'
+            '<b style="color:#111;">생성 항목</b><br>'
+            '📊 광고그룹 카테고리 3~5개<br>'
             '🟢 핵심 키워드 50개<br>'
             '🟢 롱테일 키워드 50개<br>'
             '🟢 질문형 키워드 50개<br>'
-            '🟡 정보성 키워드 50개<br>'
-            '🟡 계절/트렌드 키워드 50개<br>'
+            '🟡 정보성 키워드 50개 <span style="color:#9CA3AF;">(콘텐츠용)</span><br>'
+            '🟡 계절/트렌드 키워드<br>'
             '🔴 경쟁사 키워드 10~20개<br>'
             '🟡 오탈자/확장형 10~20개'
             '</div>',
@@ -527,7 +552,6 @@ with t_extract:
                                 ex_biz.strip(), ex_url.strip(),
                                 ex_industry.strip(), ex_hints.strip(),
                                 ex_location.strip(), page_text,
-                                ex_model_id,
                             )
                             st.session_state["ex_ai_result"]  = result
                             st.session_state.pop("ex_sections", None)
@@ -551,19 +575,30 @@ with t_extract:
             )
 
             # ── 카테고리 추천 (기본 펼침) ─────────────────────────────────
-            cats = result.get("ad_categories", [])
-            with st.expander(f"📊 광고그룹 카테고리 추천  ·  {len(cats)}개", expanded=True):
+            cats_raw = result.get("ad_categories", [])
+            # 구형(문자열 리스트)과 신형(dict 리스트) 모두 처리
+            cat_items = []
+            for c in cats_raw:
+                if isinstance(c, dict):
+                    cat_items.append((c.get("name",""), c.get("desc","")))
+                else:
+                    cat_items.append((str(c), ""))
+
+            with st.expander(f"📊 광고그룹 카테고리 추천  ·  {len(cat_items)}개", expanded=True):
                 st.caption("아래 카테고리를 기준으로 광고그룹을 나누세요.")
-                tags_html = "".join(
-                    f'<span style="display:inline-block;background:#EFF6FF;color:#1D4ED8;'
-                    f'font-size:13px;font-weight:600;padding:5px 14px;border-radius:100px;'
-                    f'margin:4px 4px;">{c}</span>'
-                    for c in cats
-                )
-                st.markdown(f'<div style="line-height:2.4;">{tags_html}</div>',
-                            unsafe_allow_html=True)
-                if cats:
-                    st.download_button("⬇️ TXT", _txt_bytes(cats),
+                for cat_name, cat_desc in cat_items:
+                    st.markdown(
+                        f'<div style="background:#EFF6FF;border:1px solid #BFDBFE;'
+                        f'border-radius:10px;padding:12px 16px;margin-bottom:8px;">'
+                        f'<div style="font-size:14px;font-weight:700;color:#1D4ED8;">{cat_name}</div>'
+                        + (f'<div style="font-size:12px;color:#6B7280;margin-top:4px;">{cat_desc}</div>'
+                           if cat_desc else '')
+                        + '</div>',
+                        unsafe_allow_html=True,
+                    )
+                if cat_items:
+                    cat_names = [n for n, _ in cat_items]
+                    st.download_button("⬇️ TXT", _txt_bytes(cat_names),
                                        "categories.txt", "text/plain", key="ex_cat_txt")
 
             # ── 키워드 섹션 정의 ──────────────────────────────────────────
