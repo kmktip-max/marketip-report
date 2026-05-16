@@ -136,6 +136,14 @@ button[aria-label="View fullscreen"] { display: none !important; }
     margin: 0;
     padding: 0;
 }
+/* payback-marker를 감싸는 Streamlit 컨테이너도 높이 0으로 축소 */
+[data-testid="stElementContainer"]:has(.payback-marker) {
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
 
 [data-testid="stElementContainer"]:has(.payback-marker)
   + [data-testid="stElementContainer"]
