@@ -6,7 +6,6 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-# .env 로드 (로컬 개발용; Streamlit Cloud는 secrets 사용)
 try:
     from dotenv import load_dotenv
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -20,6 +19,17 @@ try:
     from PIL import Image
 except ImportError:
     Image = None
+
+try:
+    from streamlit_cookies_controller import CookieController
+    _cookie = CookieController()
+    _COOKIE_KEY = "mktip_auth"
+    _COOKIE_MAX_AGE = 7 * 24 * 3600   # 7일
+    _USE_COOKIE = True
+except Exception:
+    _cookie = None
+    _COOKIE_KEY = "mktip_auth"
+    _USE_COOKIE = False
 
 LOGO_PATH = next(
     (os.path.join(ROOT, f) for f in ["logo2.png", "logo.png", "logo.jpg", "logo.jpeg", "logo.webp"]
@@ -43,6 +53,31 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 쿠키 읽기 헬퍼
+# ══════════════════════════════════════════════════════════════════════════════
+def _get_cookie_token():
+    if _USE_COOKIE and _cookie:
+        try:
+            return _cookie.get(_COOKIE_KEY) or ""
+        except Exception:
+            pass
+    return ""
+
+def _set_cookie_token(token):
+    if _USE_COOKIE and _cookie:
+        try:
+            _cookie.set(_COOKIE_KEY, token, max_age=_COOKIE_MAX_AGE)
+        except Exception:
+            pass
+
+def _remove_cookie_token():
+    if _USE_COOKIE and _cookie:
+        try:
+            _cookie.remove(_COOKIE_KEY)
+        except Exception:
+            pass
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 로그인 화면
 # ══════════════════════════════════════════════════════════════════════════════
 def _login_page():
@@ -57,7 +92,6 @@ section[data-testid="stSidebar"] { display: none !important; }
     with cc:
         st.markdown("<div style='height:60px;'></div>", unsafe_allow_html=True)
 
-        # 로고
         if LOGO_PATH and Image:
             try:
                 st.image(LOGO_PATH, width=110)
@@ -79,6 +113,7 @@ section[data-testid="stSidebar"] { display: none !important; }
             if st.button("로그인", type="primary", use_container_width=True, key="la_btn"):
                 if verify_admin(a_id.strip(), a_pw):
                     token = create_session(a_id.strip(), "admin", ["all"])
+                    _set_cookie_token(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "admin",
@@ -87,7 +122,6 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "settlement_auth":  True,
                         "_session_token":   token,
                     })
-                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
@@ -103,6 +137,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         c_id.strip(), "client",
                         client.get("permissions", []), client,
                     )
+                    _set_cookie_token(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "client",
@@ -111,17 +146,15 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_permissions": client.get("permissions", []),
                         "_session_token":   token,
                     })
-                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 인증 확인 (세션 토큰으로 새로고침 유지)
+# 인증 복원 (쿠키 → session_state)
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.get("authenticated"):
-    # URL 쿼리 파라미터에 토큰이 있으면 자동 복원
-    token = st.query_params.get("token", "")
+    token = _get_cookie_token()
     if token:
         sess = verify_session(token)
         if sess:
@@ -135,6 +168,8 @@ if not st.session_state.get("authenticated"):
                 "_session_token":   token,
             })
             st.rerun()
+        else:
+            _remove_cookie_token()
 
 if not st.session_state.get("authenticated"):
     _login_page()
@@ -187,12 +222,11 @@ st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 def _logout():
     delete_session(st.session_state.get("_session_token"))
-    st.query_params.clear()
+    _remove_cookie_token()
     st.session_state.clear()
     st.rerun()
 
 with st.sidebar:
-    # ── 로고 ──────────────────────────────────────────────────────────────
     st.markdown('<div class="sb-logo-wrap">', unsafe_allow_html=True)
     if LOGO_PATH:
         st.image(LOGO_PATH, width=136)
@@ -201,7 +235,6 @@ with st.sidebar:
                     unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── 관리자 메뉴 ───────────────────────────────────────────────────────
     if auth_type == "admin":
         st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
         st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
@@ -212,8 +245,8 @@ with st.sidebar:
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
-        st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",      use_container_width=True)
-        st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",    use_container_width=True)
+        st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",         use_container_width=True)
+        st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",       use_container_width=True)
         st.page_link("pages/상세페이지.py", label="📐  랜딩페이지 기획/분석", use_container_width=True)
 
         st.markdown("""
@@ -223,7 +256,6 @@ with st.sidebar:
         st.page_link("pages/정산관리.py", label="⚙️  정산관리", use_container_width=True)
         st.page_link("pages/계정관리.py", label="👤  계정관리", use_container_width=True)
 
-    # ── 광고주 메뉴 ───────────────────────────────────────────────────────
     elif auth_type == "client":
         client_info = st.session_state.get("auth_client", {})
         biz = client_info.get("business_name", "")
@@ -242,7 +274,6 @@ with st.sidebar:
                 st.page_link(path, label=f"{icons.get(perm,'')}  {title}",
                              use_container_width=True)
 
-    # ── 로그아웃 (공통) ───────────────────────────────────────────────────
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
     uname = "관리자" if auth_type == "admin" else st.session_state.get("auth_username", "")
     st.markdown(f'<div class="sb-user-info">접속: <b>{uname}</b></div>',
