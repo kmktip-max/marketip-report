@@ -2742,7 +2742,7 @@ def show_results(adf, api_key, model):
         ]
 
         _ai_uid   = st.session_state.get("user_id", "")
-        _ai_limited = _ai_uid and not is_admin(_ai_uid)
+        _ai_limited = bool(_ai_uid and not is_admin(_ai_uid))
         _ai_count  = get_monthly_count(_ai_uid)  if _ai_limited else 0
         _ai_cost   = get_monthly_cost(_ai_uid)   if _ai_limited else 0.0
         _ai_remain = max(0, MONTHLY_LIMIT - _ai_count)
