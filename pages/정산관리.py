@@ -3,7 +3,7 @@
 엑셀 업로드 → 업체 분류 → 프리랜서 정산 → 기타비용 → 월 손익
 """
 import streamlit as st
-import json, os, sys, uuid, re, hashlib
+import json, os, sys, uuid, re
 import pandas as pd
 from datetime import date
 
@@ -22,34 +22,10 @@ F_EXTRA    = os.path.join(ROOT, "monthly_extra_revenue.json")
 F_PNL      = os.path.join(ROOT, "monthly_pnl_data.json")
 F_ANNUAL   = os.path.join(ROOT, "annual_pnl.json")
 
-# ── 관리자 인증 ───────────────────────────────────────────────────────────────
-def _admin_pw():
-    try:
-        if hasattr(st, "secrets") and "SETTLEMENT_ADMIN_PW" in st.secrets:
-            return str(st.secrets["SETTLEMENT_ADMIN_PW"])
-    except Exception:
-        pass
-    return os.getenv("SETTLEMENT_ADMIN_PW", "1471028690")
-
-def _sat_token():
-    """세션 토큰 — 비밀번호 해시 기반 (URL 저장용)"""
-    return hashlib.sha256(f"mktip-sat-{_admin_pw()}".encode()).hexdigest()[:24]
-
-# 새로고침해도 로그인 유지: URL ?sat=<token> 확인
-if not st.session_state.get("settlement_auth"):
-    if st.query_params.get("sat", "") == _sat_token():
-        st.session_state.settlement_auth = True
-    else:
-        st.title("🔐 정산 관리 — 관리자 전용")
-        pw = st.text_input("비밀번호", type="password")
-        if st.button("로그인", type="primary"):
-            if pw == _admin_pw():
-                st.session_state.settlement_auth = True
-                st.query_params["sat"] = _sat_token()   # URL에 토큰 저장
-                st.rerun()
-            else:
-                st.error("비밀번호가 틀렸습니다.")
-        st.stop()
+# ── 관리자 전용 ───────────────────────────────────────────────────────────────
+if st.session_state.get("auth_type") != "admin":
+    st.error("🔒 관리자만 접근 가능합니다.")
+    st.stop()
 
 # ── 스토리지 헬퍼 ─────────────────────────────────────────────────────────────
 def _load(p):
