@@ -140,26 +140,14 @@ button[aria-label="View fullscreen"] { display: none !important; }
 [data-testid="stElementContainer"]:has(.payback-marker)
   + [data-testid="stElementContainer"]
   [data-testid="stPageLink"] a {
-    background: #2563EB !important;
-    color: #ffffff !important;
+    color: #1D4ED8 !important;
     font-weight: 700 !important;
-    padding: 0 18px !important;
-    border-radius: 10px !important;
-    box-shadow: 0 2px 8px rgba(37,99,235,0.25) !important;
-    transition: background .15s, box-shadow .15s !important;
 }
 [data-testid="stElementContainer"]:has(.payback-marker)
   + [data-testid="stElementContainer"]
   [data-testid="stPageLink"] a:hover {
-    background: #3B82F6 !important;
-    color: #ffffff !important;
-    box-shadow: 0 4px 14px rgba(37,99,235,0.35) !important;
-}
-[data-testid="stElementContainer"]:has(.payback-marker)
-  + [data-testid="stElementContainer"]
-  [data-testid="stPageLink"] a[aria-current="page"] {
-    background: #1D4ED8 !important;
-    color: #ffffff !important;
+    background: #EFF6FF !important;
+    color: #1D4ED8 !important;
 }
 
 /* ══ 사이드바 하단 영역 ══════════════════════════════════════════════ */
