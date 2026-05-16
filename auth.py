@@ -1,5 +1,7 @@
 """인증 모듈 — 관리자 및 광고주 계정 관리"""
+import base64
 import hashlib
+import hmac
 import json
 import os
 import time
@@ -8,7 +10,6 @@ from datetime import date
 
 ROOT       = os.path.dirname(os.path.abspath(__file__))
 F_ACCOUNTS = os.path.join(ROOT, "client_accounts.json")
-F_SESSIONS = os.path.join(ROOT, "sessions.json")
 
 # .env 로드 (app.py 로드보다 먼저 실행될 수 있으므로 여기서도 독립 로드)
 try:
@@ -16,6 +17,17 @@ try:
     load_dotenv(os.path.join(ROOT, ".env"))
 except Exception:
     pass
+
+_SESSION_DAYS = 7
+
+def _secret():
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "SESSION_SECRET" in st.secrets:
+            return str(st.secrets["SESSION_SECRET"])
+    except Exception:
+        pass
+    return os.getenv("SESSION_SECRET", "mktip_session_key_2026")
 
 # ── 유틸 ──────────────────────────────────────────────────────────────────
 def _hash(pw):
@@ -101,63 +113,43 @@ def delete_account(username):
         return True
     return False
 
-# ── 세션 관리 (새로고침 유지) ─────────────────────────────────────────────
-_SESSION_DAYS = 7   # 세션 유효 기간
-
-def _load_sessions():
-    try:
-        if os.path.exists(F_SESSIONS):
-            with open(F_SESSIONS, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-def _save_sessions(data):
-    with open(F_SESSIONS, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+# ── 세션 관리 (서명 내장 토큰 — 서버 파일 불필요) ──────────────────────────
+# payload를 base64로 인코딩하고 HMAC-SHA256으로 서명.
+# sessions.json 없이도 새로고침·앱 재시작 후 로그인 유지.
 
 def create_session(username, user_type, permissions, client_data=None):
-    """로그인 성공 시 세션 토큰 생성 후 저장, 토큰 반환"""
-    secret = os.getenv("SESSION_SECRET", "mktip_session_key_2026")
-    token  = hashlib.sha256(
-        f"{username}{user_type}{time.time()}{secret}".encode("utf-8")
-    ).hexdigest()
-
-    now      = time.time()
-    sessions = _load_sessions()
-    # 만료된 세션 정리
-    sessions = {k: v for k, v in sessions.items() if v.get("expires_at", 0) > now}
-    sessions[token] = {
+    """로그인 성공 시 서명된 세션 토큰 반환"""
+    payload = {
         "username":    username,
         "user_type":   user_type,
         "permissions": permissions,
         "client_data": client_data or {},
-        "created_at":  now,
-        "expires_at":  now + 86400 * _SESSION_DAYS,
+        "expires_at":  time.time() + 86400 * _SESSION_DAYS,
     }
-    _save_sessions(sessions)
-    return token
+    payload_b64 = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+    sig = hmac.new(_secret().encode("utf-8"), payload_b64.encode("ascii"),
+                   hashlib.sha256).hexdigest()
+    return f"{payload_b64}.{sig}"
 
 def verify_session(token):
     """토큰이 유효하면 세션 dict 반환, 아니면 None"""
     if not token:
         return None
-    sessions = _load_sessions()
-    sess = sessions.get(token)
-    if not sess:
+    try:
+        payload_b64, sig = token.rsplit(".", 1)
+        expected = hmac.new(_secret().encode("utf-8"), payload_b64.encode("ascii"),
+                            hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode("utf-8"))
+        if payload.get("expires_at", 0) < time.time():
+            return None
+        return payload
+    except Exception:
         return None
-    if sess.get("expires_at", 0) < time.time():
-        del sessions[token]
-        _save_sessions(sessions)
-        return None
-    return sess
 
 def delete_session(token):
-    """로그아웃 시 세션 삭제"""
-    if not token:
-        return
-    sessions = _load_sessions()
-    if token in sessions:
-        del sessions[token]
-        _save_sessions(sessions)
+    """로그아웃 — 토큰 기반이므로 서버 측 작업 불필요"""
+    pass
