@@ -42,45 +42,6 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 쿠키 컨트롤러 초기화
-# ══════════════════════════════════════════════════════════════════════════════
-_COOKIE_KEY = "mktip_auth"
-_COOKIE_MAX_AGE = 7 * 24 * 3600
-
-try:
-    from streamlit_cookies_controller import CookieController
-    _cookie = CookieController()
-    _USE_COOKIE = True
-except Exception:
-    _cookie = None
-    _USE_COOKIE = False
-
-def _cookie_get_all():
-    """쿠키 전체 반환. None=아직 로드 안됨, {}=로드됐지만 없음."""
-    if not _USE_COOKIE:
-        return {}
-    try:
-        return _cookie.getAll()
-    except Exception:
-        return {}
-
-def _cookie_set(token: str):
-    if not _USE_COOKIE:
-        return
-    try:
-        _cookie.set(_COOKIE_KEY, token, max_age=_COOKIE_MAX_AGE)
-    except Exception:
-        pass
-
-def _cookie_remove():
-    if not _USE_COOKIE:
-        return
-    try:
-        _cookie.remove(_COOKIE_KEY)
-    except Exception:
-        pass
-
-# ══════════════════════════════════════════════════════════════════════════════
 # 로그인 화면
 # ══════════════════════════════════════════════════════════════════════════════
 def _login_page():
@@ -115,7 +76,6 @@ section[data-testid="stSidebar"] { display: none !important; }
             if st.button("로그인", type="primary", use_container_width=True, key="la_btn"):
                 if verify_admin(a_id.strip(), a_pw):
                     token = create_session(a_id.strip(), "admin", ["all"])
-                    _cookie_set(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "admin",
@@ -124,6 +84,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "settlement_auth":  True,
                         "_session_token":   token,
                     })
+                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
@@ -139,7 +100,6 @@ section[data-testid="stSidebar"] { display: none !important; }
                         c_id.strip(), "client",
                         client.get("permissions", []), client,
                     )
-                    _cookie_set(token)
                     st.session_state.update({
                         "authenticated":    True,
                         "auth_type":        "client",
@@ -148,29 +108,16 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_permissions": client.get("permissions", []),
                         "_session_token":   token,
                     })
+                    st.query_params["token"] = token
                     st.rerun()
                 else:
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 세션 복원 (쿠키 기반)
+# 세션 복원 — URL 토큰으로 복원 (F5 포함)
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.get("authenticated"):
-
-    all_cookies = _cookie_get_all()
-
-    if all_cookies is None:
-        # 쿠키 컨트롤러가 아직 브라우저에서 값을 받아오지 못한 첫 번째 렌더.
-        # 로그인 페이지 대신 로딩 화면을 보여줘서 flash 방지.
-        st.markdown(
-            '<div style="display:flex;justify-content:center;align-items:center;height:70vh;">'
-            '<span style="font-size:14px;color:#9CA3AF;">인증 확인 중...</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        st.stop()
-
-    token = all_cookies.get(_COOKIE_KEY, "")
+    token = st.query_params.get("token", "")
     if token:
         sess = verify_session(token)
         if sess:
@@ -184,12 +131,19 @@ if not st.session_state.get("authenticated"):
                 "_session_token":   token,
             })
             st.rerun()
-        else:
-            _cookie_remove()
 
 if not st.session_state.get("authenticated"):
     _login_page()
     st.stop()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 토큰을 URL에 항상 유지 (페이지 이동 후에도 F5 동작 보장)
+# st.page_link 이동 시 URL에서 ?token=... 이 사라지므로
+# 매 렌더마다 세션 토큰을 URL에 다시 씁니다.
+# ══════════════════════════════════════════════════════════════════════════════
+_active_token = st.session_state.get("_session_token", "")
+if _active_token and st.query_params.get("token", "") != _active_token:
+    st.query_params["token"] = _active_token
 
 auth_type  = st.session_state.get("auth_type", "")
 auth_perms = st.session_state.get("auth_permissions", [])
@@ -224,6 +178,7 @@ else:
         st.warning("접근 가능한 메뉴가 없습니다. 관리자에게 문의하세요.")
         if st.button("🚪  로그아웃"):
             st.session_state.clear()
+            st.query_params.clear()
             st.rerun()
         st.stop()
     pg = st.navigation(client_pages)
@@ -238,7 +193,7 @@ st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
 # ══════════════════════════════════════════════════════════════════════════════
 def _logout():
     delete_session(st.session_state.get("_session_token"))
-    _cookie_remove()
+    st.query_params.clear()
     st.session_state.clear()
     st.rerun()
 
