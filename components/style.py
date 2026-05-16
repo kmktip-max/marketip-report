@@ -124,36 +124,14 @@ button[aria-label="View fullscreen"] { display: none !important; }
     font-weight: 700 !important;
 }
 
-/* ══ 페이백신청 CTA 강조 ════════════════════════════════════════════════
-   Streamlit DOM: stElementContainer:has(.payback-marker) + stElementContainer
-   stPageLink a
-   ══════════════════════════════════════════════════════════════════════ */
-.payback-marker {
-    position: absolute;
-    visibility: hidden;
-    pointer-events: none;
-    height: 0;
-    margin: 0;
-    padding: 0;
-}
-/* payback-marker를 감싸는 Streamlit 컨테이너도 높이 0으로 축소 */
-[data-testid="stElementContainer"]:has(.payback-marker) {
-    height: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-[data-testid="stElementContainer"]:has(.payback-marker)
-  + [data-testid="stElementContainer"]
-  [data-testid="stPageLink"] a {
+/* ══ 페이백신청 강조 — href 기반 (마커 div 불필요) ══════════════════ */
+[data-testid="stPageLink"] a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"],
+[data-testid="stPageLink"] a[href*="페이백"] {
     color: #1D4ED8 !important;
     font-weight: 700 !important;
 }
-[data-testid="stElementContainer"]:has(.payback-marker)
-  + [data-testid="stElementContainer"]
-  [data-testid="stPageLink"] a:hover {
+[data-testid="stPageLink"] a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]:hover,
+[data-testid="stPageLink"] a[href*="페이백"]:hover {
     background: #EFF6FF !important;
     color: #1D4ED8 !important;
 }

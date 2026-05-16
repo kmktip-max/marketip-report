@@ -213,7 +213,6 @@ with st.sidebar:
         st.page_link("pages/월간보고서.py",     label="📩  월간보고서",     use_container_width=True)
 
         st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
-        st.markdown('<div class="payback-marker"></div>', unsafe_allow_html=True)
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
@@ -241,8 +240,6 @@ with st.sidebar:
         for perm, path, title in _PERM_PAGES:
             if perm in auth_perms:
                 icons = {"structure_consulting":"📈","report_view":"📩","payback":"💸"}
-                if perm == "payback":
-                    st.markdown('<div class="payback-marker"></div>', unsafe_allow_html=True)
                 st.page_link(path, label=f"{icons.get(perm,'')}  {title}",
                              use_container_width=True)
 
