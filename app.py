@@ -57,18 +57,31 @@ section[data-testid="stSidebar"] { display: none !important; }
 
     _, cc, _ = st.columns([1, 1.1, 1])
     with cc:
-        st.markdown("<div style='height:60px;'></div>", unsafe_allow_html=True)
-        if LOGO_PATH and Image:
+        st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+
+        # 로고 + 타이틀을 하나의 HTML 블록으로 렌더링 (st.image 빈 박스 방지)
+        logo_html = ""
+        if LOGO_PATH:
             try:
-                st.image(LOGO_PATH, width=110)
+                import base64 as _b64
+                ext = LOGO_PATH.rsplit(".", 1)[-1].lower().replace("jpg", "jpeg")
+                with open(LOGO_PATH, "rb") as _f:
+                    logo_b64 = _b64.b64encode(_f.read()).decode()
+                logo_html = (
+                    f'<img src="data:image/{ext};base64,{logo_b64}" '
+                    f'style="width:100px;height:auto;display:block;margin:0 auto 12px;" />'
+                )
             except Exception:
                 pass
 
-        st.markdown("""
-<div style="text-align:center;margin:16px 0 32px;">
-  <div style="font-size:28px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 전용</div>
-  <div style="font-size:13px;color:#6B7280;margin-top:6px;">광고 운영 관리 시스템</div>
-</div>""", unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="text-align:center;margin-bottom:32px;">'
+            f'{logo_html}'
+            f'<div style="font-size:28px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 전용</div>'
+            f'<div style="font-size:13px;color:#6B7280;margin-top:6px;">광고 운영 관리 시스템</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         tab_admin, tab_client, tab_join = st.tabs([
             "🔑  관리자 로그인",
@@ -128,7 +141,7 @@ section[data-testid="stSidebar"] { display: none !important; }
         with tab_join:
             st.caption("가입 신청 후 관리자 승인을 받으면 서비스를 이용할 수 있습니다.")
             with st.form("join_form", clear_on_submit=True):
-                j_biz     = st.text_input("업체명 *",    placeholder="예: 법무법인 재현")
+                j_biz     = st.text_input("업체명 *",    placeholder="예: 마케팁")
                 j_contact = st.text_input("담당자명 *",  placeholder="예: 홍길동")
                 j_id      = st.text_input("아이디 *",    placeholder="영문+숫자 조합")
                 j_pw1     = st.text_input("비밀번호 *",  type="password")
