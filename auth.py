@@ -27,6 +27,7 @@ PERM_CATALOG = {
     "ad_analysis":      ("pages/광고분석컨설팅.py", "광고분석컨설팅",       "📈"),
     "monthly_report":   ("pages/월간보고서.py",     "월간보고서",           "📩"),
     "rebate":           ("pages/페이백신청.py",     "광고비 페이백신청",    "💸"),
+    "bid_assist":       ("pages/자동입찰.py",       "목표순위 자동입찰",    "📊"),
     "keyword_tool":     ("pages/키워드도구.py",     "키워드 추출",          "🔍"),
     "creative_tool":    ("pages/광고소재.py",       "광고소재 추출",        "✍️"),
     "landing_analysis": ("pages/상세페이지.py",     "랜딩페이지 기획/분석", "📐"),

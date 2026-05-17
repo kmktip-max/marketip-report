@@ -216,6 +216,7 @@ if auth_type == "admin":
         st.Page("pages/광고분석컨설팅.py", title="광고구조 컨설팅"),
         st.Page("pages/월간보고서.py",    title="월간보고서"),
         st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
+        st.Page("pages/자동입찰.py",      title="목표순위 자동입찰"),
         st.Page("pages/키워드도구.py",    title="키워드 추출"),
         st.Page("pages/광고소재.py",      title="광고소재 추출"),
         st.Page("pages/상세페이지.py",    title="랜딩페이지 기획/분석"),
@@ -272,6 +273,7 @@ with st.sidebar:
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
+        st.page_link("pages/자동입찰.py",   label="📊  목표순위 자동입찰",    use_container_width=True)
         st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",         use_container_width=True)
         st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",       use_container_width=True)
         st.page_link("pages/상세페이지.py", label="📐  랜딩페이지 기획/분석", use_container_width=True)
