@@ -120,7 +120,7 @@ def naver_adgroups(api_key, secret_key, cid, campaign_id):
 
 def naver_keywords(api_key, secret_key, cid, adgroup_id):
     return _naver_get("/ncc/keywords", api_key, secret_key, cid,
-                      params={"adgroupId": adgroup_id}) or []
+                      params={"nccAdgroupId": adgroup_id}) or []
 
 def _get_id(obj, *keys):
     """여러 키 이름 중 값이 있는 첫 번째 반환 (API 버전별 키 이름 차이 대응)"""
