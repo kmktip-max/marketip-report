@@ -61,7 +61,7 @@ with tab_pending:
                     st.markdown(
                         f"**업체명:** {biz}  \n"
                         f"**담당자:** {name}  \n"
-                        f"**연락처:** {phone}  \n"
+                        f"**이메일:** {phone}  \n"
                         f"**아이디:** {uid}  \n"
                         f"**신청일:** {date_}",
                     )

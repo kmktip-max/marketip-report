@@ -148,7 +148,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                 j_id      = st.text_input("아이디 *",    placeholder="영문+숫자 조합")
                 j_pw1     = st.text_input("비밀번호 *",  type="password")
                 j_pw2     = st.text_input("비밀번호 확인 *", type="password")
-                j_phone   = st.text_input("연락처 (선택)", placeholder="010-0000-0000")
+                j_phone   = st.text_input("이메일 *", placeholder="example@email.com")
 
                 if st.form_submit_button("가입 신청", type="primary",
                                          use_container_width=True):
@@ -162,6 +162,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                         st.error("비밀번호를 입력해주세요.")
                     elif j_pw1 != j_pw2:
                         st.error("비밀번호가 일치하지 않습니다.")
+                    elif not j_phone.strip():
+                        st.error("이메일을 입력해주세요.")
                     else:
                         ok, msg = register_pending(
                             j_biz, j_id, j_pw1, j_contact, j_phone
