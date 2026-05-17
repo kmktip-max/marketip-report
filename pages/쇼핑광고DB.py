@@ -1,6 +1,6 @@
 """영업툴 — 쇼핑광고 DB 추출 (관리자 전용)"""
 import streamlit as st
-import os, sys, re, time, random, io, asyncio
+import os, sys, re, time, random, io
 from urllib.parse import quote, urlparse, parse_qs, unquote
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,25 +16,7 @@ PHONE_RE = re.compile(r'0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}')
 FALLBACK_JSON = os.path.join(ROOT, "sales_leads_shopping.json")
 SESSION_KEY   = "shopping_results"
 
-BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-setuid-sandbox",
-    "--disable-blink-features=AutomationControlled",
-    "--no-zygote",
-    "--disable-extensions",
-    "--window-size=1366,768",
-]
-
-STEALTH_JS = """
-Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-Object.defineProperty(navigator, 'plugins',   {get: () => [1,2,3,4,5]});
-Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR','ko','en']});
-window.chrome = {runtime: {}};
-"""
-
-# ── Playwright Chromium 설치 (최초 1회) ──────────────────────────────────────
+# ── Chromium 설치 (최초 1회) ──────────────────────────────────────────────────
 @st.cache_resource
 def _install_browser():
     import subprocess
@@ -45,14 +27,15 @@ def _install_browser():
         try:
             r = subprocess.run(cmd, capture_output=True, timeout=300)
             if r.returncode == 0:
-                break
+                return "ok"
         except Exception:
             pass
+    return "failed"
 
-_install_browser()
+_install_result = _install_browser()
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
-def _real_url(href: str) -> str:
+def _real_url(href):
     if not href:
         return href
     if "outlink" in href or "inflow" in href:
@@ -65,8 +48,7 @@ def _real_url(href: str) -> str:
             pass
     return href
 
-def _store_key(href: str):
-    """(store_url, store_id) 반환. 파싱 실패 시 (None, None)"""
+def _store_key(href):
     real = _real_url(href or "")
     if not real:
         return None, None
@@ -78,247 +60,245 @@ def _store_key(href: str):
     url = real.split("?")[0]
     return (url or None), None
 
-def _contacts(html: str):
+def _contacts(html):
     emails = [e for e in EMAIL_RE.findall(html)
               if not any(x in e.lower() for x in ["naver.com","example","kakao","google","daum"])]
     phones = PHONE_RE.findall(html)
     return (emails[0] if emails else "미확인"), (phones[0] if phones else "미확인")
 
-# ── 비동기 수집 코어 ──────────────────────────────────────────────────────────
-async def _scrape_async(keywords, max_pages, dedup, log_cb, status_cb, progress_cb):
-    from playwright.async_api import async_playwright
+# ── 수집 함수 (sync_playwright, try/finally 완결) ─────────────────────────────
+def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
+    """
+    규칙:
+    - browser/context/page 는 함수 내부에서만 생성
+    - page.goto() 는 with sync_playwright() 블록 내부에서만 실행
+    - close() 는 finally 에서만 실행
+    - 반복문/except 안에서 close() 금지
+    - st.session_state 에 Playwright 객체 저장 금지
+    """
+    from playwright.sync_api import sync_playwright
 
     results  = []
     seen_key = set()
+    logs     = []
 
-    playwright = None
-    browser    = None
-    context    = None
-    page       = None
-
-    try:
-        log_cb("🚀 Playwright 시작")
-        playwright = await async_playwright().start()
-
-        log_cb("🖥️ 브라우저 생성 중...")
-        browser = await playwright.chromium.launch(
-            headless=True,
-            args=BROWSER_ARGS,
-        )
-        log_cb("✅ 브라우저 생성 완료")
-
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            locale="ko-KR",
-            viewport={"width": 1366, "height": 768},
-        )
-        log_cb("✅ Context 생성 완료")
-
-        page = await context.new_page()
-        await page.add_init_script(STEALTH_JS)
-        log_cb("✅ Page 생성 완료")
-
-        # ── 네이버 세션 확보 ────────────────────────────────────────────────────
-        status_cb("🌐 네이버 세션 초기화 중...")
-        log_cb("→ goto: https://www.naver.com")
-        await page.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=30000)
-        log_cb("✅ naver.com 접속 성공")
-        await asyncio.sleep(random.uniform(1.5, 2.5))
-
-        total = len(keywords) * max_pages
-        done  = 0
-
-        for keyword in keywords:
-            # ── 검색창 입력 ──────────────────────────────────────────────────
-            status_cb(f"🔍 [{keyword}] 검색 중...")
-            log_cb(f"── 키워드: {keyword}")
-            try:
-                sb = page.locator('input[name="query"]').first
-                await sb.click()
-                await asyncio.sleep(0.3)
-                await sb.fill("")
-                await asyncio.sleep(0.2)
-                for ch in keyword:
-                    await sb.type(ch, delay=random.randint(50, 130))
-                await asyncio.sleep(0.5)
-                await sb.press("Enter")
-                await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                await asyncio.sleep(2)
-                log_cb(f"✅ 검색 완료: {page.url[:60]}")
-            except Exception as e:
-                log_cb(f"⚠ 검색창 실패, 직접 이동: {e}")
-                await page.goto(
-                    f"https://search.naver.com/search.naver?query={quote(keyword)}",
-                    wait_until="domcontentloaded", timeout=20000,
-                )
-                await asyncio.sleep(2)
-
-            # 쇼핑 탭 이동 시도
-            try:
-                shop_tab = page.locator('a[href*="where=shopping"]').first
-                if await shop_tab.count() > 0:
-                    await shop_tab.click()
-                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                    await asyncio.sleep(2)
-            except Exception:
-                pass
-
-            for page_num in range(1, max_pages + 1):
-                status_cb(f"📄 [{keyword}] {page_num}페이지 수집 중...")
-                try:
-                    if page_num > 1:
-                        start = (page_num - 1) * 40 + 1
-                        nav_url = (
-                            f"https://search.naver.com/search.naver"
-                            f"?where=shopping&query={quote(keyword)}&start={start}"
-                        )
-                        log_cb(f"→ goto: {nav_url[:70]}")
-                        await page.goto(nav_url, wait_until="domcontentloaded", timeout=20000)
-                        await asyncio.sleep(random.uniform(1.5, 2.5))
-
-                    for y in [500, 1000, 1500, 2000]:
-                        await page.evaluate(f"window.scrollTo(0,{y})")
-                        await asyncio.sleep(0.5)
-
-                    html = await page.content()
-                    if "접속이 일시적으로 제한" in html:
-                        log_cb(f"⛔ [{keyword}] {page_num}p 차단 — 건너뜀")
-                        done += 1
-                        progress_cb(done / total)
-                        break
-
-                    links = await page.locator('a[href*="smartstore.naver.com/"]').all()
-                    page_count = 0
-                    for link in links:
-                        href = await link.get_attribute("href") or ""
-                        store_url, store_id = _store_key(href)
-                        if not store_url:
-                            continue
-                        k = store_id or store_url
-                        if dedup and k in seen_key:
-                            for r in results:
-                                if (r.get("store_id") or r["store_url"]) == k:
-                                    if keyword not in r["found_keywords"]:
-                                        r["found_keywords"].append(keyword)
-                            continue
-                        seen_key.add(k)
-
-                        try:
-                            name = (await link.inner_text()).strip().replace("\n", " ")
-                        except Exception:
-                            name = ""
-                        if not name:
-                            name = store_id or store_url.split("/")[-1]
-
-                        try:
-                            parent_html = await link.evaluate(
-                                'el => el.closest("li,div,article")?.innerHTML || ""'
-                            )
-                        except Exception:
-                            parent_html = ""
-                        is_ad = any(x in parent_html for x in ["광고","adBadge","ad_badge","AdLabel"])
-                        grade = next((g for g in ["프리미엄","빅파워","파워"] if g in parent_html), "")
-
-                        results.append({
-                            "keyword":        keyword,
-                            "store_name":     name,
-                            "store_url":      store_url,
-                            "store_id":       store_id or "",
-                            "is_ad":          "광고" if is_ad else "비광고",
-                            "page":           f"{page_num}페이지",
-                            "grade":          grade,
-                            "email":          "미확인",
-                            "phone":          "미확인",
-                            "memo":           "",
-                            "found_keywords": [keyword],
-                        })
-                        page_count += 1
-
-                    log_cb(f"✅ [{keyword}] {page_num}p → {page_count}개 수집")
-
-                except Exception as e:
-                    log_cb(f"⚠ [{keyword}] {page_num}p 오류: {str(e)[:80]}")
-
-                done += 1
-                progress_cb(done / total)
-                await asyncio.sleep(random.uniform(1, 2))
-
-        # ── 연락처 수집 ─────────────────────────────────────────────────────────
-        log_cb(f"📞 연락처 수집 시작 (총 {len(results)}개)...")
-        for i, row in enumerate(results):
-            if "smartstore.naver.com" not in (row.get("store_url") or ""):
-                continue
-            status_cb(f"📞 연락처 {i+1}/{len(results)}: {row['store_name'][:15]}")
-            try:
-                await page.goto(row["store_url"], wait_until="domcontentloaded", timeout=15000)
-                await asyncio.sleep(random.uniform(1, 1.5))
-                email, phone = _contacts(await page.content())
-                row["email"] = email
-                row["phone"] = phone
-            except Exception:
-                pass
-
-    except Exception as e:
-        log_cb(f"❌ 치명적 오류: {str(e)[:120]}")
-        raise
-
-    finally:
-        log_cb("🔚 브라우저 종료 중...")
-        if page and not page.is_closed():
-            try:
-                await page.close()
-            except Exception:
-                pass
-        if context:
-            try:
-                await context.close()
-            except Exception:
-                pass
-        if browser:
-            try:
-                await browser.close()
-                log_cb("✅ 브라우저 종료 완료")
-            except Exception:
-                pass
-        if playwright:
-            try:
-                await playwright.stop()
-            except Exception:
-                pass
-
-    return results
-
-
-# ── 동기 래퍼 (Streamlit → asyncio) ──────────────────────────────────────────
-def _scrape(keywords, max_pages, dedup, prog_bar, status_el, log_el):
-    logs = []
-
-    def log_cb(msg):
+    def log(msg):
         logs.append(msg)
-        log_el.text("\n".join(logs[-8:]))
+        log_el.text("\n".join(logs[-12:]))
 
-    def status_cb(msg):
-        status_el.text(msg)
+    # ── ① collect 함수 시작 ────────────────────────────────────────────────────
+    log("① collect 함수 시작")
 
-    def progress_cb(val):
-        prog_bar.progress(min(val, 1.0))
+    # with 블록 전체가 Playwright 생명주기
+    with sync_playwright() as pw:
+        log("② playwright 시작 완료")
 
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(
-            _scrape_async(keywords, max_pages, dedup, log_cb, status_cb, progress_cb)
-        )
-        return result
-    finally:
+        # browser / context / page 는 try 시작 전에 None 으로 선언
+        browser = None
+        ctx     = None
+        pg      = None
+
         try:
-            loop.close()
-        except Exception:
-            pass
+            # ── ③ browser 생성 ────────────────────────────────────────────────
+            log("③ browser 생성 중...")
+            status_el.text("🖥️ 브라우저 시작 중...")
+            browser = pw.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-setuid-sandbox",
+                ],
+            )
+            log("④ browser 생성 완료")
+
+            # ── ⑤ context 생성 ───────────────────────────────────────────────
+            ctx = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="ko-KR",
+                viewport={"width": 1366, "height": 768},
+            )
+            log("⑤ context 생성 완료")
+
+            # ── ⑥ page 생성 ──────────────────────────────────────────────────
+            pg = ctx.new_page()
+            pg.add_init_script(
+                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+                "window.chrome={runtime:{}};"
+            )
+            log("⑥ page 생성 완료")
+
+            # ── ⑦ goto 실행 (naver.com) ───────────────────────────────────────
+            log("⑦ goto 직전: https://www.naver.com")
+            status_el.text("🌐 네이버 접속 중...")
+            pg.goto("https://www.naver.com",
+                    wait_until="domcontentloaded", timeout=30000)
+            log("⑧ goto 성공 — naver.com")
+            time.sleep(random.uniform(1.5, 2.5))
+
+            # ── 키워드별 수집 ─────────────────────────────────────────────────
+            total = len(keywords) * max_pages
+            done  = 0
+
+            for keyword in keywords:
+                log(f"── 키워드: {keyword}")
+                status_el.text(f"🔍 [{keyword}] 검색 중...")
+
+                # 검색창 입력
+                try:
+                    sb = pg.locator('input[name="query"]').first
+                    sb.click()
+                    time.sleep(0.3)
+                    sb.fill("")
+                    time.sleep(0.2)
+                    for ch in keyword:
+                        sb.type(ch, delay=random.randint(50, 130))
+                    time.sleep(0.5)
+                    sb.press("Enter")
+                    pg.wait_for_load_state("domcontentloaded", timeout=15000)
+                    time.sleep(2)
+                    log(f"   검색 완료 → {pg.url[:60]}")
+                except Exception as e:
+                    log(f"   검색창 실패, 직접 이동: {e}")
+                    pg.goto(
+                        f"https://search.naver.com/search.naver?query={quote(keyword)}",
+                        wait_until="domcontentloaded", timeout=20000,
+                    )
+                    time.sleep(2)
+
+                # 쇼핑 탭 이동 시도
+                try:
+                    tab = pg.locator('a[href*="where=shopping"]').first
+                    if tab.count() > 0:
+                        tab.click()
+                        pg.wait_for_load_state("domcontentloaded", timeout=15000)
+                        time.sleep(2)
+                except Exception:
+                    pass
+
+                for page_num in range(1, max_pages + 1):
+                    status_el.text(f"📄 [{keyword}] {page_num}p 수집 중...")
+                    try:
+                        if page_num > 1:
+                            nav = (
+                                f"https://search.naver.com/search.naver"
+                                f"?where=shopping&query={quote(keyword)}"
+                                f"&start={(page_num-1)*40+1}"
+                            )
+                            pg.goto(nav, wait_until="domcontentloaded", timeout=20000)
+                            time.sleep(random.uniform(1.5, 2.5))
+
+                        for y in [500, 1000, 1500, 2000]:
+                            pg.evaluate(f"window.scrollTo(0,{y})")
+                            time.sleep(0.4)
+
+                        html = pg.content()
+                        if "접속이 일시적으로 제한" in html:
+                            log(f"   ⛔ {page_num}p 차단 — 다음 키워드")
+                            break
+
+                        links = pg.locator('a[href*="smartstore.naver.com/"]').all()
+                        count = 0
+                        for lnk in links:
+                            href = lnk.get_attribute("href") or ""
+                            store_url, store_id = _store_key(href)
+                            if not store_url:
+                                continue
+                            k = store_id or store_url
+                            if dedup and k in seen_key:
+                                for r in results:
+                                    if (r.get("store_id") or r["store_url"]) == k:
+                                        if keyword not in r["found_keywords"]:
+                                            r["found_keywords"].append(keyword)
+                                continue
+                            seen_key.add(k)
+
+                            name = lnk.inner_text().strip().replace("\n", " ")
+                            if not name:
+                                name = store_id or store_url.split("/")[-1]
+                            try:
+                                p_html = lnk.evaluate(
+                                    'el => el.closest("li,div,article")?.innerHTML || ""'
+                                )
+                            except Exception:
+                                p_html = ""
+                            is_ad = any(x in p_html for x in ["광고","adBadge","ad_badge"])
+                            grade = next(
+                                (g for g in ["프리미엄","빅파워","파워"] if g in p_html), ""
+                            )
+                            results.append({
+                                "keyword":        keyword,
+                                "store_name":     name,
+                                "store_url":      store_url,
+                                "store_id":       store_id or "",
+                                "is_ad":          "광고" if is_ad else "비광고",
+                                "page":           f"{page_num}페이지",
+                                "grade":          grade,
+                                "email":          "미확인",
+                                "phone":          "미확인",
+                                "memo":           "",
+                                "found_keywords": [keyword],
+                            })
+                            count += 1
+
+                        log(f"   {page_num}p → {count}개")
+
+                    except Exception as e:
+                        log(f"   ⚠ {page_num}p 오류: {str(e)[:80]}")
+
+                    done += 1
+                    prog_bar.progress(min(done / total, 1.0))
+                    time.sleep(random.uniform(1, 2))
+
+            # ── ⑨ 연락처 수집 ────────────────────────────────────────────────
+            log(f"⑨ 수집 완료: {len(results)}개 — 연락처 수집 시작")
+            for i, row in enumerate(results):
+                if "smartstore.naver.com" not in (row.get("store_url") or ""):
+                    continue
+                status_el.text(f"📞 연락처 {i+1}/{len(results)}: {row['store_name'][:15]}")
+                try:
+                    pg.goto(row["store_url"],
+                            wait_until="domcontentloaded", timeout=15000)
+                    time.sleep(random.uniform(1, 1.5))
+                    email, phone = _contacts(pg.content())
+                    row["email"] = email
+                    row["phone"] = phone
+                except Exception:
+                    pass
+
+        except Exception as e:
+            # close() 는 finally 에서만 — 여기서는 로그만
+            log(f"❌ 오류: {type(e).__name__}: {str(e)[:120]}")
+            raise
+
+        finally:
+            # ── ⑩ finally 에서만 close ────────────────────────────────────────
+            log("⑩ finally close 시작")
+            if pg:
+                try:
+                    pg.close()
+                except Exception:
+                    pass
+            if ctx:
+                try:
+                    ctx.close()
+                except Exception:
+                    pass
+            if browser:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+            log("⑪ finally close 완료")
+
+    # with sync_playwright() 블록 종료 후 결과 반환
+    return results
 
 
 # ── 기존 데이터 로드 / 병합 ───────────────────────────────────────────────────
@@ -349,8 +329,7 @@ def _to_csv(rows):
     df = pd.DataFrame(rows)
     if "found_keywords" in df.columns:
         df["found_keywords"] = df["found_keywords"].apply(
-            lambda v: ", ".join(v) if isinstance(v, list) else str(v)
-        )
+            lambda v: ", ".join(v) if isinstance(v, list) else str(v))
     cols = ["keyword","store_name","is_ad","page","store_url","grade","email","phone","memo","found_keywords"]
     for c in cols:
         if c not in df.columns:
@@ -362,8 +341,7 @@ def _to_xlsx(rows):
     df = pd.DataFrame(rows)
     if "found_keywords" in df.columns:
         df["found_keywords"] = df["found_keywords"].apply(
-            lambda v: ", ".join(v) if isinstance(v, list) else str(v)
-        )
+            lambda v: ", ".join(v) if isinstance(v, list) else str(v))
     cols = ["keyword","store_name","is_ad","page","store_url","grade","email","phone","memo","found_keywords"]
     for c in cols:
         if c not in df.columns:
@@ -384,16 +362,14 @@ col_kw, col_cfg, col_info = st.columns([3, 2, 2], gap="large")
 
 with col_kw:
     st.markdown("#### 키워드")
-    kw_raw = st.text_area(
-        "키워드 (줄바꿈으로 구분)", height=160,
-        placeholder="예:\n강아지사료\n고양이간식\n반려동물용품",
-        key="shop_kw_raw",
-    )
+    kw_raw = st.text_area("키워드 (줄바꿈으로 구분)", height=160,
+                           placeholder="예:\n강아지사료\n고양이간식",
+                           key="shop_kw_raw")
 
 with col_cfg:
     st.markdown("#### 설정")
     max_pages = st.number_input("수집 페이지 수", min_value=1, max_value=10,
-                                value=2, step=1, key="shop_pages")
+                                value=1, step=1, key="shop_pages")
     dedup = st.checkbox("중복 제거 (스토어 기준)", value=True, key="shop_dedup")
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
     run_btn = st.button("🔍 수집 시작", type="primary",
@@ -401,11 +377,8 @@ with col_cfg:
 
 with col_info:
     st.markdown("#### 수집 항목")
-    st.markdown(
-        "- 수집 키워드\n- 스토어명\n- 광고여부\n"
-        "- 노출 페이지\n- 스토어 URL\n- 판매자 등급\n"
-        "- 이메일 / 연락처\n- 메모"
-    )
+    st.markdown("- 수집 키워드\n- 스토어명\n- 광고여부\n- 노출 페이지\n"
+                "- 스토어 URL\n- 판매자 등급\n- 이메일 / 연락처\n- 메모")
 
 st.divider()
 
@@ -419,20 +392,20 @@ if run_btn:
         logbox = st.empty()
         new_rows = []
         try:
-            new_rows = _scrape(keywords, int(max_pages), dedup, prog, status, logbox)
+            new_rows = _collect(keywords, int(max_pages), dedup, prog, status, logbox)
         except Exception as e:
             st.error(f"수집 오류: {e}")
 
         prog.empty()
         status.empty()
-        logbox.empty()
+        # logbox 는 유지 (마지막 로그 확인용)
 
         if new_rows:
             merged = _merge(_load_existing(), new_rows)
             st.session_state[SESSION_KEY] = merged
             st.success(f"✅ 수집 완료 — 신규 {len(new_rows)}건 / 전체 {len(merged)}건")
         else:
-            st.warning("수집된 데이터가 없습니다. 로그를 확인해주세요.")
+            st.warning("수집된 데이터가 없습니다. 위 로그를 확인해주세요.")
 
 if SESSION_KEY not in st.session_state:
     loaded = _load_existing()
@@ -451,12 +424,10 @@ if results:
         display_rows.append(dr)
 
     df = pd.DataFrame(display_rows)
-    col_order = ["keyword","store_name","is_ad","page","store_url","grade","email","phone","memo"]
-    col_rename = {
-        "keyword": "수집키워드", "store_name": "스토어명", "is_ad": "광고여부",
-        "page": "노출페이지", "store_url": "스토어URL", "grade": "등급",
-        "email": "이메일", "phone": "연락처", "memo": "메모",
-    }
+    col_order  = ["keyword","store_name","is_ad","page","store_url","grade","email","phone","memo"]
+    col_rename = {"keyword":"수집키워드","store_name":"스토어명","is_ad":"광고여부",
+                  "page":"노출페이지","store_url":"스토어URL","grade":"등급",
+                  "email":"이메일","phone":"연락처","memo":"메모"}
     for c in col_order:
         if c not in df.columns:
             df[c] = ""
@@ -491,10 +462,8 @@ if results:
     with a1:
         if st.button("🗑️ 선택 삭제", use_container_width=True, key="shop_del"):
             if edited is not None:
-                keep = [
-                    results[i] for i, r in edited.iterrows()
-                    if not r.get("선택", False) and i < len(results)
-                ]
+                keep = [results[i] for i, r in edited.iterrows()
+                        if not r.get("선택", False) and i < len(results)]
                 st.session_state[SESSION_KEY] = keep
                 st.rerun()
     with a2:
@@ -505,10 +474,8 @@ if results:
         st.download_button("📥 CSV", _to_csv(results), "쇼핑광고DB.csv",
                            "text/csv", use_container_width=True, key="shop_csv")
     with a4:
-        st.download_button(
-            "📊 XLSX", _to_xlsx(results), "쇼핑광고DB.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True, key="shop_xlsx",
-        )
+        st.download_button("📊 XLSX", _to_xlsx(results), "쇼핑광고DB.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True, key="shop_xlsx")
 else:
     st.info("키워드를 입력하고 '수집 시작'을 눌러주세요.")
