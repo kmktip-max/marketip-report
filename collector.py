@@ -6,9 +6,17 @@
 - Supabase에도 저장 (연결된 경우)
 """
 
-import os, sys, re, time, random, json, csv
+import os, sys, re, time, random, json, csv, io
 from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, unquote
+
+# Windows 콘솔 UTF-8 출력
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass  # Python < 3.7
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "data")
