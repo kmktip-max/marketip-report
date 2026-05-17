@@ -791,20 +791,31 @@ with t_up:
     )
 
     if ufs:
-        # ── 파일별 파싱 ──────────────────────────────────────────────────────
-        _results, merged_df = [], None
-        for _uf in ufs:
-            _dg, _err, _, _dbg = parse_excel(_uf)
-            _results.append({
-                "name": _uf.name,
-                "ok":   _err is None,
-                "cnt":  len(_dg) if _err is None else 0,
-                "err":  _err,
-                "dbg":  _dbg,
-                "df":   _dg if _err is None else None,
-            })
-            if _err is None:
-                merged_df = _dg if merged_df is None else _merge_uploads(merged_df, _dg)
+        # ── 파일이 바뀐 경우에만 재파싱 ─────────────────────────────────────
+        _cur_keys = [(f.name, f.size) for f in ufs]
+        _cached_keys = st.session_state.get("_upload_keys", [])
+
+        if _cur_keys != _cached_keys:
+            _results, merged_df = [], None
+            for _uf in ufs:
+                _dg, _err, _, _dbg = parse_excel(_uf)
+                _results.append({
+                    "name": _uf.name,
+                    "ok":   _err is None,
+                    "cnt":  len(_dg) if _err is None else 0,
+                    "err":  _err,
+                    "dbg":  _dbg,
+                    "df":   _dg if _err is None else None,
+                })
+                if _err is None:
+                    merged_df = _dg if merged_df is None else _merge_uploads(merged_df, _dg)
+            st.session_state["_upload_keys"]    = _cur_keys
+            st.session_state["_upload_results"] = _results
+            if merged_df is not None:
+                st.session_state["uploaded_df"] = merged_df
+        else:
+            _results  = st.session_state.get("_upload_results", [])
+            merged_df = st.session_state.get("uploaded_df")
 
         # ── 파일별 상태 카드 ──────────────────────────────────────────────────
         for _r in _results:
@@ -869,8 +880,6 @@ with t_up:
                 st.dataframe(pd.DataFrame(_last_dbg.get("raw_sample",[])), use_container_width=True)
                 st.markdown("**그룹핑 결과 상위 10행**")
                 st.dataframe(pd.DataFrame(_last_dbg.get("group_sample",[])), use_container_width=True)
-
-            st.session_state["uploaded_df"] = merged_df
 
             show = [c for c in ["display_name","customer_id","ad_account_no","매체사",
                                  "ad_supply","ad_total","comm_rate","comm_supply","comm_total"]
