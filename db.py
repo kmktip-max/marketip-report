@@ -17,10 +17,16 @@ def _get_supabase():
     _sb_checked = True
     try:
         import streamlit as st
-        url = st.secrets.get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
-        key = st.secrets.get("SUPABASE_KEY", "") or os.getenv("SUPABASE_KEY", "")
+        try:
+            url = st.secrets["SUPABASE_URL"]
+        except Exception:
+            url = os.getenv("SUPABASE_URL", "")
+        try:
+            key = st.secrets["SUPABASE_KEY"]
+        except Exception:
+            key = os.getenv("SUPABASE_KEY", "")
         if not url or not key:
-            _sb_error = "SUPABASE_URL 또는 SUPABASE_KEY 누락"
+            _sb_error = f"SUPABASE_URL 또는 SUPABASE_KEY 누락 (url={bool(url)}, key={bool(key)})"
             return None
         from supabase import create_client
         _sb_client = create_client(url, key)
