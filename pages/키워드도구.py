@@ -497,8 +497,8 @@ with t_extract:
     # ── 입력 ─────────────────────────────────────────────────────────────
     with col_in:
         st.markdown("#### 입력")
-        ex_biz  = st.text_input("업체명 *", placeholder="예: 법무법인 마케팁", key="ex_biz")
-        ex_url  = st.text_input("URL *",    placeholder="https://example.com",  key="ex_url")
+        ex_biz  = st.text_input("업체명 *", placeholder="예: 마케팁", key="ex_biz")
+        ex_url  = st.text_input("URL *",    placeholder="https://www.admarketip.com",  key="ex_url")
         ex_industry = st.text_input("업종 (선택)",
                                     placeholder="예: 법률, 성형외과, 인테리어",
                                     key="ex_industry")
