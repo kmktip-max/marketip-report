@@ -29,30 +29,41 @@ if st.session_state.get("auth_type") != "admin":
     st.stop()
 
 
-# ── 스토리지 헬퍼 (Supabase 우선, JSON 폴백) ──────────────────────────────────
-load_mapping  = lambda: sb_load("freelancer_mapping",      F_MAPPING)  or []
-save_mapping  = lambda d: sb_save("freelancer_mapping",    d, F_MAPPING)
+# ── 스토리지 헬퍼 (세션 캐시 → Supabase → JSON 폴백) ────────────────────────
+def _sc_load(key, sb_key, path):
+    """세션 내 캐시 우선 로드. 없으면 Supabase에서 로드 후 캐시."""
+    if key not in st.session_state:
+        st.session_state[key] = sb_load(sb_key, path) or []
+    return st.session_state[key]
 
-# ── 프리랜서명 오타 마이그레이션 (임예솔 → 임예슬) ──────────────────────────
-def _migrate_mapping():
+def _sc_save(key, sb_key, path, data):
+    """저장 후 세션 캐시도 갱신."""
+    st.session_state[key] = data
+    sb_save(sb_key, data, path)
+
+load_mapping  = lambda: _sc_load("_c_mapping",  "freelancer_mapping",    F_MAPPING)
+save_mapping  = lambda d: _sc_save("_c_mapping", "freelancer_mapping",   F_MAPPING, d)
+load_expenses = lambda: _sc_load("_c_expenses", "other_expenses",        F_EXPENSES)
+save_expenses = lambda d: _sc_save("_c_expenses","other_expenses",       F_EXPENSES, d)
+load_extra    = lambda: _sc_load("_c_extra",    "monthly_extra_revenue", F_EXTRA)
+save_extra    = lambda d: _sc_save("_c_extra",   "monthly_extra_revenue",F_EXTRA, d)
+load_pnl      = lambda: _sc_load("_c_pnl",      "monthly_pnl",          F_PNL)
+save_pnl      = lambda d: _sc_save("_c_pnl",    "monthly_pnl",          F_PNL, d)
+load_annual   = lambda: _sc_load("_c_annual",   "annual_pnl",           F_ANNUAL)
+save_annual   = lambda d: _sc_save("_c_annual", "annual_pnl",           F_ANNUAL, d)
+
+# ── 프리랜서명 오타 마이그레이션 (임예솔 → 임예슬) — 세션당 1회 ─────────────
+if "_migrated" not in st.session_state:
     _RENAME = {"임예솔": "임예슬"}
-    data = load_mapping()
-    changed = False
-    for m in data:
-        if m.get("freelancer") in _RENAME:
-            m["freelancer"] = _RENAME[m["freelancer"]]
-            changed = True
-    if changed:
-        save_mapping(data)
-_migrate_mapping()
-load_expenses = lambda: sb_load("other_expenses",          F_EXPENSES) or []
-save_expenses = lambda d: sb_save("other_expenses",        d, F_EXPENSES)
-load_extra    = lambda: sb_load("monthly_extra_revenue",   F_EXTRA)    or []
-save_extra    = lambda d: sb_save("monthly_extra_revenue", d, F_EXTRA)
-load_pnl      = lambda: sb_load("monthly_pnl",            F_PNL)      or []
-save_pnl      = lambda d: sb_save("monthly_pnl",          d, F_PNL)
-load_annual   = lambda: sb_load("annual_pnl",             F_ANNUAL)   or []
-save_annual   = lambda d: sb_save("annual_pnl",           d, F_ANNUAL)
+    _mdata  = load_mapping()
+    _changed = False
+    for _m in _mdata:
+        if _m.get("freelancer") in _RENAME:
+            _m["freelancer"] = _RENAME[_m["freelancer"]]
+            _changed = True
+    if _changed:
+        save_mapping(_mdata)
+    st.session_state["_migrated"] = True
 
 def upsert_pnl(ym, search_owner, search_fl, place, blog,
                expenses, gross, after_tax, net, net_after_tax):
