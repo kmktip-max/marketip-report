@@ -51,9 +51,10 @@ def load_data():
 def save_data(d):
     sb_save(SB_KEY, d, FALLBACK_JSON)
 
-def new_kw_obj(keyword, current_bid=None):
+def new_kw_obj(keyword, current_bid=None, ncc_keyword_id=None):
     return {
         "keyword":         keyword,
+        "ncc_keyword_id":  ncc_keyword_id,
         "current_rank":    None,
         "current_bid":     current_bid,
         "recommended_bid": None,
@@ -130,6 +131,21 @@ def _get_id(obj, *keys):
             return str(v)
     return ""
 
+def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt):
+    """네이버 API로 키워드 입찰가 실제 업데이트"""
+    uri = f"/ncc/keywords/{keyword_id}"
+    ts  = str(int(time.time() * 1000))
+    sig = _naver_sig(secret_key, ts, "PUT", uri)
+    headers = {
+        "X-Timestamp": ts, "X-API-KEY": api_key,
+        "X-Customer":  str(cid), "X-Signature": sig,
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    r = requests.put(NAVER_API_BASE + uri, headers=headers,
+                     json={"bidAmt": bid_amt}, timeout=10)
+    r.raise_for_status()
+    return r.json()
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # UI
@@ -146,43 +162,111 @@ tab1, tab2, tab3 = st.tabs(["입찰 현황", "그룹 관리", "키워드 관리"
 # 탭1: 입찰 현황
 # ════════════════════════════════════════════════════════════════════════════
 with tab1:
+    import pandas as pd
+
+    bid_state  = data.get("state", {})
+    is_running = bid_state.get("running", False)
+
+    # ── 자동입찰 상태 패널 ────────────────────────────────────────────
+    sc1, sc2 = st.columns([3, 1])
+    with sc1:
+        if is_running:
+            started = bid_state.get("started_at", "")
+            st.markdown(
+                f'<div style="padding:10px 16px;background:#d4edda;border-radius:8px;'
+                f'color:#155724;font-weight:700;font-size:15px;">'
+                f'🟢 자동입찰 실행 중 &nbsp;<span style="font-weight:400;font-size:13px;">'
+                f'(시작: {started})</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div style="padding:10px 16px;background:#f8f9fa;border-radius:8px;'
+                'color:#6c757d;font-weight:700;font-size:15px;">'
+                '🔴 자동입찰 중지됨</div>',
+                unsafe_allow_html=True,
+            )
+    with sc2:
+        if is_running:
+            if st.button("⏹ 중지", use_container_width=True):
+                data["state"] = {"running": False, "started_at": None}
+                save_data(data)
+                st.rerun()
+        else:
+            if st.button("▶ 자동입찰 시작", type="primary", use_container_width=True):
+                data["state"] = {
+                    "running":    True,
+                    "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                }
+                save_data(data)
+                st.rerun()
+
+    st.caption(
+        "💡 **사용법:** ① 현재순위·현재입찰가 입력 → ② 입찰가 계산 → "
+        "③ 네이버에 입찰가 전송  |  자동입찰 시작 시 순위가 입력된 키워드를 자동 계산합니다."
+    )
+    st.divider()
+
+    # ── 자동입찰 실행 중 → 순위 있는 키워드 자동 계산 ────────────────
+    if is_running:
+        _now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        _changed = False
+        for g in groups:
+            for kw_obj in g.get("keywords", []):
+                if (kw_obj.get("current_rank") is not None
+                        and kw_obj.get("current_bid") is not None):
+                    nb, st_ = calc_bid(
+                        kw_obj["current_rank"], g["target_rank"],
+                        kw_obj["current_bid"],  g["bid_unit"],
+                        g["min_bid"], g["max_bid"],
+                    )
+                    kw_obj["recommended_bid"] = nb
+                    kw_obj["status"]          = st_
+                    kw_obj["last_checked"]    = _now
+                    _changed = True
+        if _changed:
+            data["groups"] = groups
+            save_data(data)
+
+    # ── 키워드 테이블 ─────────────────────────────────────────────────
     rows = []
     for g in groups:
         for kw in g.get("keywords", []):
             rows.append({
-                "_gid":      g["id"],
-                "_kw":       kw["keyword"],
-                "그룹명":    g["name"],
-                "키워드":    kw["keyword"],
-                "현재순위":  kw.get("current_rank"),
-                "목표순위":  g["target_rank"],
-                "현재입찰가":kw.get("current_bid"),
-                "추천입찰가":kw.get("recommended_bid"),
-                "상태":      (STATUS_ICON.get(kw.get("status","데이터 부족"),"⚪")
-                              + " " + kw.get("status","데이터 부족")),
-                "마지막체크":kw.get("last_checked","") or "",
+                "_gid":       g["id"],
+                "_kw":        kw["keyword"],
+                "_kwid":      kw.get("ncc_keyword_id",""),
+                "_acct_id":   g.get("ad_account_id",""),
+                "그룹명":     g["name"],
+                "키워드":     kw["keyword"],
+                "현재순위":   kw.get("current_rank"),
+                "목표순위":   g["target_rank"],
+                "현재입찰가": kw.get("current_bid"),
+                "추천입찰가": kw.get("recommended_bid"),
+                "상태":       (STATUS_ICON.get(kw.get("status","데이터 부족"),"⚪")
+                               + " " + kw.get("status","데이터 부족")),
+                "마지막체크": kw.get("last_checked","") or "",
             })
 
     if not rows:
         st.info("등록된 키워드가 없습니다. [그룹 관리] 탭에서 그룹을 추가하세요.")
     else:
-        import pandas as pd
-        df      = pd.DataFrame(rows)
-        HIDDEN  = {"_gid","_kw"}
+        df     = pd.DataFrame(rows)
+        HIDDEN = {"_gid","_kw","_kwid","_acct_id"}
         disp_df = df[[c for c in df.columns if c not in HIDDEN]].copy()
 
         edited = st.data_editor(
             disp_df,
             use_container_width=True, hide_index=True, num_rows="fixed",
             column_config={
-                "그룹명":    st.column_config.TextColumn(disabled=True),
-                "키워드":    st.column_config.TextColumn(disabled=True),
-                "현재순위":  st.column_config.NumberColumn("현재순위", format="%.1f"),
-                "목표순위":  st.column_config.NumberColumn(disabled=True),
-                "현재입찰가":st.column_config.NumberColumn("현재입찰가", format="%d"),
-                "추천입찰가":st.column_config.NumberColumn(disabled=True, format="%d"),
-                "상태":      st.column_config.TextColumn(disabled=True),
-                "마지막체크":st.column_config.TextColumn(disabled=True),
+                "그룹명":     st.column_config.TextColumn(disabled=True),
+                "키워드":     st.column_config.TextColumn(disabled=True),
+                "현재순위":   st.column_config.NumberColumn("현재순위", format="%.1f"),
+                "목표순위":   st.column_config.NumberColumn(disabled=True),
+                "현재입찰가": st.column_config.NumberColumn("현재입찰가", format="%d"),
+                "추천입찰가": st.column_config.NumberColumn(disabled=True, format="%d"),
+                "상태":       st.column_config.TextColumn(disabled=True),
+                "마지막체크": st.column_config.TextColumn(disabled=True),
             },
             key="bid_editor",
         )
@@ -193,8 +277,10 @@ with tab1:
             unsafe_allow_html=True,
         )
 
-        c1, c2 = st.columns(2)
-        with c1:
+        b1, b2, b3 = st.columns(3)
+
+        # ① 입찰가 계산
+        with b1:
             if st.button("🔄 입찰가 계산", use_container_width=True):
                 now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                 recs = edited.to_dict(orient="records")
@@ -220,8 +306,10 @@ with tab1:
                 save_data(data)
                 st.success("계산 완료")
                 st.rerun()
-        with c2:
-            if st.button("✅ 추천가 적용", use_container_width=True):
+
+        # ② 앱 내 적용 (현재입찰가 ← 추천입찰가)
+        with b2:
+            if st.button("✅ 앱 내 적용", use_container_width=True):
                 for g in groups:
                     for kw_obj in g.get("keywords", []):
                         if kw_obj.get("recommended_bid") is not None:
@@ -229,6 +317,47 @@ with tab1:
                 data["groups"] = groups
                 save_data(data)
                 st.success("추천입찰가 → 현재입찰가 적용 완료")
+                st.rerun()
+
+        # ③ 네이버에 실제 전송
+        with b3:
+            if st.button("🚀 네이버에 입찰가 전송", type="primary",
+                         use_container_width=True):
+                ad_accounts = load_ad_accounts()
+                acct_map    = {a["id"]: a for a in ad_accounts}
+                ok_cnt = err_cnt = skip_cnt = 0
+                errs = []
+                for g in groups:
+                    acct = acct_map.get(g.get("ad_account_id",""))
+                    if not acct:
+                        skip_cnt += len(g.get("keywords",[]))
+                        continue
+                    ak = acct["api_key"]
+                    sk = acct["secret_key"]
+                    ci = acct["customer_id"]
+                    for kw_obj in g.get("keywords", []):
+                        kid = kw_obj.get("ncc_keyword_id","")
+                        bid = kw_obj.get("recommended_bid")
+                        if not kid or bid is None:
+                            skip_cnt += 1
+                            continue
+                        try:
+                            naver_update_bid(ak, sk, ci, kid, bid)
+                            kw_obj["current_bid"] = bid
+                            ok_cnt += 1
+                        except Exception as e:
+                            err_cnt += 1
+                            errs.append(f"{kw_obj['keyword']}: {e}")
+                data["groups"] = groups
+                save_data(data)
+                msgs = []
+                if ok_cnt:   msgs.append(f"✅ {ok_cnt}개 전송 완료")
+                if skip_cnt: msgs.append(f"⏭ {skip_cnt}개 건너뜀 (ID 없음)")
+                if err_cnt:  msgs.append(f"❌ {err_cnt}개 실패")
+                st.info("  |  ".join(msgs))
+                if errs:
+                    with st.expander("오류 상세"):
+                        st.text("\n".join(errs))
                 st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -598,25 +727,27 @@ with tab2:
                         existing_kws = {kw["keyword"] for g in groups for kw in g.get("keywords",[])}
                         kw_objs = []
                         for k in n_kws:
-                            t   = k.get("keyword") or k.get("keywordText","")
-                            bid = _resolve_bid(k)
+                            t    = k.get("keyword") or k.get("keywordText","")
+                            bid  = _resolve_bid(k)
+                            kid  = _get_id(k, "nccKeywordId", "keywordId", "id")
                             if t and t not in existing_kws:
-                                kw_objs.append(new_kw_obj(t, bid))
+                                kw_objs.append(new_kw_obj(t, bid, kid))
                                 if len(kw_objs) >= MAX_KEYWORDS:
                                     break
 
                         data["groups"].append({
-                            "id":             str(uuid.uuid4()),
-                            "name":           n_name.strip(),
-                            "target_rank":    int(n_rank),
-                            "min_bid":        int(n_min),
-                            "max_bid":        int(n_max),
-                            "bid_unit":       int(n_unit),
-                            "check_interval": int(n_intvl),
-                            "auto_apply":     n_auto,
-                            "keywords":       kw_objs,
+                            "id":               str(uuid.uuid4()),
+                            "name":             n_name.strip(),
+                            "target_rank":      int(n_rank),
+                            "min_bid":          int(n_min),
+                            "max_bid":          int(n_max),
+                            "bid_unit":         int(n_unit),
+                            "check_interval":   int(n_intvl),
+                            "auto_apply":       n_auto,
+                            "keywords":         kw_objs,
                             "naver_campaign_id": camp_id,
                             "naver_adgroup_id":  ag_id,
+                            "ad_account_id":     sel_acct.get("id",""),
                         })
                         save_data(data)
                         for k in ["n_camps","n_ags","n_kws"]:
