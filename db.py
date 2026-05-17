@@ -1,21 +1,5 @@
 """
 영구 저장소 모듈 — Supabase 우선, JSON 파일 폴백
-
-사용 방법:
-  from db import sb_load, sb_save
-
-Supabase secrets (Streamlit Cloud > Settings > Secrets):
-  SUPABASE_URL = "https://xxx.supabase.co"
-  SUPABASE_KEY = "eyJ..."   # service_role 또는 anon key
-
-Supabase 테이블 (1개만 생성):
-  CREATE TABLE app_data (
-    key  text PRIMARY KEY,
-    data jsonb NOT NULL DEFAULT '[]',
-    updated_at timestamptz NOT NULL DEFAULT now()
-  );
-  ALTER TABLE app_data ENABLE ROW LEVEL SECURITY;
-  CREATE POLICY "allow_all" ON app_data USING (true) WITH CHECK (true);
 """
 
 import json
@@ -24,22 +8,27 @@ import time
 
 _sb_client = None
 _sb_checked = False
+_sb_error = ""   # 마지막 오류 메시지
 
 def _get_supabase():
-    """Supabase 클라이언트 반환 (캐시). 미설정 시 None."""
-    global _sb_client, _sb_checked
+    global _sb_client, _sb_checked, _sb_error
     if _sb_checked:
         return _sb_client
     _sb_checked = True
     try:
         import streamlit as st
-        url = (getattr(st, "secrets", {}) or {}).get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
-        key = (getattr(st, "secrets", {}) or {}).get("SUPABASE_KEY", "") or os.getenv("SUPABASE_KEY", "")
+        url = st.secrets.get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", "")
+        key = st.secrets.get("SUPABASE_KEY", "") or os.getenv("SUPABASE_KEY", "")
         if not url or not key:
+            _sb_error = "SUPABASE_URL 또는 SUPABASE_KEY 누락"
             return None
         from supabase import create_client
         _sb_client = create_client(url, key)
-    except Exception:
+        # 실제 연결 테스트
+        _sb_client.table("app_data").select("key").limit(1).execute()
+        _sb_error = ""
+    except Exception as e:
+        _sb_error = str(e)
         _sb_client = None
     return _sb_client
 
@@ -60,11 +49,6 @@ def _json_save(path, data):
         pass
 
 def sb_load(collection: str, fallback_path: str = None):
-    """
-    Supabase에서 데이터 로드.
-    - Supabase 미설정 또는 실패 시 → JSON 파일 폴백
-    - 데이터 없으면 빈 리스트 반환
-    """
     sb = _get_supabase()
     if sb:
         try:
@@ -72,19 +56,15 @@ def sb_load(collection: str, fallback_path: str = None):
             if res.data:
                 return res.data[0]["data"]
             return []
-        except Exception:
-            pass
-    # JSON 폴백
+        except Exception as e:
+            global _sb_error
+            _sb_error = str(e)
     if fallback_path:
         return _json_load(fallback_path)
     return []
 
 def sb_save(collection: str, data, fallback_path: str = None):
-    """
-    Supabase에 데이터 저장 + JSON 파일 백업.
-    - Supabase 미설정 시 JSON 파일에만 저장
-    """
-    # JSON 백업 (항상)
+    global _sb_error
     if fallback_path:
         _json_save(fallback_path, data)
 
@@ -94,11 +74,17 @@ def sb_save(collection: str, data, fallback_path: str = None):
             sb.table("app_data").upsert({
                 "key":        collection,
                 "data":       data,
-                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }, on_conflict="key").execute()
-        except Exception:
-            pass
+            _sb_error = ""
+            return True
+        except Exception as e:
+            _sb_error = str(e)
+    return False
 
 def is_supabase_connected() -> bool:
-    """Supabase 연결 여부 확인"""
     return _get_supabase() is not None
+
+def get_supabase_error() -> str:
+    _get_supabase()  # 한 번은 시도
+    return _sb_error

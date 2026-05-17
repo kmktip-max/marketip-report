@@ -9,7 +9,7 @@ from datetime import date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from db import sb_load, sb_save, is_supabase_connected
+from db import sb_load, sb_save, is_supabase_connected, get_supabase_error
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
 FREELANCERS = [
@@ -27,6 +27,13 @@ F_ANNUAL   = os.path.join(ROOT, "annual_pnl.json")
 if st.session_state.get("auth_type") != "admin":
     st.error("🔒 관리자만 접근 가능합니다.")
     st.stop()
+
+# ── Supabase 연결 상태 표시 ───────────────────────────────────────────────────
+if is_supabase_connected():
+    st.success("🟢 Supabase 연결됨 — 데이터가 클라우드에 저장됩니다")
+else:
+    _err = get_supabase_error()
+    st.error(f"🔴 Supabase 미연결 — 데이터가 저장되지 않습니다\n\n오류: {_err}")
 
 # ── 스토리지 헬퍼 (Supabase 우선, JSON 폴백) ──────────────────────────────────
 load_mapping  = lambda: sb_load("freelancer_mapping",      F_MAPPING)  or []
