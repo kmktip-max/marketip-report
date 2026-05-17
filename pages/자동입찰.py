@@ -116,7 +116,7 @@ def naver_campaigns(api_key, secret_key, cid):
 
 def naver_adgroups(api_key, secret_key, cid, campaign_id):
     return _naver_get("/ncc/adgroups", api_key, secret_key, cid,
-                      params={"campaignId": campaign_id}) or []
+                      params={"nccCampaignId": campaign_id}) or []
 
 def naver_keywords(api_key, secret_key, cid, adgroup_id):
     return _naver_get("/ncc/keywords", api_key, secret_key, cid,
@@ -410,7 +410,9 @@ with tab2:
                     with st.spinner("캠페인 조회 중..."):
                         try:
                             st.session_state["n_camps"] = naver_campaigns(api_key, secret_key, cid)
-                            st.success(f"캠페인 {len(st.session_state['n_camps'])}개 로드됨")
+                            # 캠페인 바뀌면 하위 데이터 초기화
+                            for _k in ("n_ags", "n_ags_camp_id", "n_kws", "n_kws_ag_id"):
+                                st.session_state.pop(_k, None)
                         except Exception as e:
                             st.error(f"API 오류: {e}")
 
@@ -424,14 +426,16 @@ with tab2:
                 ]
                 camp_id = _get_id(sel_camp, "nccCampaignId", "campaignId", "id")
 
-                # 광고그룹
-                if st.button("📂 광고그룹 불러오기", key="load_ags"):
+                # 광고그룹 — 캠페인 변경 시 자동 로드
+                if camp_id and st.session_state.get("n_ags_camp_id") != camp_id:
                     with st.spinner("광고그룹 조회 중..."):
                         try:
                             st.session_state["n_ags"] = naver_adgroups(
                                 api_key, secret_key, cid, camp_id
                             )
-                            st.success(f"광고그룹 {len(st.session_state['n_ags'])}개 로드됨")
+                            st.session_state["n_ags_camp_id"] = camp_id
+                            st.session_state.pop("n_kws", None)
+                            st.session_state.pop("n_kws_ag_id", None)
                         except Exception as e:
                             st.error(f"API 오류: {e}")
 
@@ -445,24 +449,24 @@ with tab2:
                 ]
                 ag_id = _get_id(sel_ag, "nccAdgroupId", "adgroupId", "adGroupId", "id")
 
-                # 광고그룹 ID 확인 디버그
                 if not ag_id:
                     st.warning(f"광고그룹 ID를 찾을 수 없습니다. API 응답 키: {list(sel_ag.keys())}")
                     st.stop()
 
-                # 키워드
-                if st.button("🔍 키워드 불러오기", key="load_kws_tab2"):
+                # 키워드 — 광고그룹 변경 시 자동 로드
+                if ag_id and st.session_state.get("n_kws_ag_id") != ag_id:
                     with st.spinner("키워드 조회 중..."):
                         try:
                             st.session_state["n_kws"] = naver_keywords(
                                 api_key, secret_key, cid, ag_id
                             )
-                            st.success(f"키워드 {len(st.session_state['n_kws'])}개 로드됨")
+                            st.session_state["n_kws_ag_id"] = ag_id
                         except Exception as e:
                             st.error(f"API 오류: {e}")
 
                 n_kws = st.session_state.get("n_kws", [])
                 if not n_kws:
+                    st.info("키워드가 없는 광고그룹입니다.")
                     st.stop()
 
                 # 광고그룹 기본 입찰가 (키워드가 "기본" 설정일 때 fallback)
