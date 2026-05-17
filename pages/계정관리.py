@@ -172,7 +172,7 @@ with tab_create:
     with st.form("create_account", clear_on_submit=True):
         cc1, cc2 = st.columns([3, 2])
         with cc1:
-            n_biz  = st.text_input("업체명 *",     placeholder="예: 법무법인 재현")
+            n_biz  = st.text_input("업체명 *",     placeholder="예: 마케팁")
             n_user = st.text_input("아이디 *",     placeholder="영문+숫자 조합 권장")
             n_pw1  = st.text_input("비밀번호 *",   type="password")
             n_pw2  = st.text_input("비밀번호 확인 *", type="password")
