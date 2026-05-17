@@ -367,14 +367,20 @@ with tab2:
                 with st.form(f"edit_g_{g['id']}"):
                     c1, c2 = st.columns(2)
                     with c1:
-                        g_name  = st.text_input("그룹명",        value=g["name"])
-                        g_rank  = st.number_input("목표순위",     value=g["target_rank"],    min_value=1, max_value=15)
-                        g_min   = st.number_input("최소입찰가",   value=g["min_bid"],        min_value=10, step=10)
-                        g_max   = st.number_input("최대입찰가",   value=g["max_bid"],        min_value=10, step=10)
+                        g_name   = st.text_input("그룹명",        value=g["name"])
+                        g_rank   = st.number_input("목표순위",     value=g["target_rank"],    min_value=1, max_value=15)
+                        g_min    = st.number_input("최소입찰가",   value=g["min_bid"],        min_value=10, step=10)
+                        g_max    = st.number_input("최대입찰가",   value=g["max_bid"],        min_value=10, step=10)
                     with c2:
-                        g_unit  = st.number_input("증감단위(원)", value=g["bid_unit"],       min_value=10, step=10)
-                        g_intvl = st.number_input("체크주기(분)", value=g["check_interval"], min_value=1)
-                        g_auto  = st.checkbox("자동적용",         value=g.get("auto_apply", False))
+                        g_unit   = st.number_input("증감단위(원)", value=g["bid_unit"],       min_value=10, step=10)
+                        g_intvl  = st.number_input("체크주기(분)", value=g["check_interval"], min_value=1)
+                        g_auto   = st.checkbox("자동적용",         value=g.get("auto_apply", False))
+                    g_domain = st.text_input(
+                        "검색 도메인 (순위 자동조회용)",
+                        value=g.get("check_domain",""),
+                        placeholder="예: www.example.com",
+                        help="run_rank_checker.bat 실행 시 이 도메인의 광고 순위를 자동 조회합니다.",
+                    )
 
                     cs, cd = st.columns(2)
                     with cs:
@@ -389,6 +395,7 @@ with tab2:
                                     "min_bid": int(g_min), "max_bid": int(g_max),
                                     "bid_unit": int(g_unit), "check_interval": int(g_intvl),
                                     "auto_apply": g_auto,
+                                    "check_domain": g_domain.strip(),
                                 })
                                 save_data(data)
                                 st.success("수정 완료")
@@ -432,6 +439,11 @@ with tab2:
                     n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
                     n_auto  = st.checkbox("자동적용", value=False)
 
+                n_domain = st.text_input(
+                    "검색 도메인 (순위 자동조회용)",
+                    placeholder="예: www.example.com",
+                    help="run_rank_checker.bat 실행 시 이 도메인의 광고 순위를 자동 조회합니다.",
+                )
                 st.markdown("**키워드 입력** (줄바꿈 또는 쉼표로 구분)")
                 kw_input = st.text_area(
                     "키워드",
@@ -446,7 +458,6 @@ with tab2:
                     elif n_min >= n_max:
                         st.error("최소입찰가는 최대입찰가보다 작아야 합니다.")
                     else:
-                        # 키워드 파싱 (줄바꿈 + 쉼표)
                         raw_kws = re.split(r"[\n,]+", kw_input or "")
                         kws     = [k.strip() for k in raw_kws if k.strip()][:MAX_KEYWORDS]
 
@@ -459,6 +470,7 @@ with tab2:
                             "bid_unit":       int(n_unit),
                             "check_interval": int(n_intvl),
                             "auto_apply":     n_auto,
+                            "check_domain":   n_domain.strip(),
                             "keywords":       [new_kw_obj(k) for k in kws],
                         }
                         data["groups"].append(new_group)
@@ -704,6 +716,12 @@ with tab2:
                     n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
                     n_auto  = st.checkbox("자동적용", value=False)
 
+                n_domain = st.text_input(
+                    "검색 도메인 (순위 자동조회용)",
+                    placeholder="예: www.example.com",
+                    help="run_rank_checker.bat 실행 시 이 도메인의 광고 순위를 자동 조회합니다.",
+                )
+
                 if st.form_submit_button(
                     f"✅ 그룹 생성 (키워드 {len(kw_texts)}개 포함)",
                     type="primary", use_container_width=True,
@@ -732,8 +750,9 @@ with tab2:
                             "max_bid":          int(n_max),
                             "bid_unit":         int(n_unit),
                             "check_interval":   int(n_intvl),
-                            "auto_apply":       n_auto,
-                            "keywords":         kw_objs,
+                            "auto_apply":        n_auto,
+                            "check_domain":      n_domain.strip(),
+                            "keywords":          kw_objs,
                             "naver_campaign_id": camp_id,
                             "naver_adgroup_id":  ag_id,
                             "ad_account_id":     sel_acct.get("id",""),
