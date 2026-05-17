@@ -219,6 +219,8 @@ if auth_type == "admin":
         st.Page("pages/키워드도구.py",    title="키워드 추출"),
         st.Page("pages/광고소재.py",      title="광고소재 추출"),
         st.Page("pages/상세페이지.py",    title="랜딩페이지 기획/분석"),
+        st.Page("pages/쇼핑광고DB.py",   title="쇼핑광고 DB 추출"),
+        st.Page("pages/파워링크DB.py",   title="파워링크 DB 추출"),
         st.Page("pages/정산관리.py",      title="정산관리"),
         st.Page("pages/계정관리.py",      title="계정관리"),
     ])
@@ -273,6 +275,10 @@ with st.sidebar:
         st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",         use_container_width=True)
         st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",       use_container_width=True)
         st.page_link("pages/상세페이지.py", label="📐  랜딩페이지 기획/분석", use_container_width=True)
+
+        st.markdown('<span class="sb-label">영업툴</span>', unsafe_allow_html=True)
+        st.page_link("pages/쇼핑광고DB.py",  label="🛍️  쇼핑광고 DB 추출", use_container_width=True)
+        st.page_link("pages/파워링크DB.py",  label="🔗  파워링크 DB 추출", use_container_width=True)
 
         st.markdown("""
 <div style="padding:12px 20px 8px;margin-top:8px;">
