@@ -134,65 +134,44 @@ def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
             )
             log("⑥ page 생성 완료")
 
-            # ── ⑦ goto 실행 (naver.com) ───────────────────────────────────────
+            # ── ⑦ 쿠키 확보용 naver.com 방문 ────────────────────────────────────
             log("⑦ goto 직전: https://www.naver.com")
-            status_el.text("🌐 네이버 접속 중...")
+            status_el.text("🌐 네이버 세션 초기화 중...")
             pg.goto("https://www.naver.com",
                     wait_until="domcontentloaded", timeout=30000)
-            log("⑧ goto 성공 — naver.com")
-            time.sleep(random.uniform(1.5, 2.5))
+            log(f"⑧ goto 성공 — URL: {pg.url}  closed: {pg.is_closed()}")
+            time.sleep(2)
+
+            # 검색창 인터랙션 없이 직접 search.naver.com으로 이동
+            # (검색창 click/type → SPA 탐색 → 페이지 교체 → TargetClosedError 방지)
 
             # ── 키워드별 수집 ─────────────────────────────────────────────────
             total = len(keywords) * max_pages
             done  = 0
 
             for keyword in keywords:
-                log(f"── 키워드: {keyword}")
-                status_el.text(f"🔍 [{keyword}] 검색 중...")
+                log(f"── 키워드: [{keyword}]  page.is_closed={pg.is_closed()}")
+                if pg.is_closed():
+                    raise RuntimeError("page가 닫혔습니다 — 수집 중단")
 
-                # 검색창 입력
-                try:
-                    sb = pg.locator('input[name="query"]').first
-                    sb.click()
-                    time.sleep(0.3)
-                    sb.fill("")
-                    time.sleep(0.2)
-                    for ch in keyword:
-                        sb.type(ch, delay=random.randint(50, 130))
-                    time.sleep(0.5)
-                    sb.press("Enter")
-                    pg.wait_for_load_state("domcontentloaded", timeout=15000)
-                    time.sleep(2)
-                    log(f"   검색 완료 → {pg.url[:60]}")
-                except Exception as e:
-                    log(f"   검색창 실패, 직접 이동: {e}")
-                    pg.goto(
-                        f"https://search.naver.com/search.naver?query={quote(keyword)}",
-                        wait_until="domcontentloaded", timeout=20000,
-                    )
-                    time.sleep(2)
-
-                # 쇼핑 탭 이동 시도
-                try:
-                    tab = pg.locator('a[href*="where=shopping"]').first
-                    if tab.count() > 0:
-                        tab.click()
-                        pg.wait_for_load_state("domcontentloaded", timeout=15000)
-                        time.sleep(2)
-                except Exception:
-                    pass
+                status_el.text(f"🔍 [{keyword}] 검색 결과 이동 중...")
 
                 for page_num in range(1, max_pages + 1):
                     status_el.text(f"📄 [{keyword}] {page_num}p 수집 중...")
                     try:
-                        if page_num > 1:
-                            nav = (
-                                f"https://search.naver.com/search.naver"
-                                f"?where=shopping&query={quote(keyword)}"
-                                f"&start={(page_num-1)*40+1}"
-                            )
-                            pg.goto(nav, wait_until="domcontentloaded", timeout=20000)
-                            time.sleep(random.uniform(1.5, 2.5))
+                        # 검색창 없이 직접 URL 탐색 (page_num=1도 동일)
+                        start = (page_num - 1) * 40 + 1
+                        nav = (
+                            f"https://search.naver.com/search.naver"
+                            f"?where=shopping&query={quote(keyword)}"
+                            f"&start={start}"
+                        )
+                        log(f"   goto: {nav[:70]}  closed={pg.is_closed()}")
+                        if pg.is_closed():
+                            raise RuntimeError("page 닫힘 — goto 불가")
+                        pg.goto(nav, wait_until="domcontentloaded", timeout=25000)
+                        log(f"   goto 성공 — {pg.url[:60]}")
+                        time.sleep(random.uniform(1.5, 2.5))
 
                         for y in [500, 1000, 1500, 2000]:
                             pg.evaluate(f"window.scrollTo(0,{y})")
