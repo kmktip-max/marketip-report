@@ -462,6 +462,18 @@ with tab2:
                 if not n_kws:
                     st.stop()
 
+                # 광고그룹 기본 입찰가 (키워드가 "기본" 설정일 때 fallback)
+                ag_default_bid = sel_ag.get("bidAmt") or 0
+
+                def _resolve_bid(k):
+                    """키워드 입찰가: 70(최소=기본설정)이면 그룹 기본입찰가로 대체"""
+                    raw = k.get("bidAmt") or k.get("bid") or 0
+                    try:
+                        raw = int(raw)
+                    except (TypeError, ValueError):
+                        raw = 0
+                    return ag_default_bid if raw <= 70 and ag_default_bid > 70 else raw or None
+
                 # 불러온 키워드 미리보기
                 kw_texts = []
                 for k in n_kws:
@@ -473,7 +485,7 @@ with tab2:
                 import pandas as pd
                 preview = pd.DataFrame([{
                     "키워드": k.get("keyword") or k.get("keywordText",""),
-                    "현재입찰가": k.get("bidAmt") or k.get("bid",""),
+                    "현재입찰가": _resolve_bid(k) or "",
                     "상태": k.get("statusDesc") or k.get("userLock",""),
                 } for k in n_kws])
                 st.dataframe(preview, use_container_width=True, hide_index=True)
@@ -505,10 +517,10 @@ with tab2:
                             existing_kws = {kw["keyword"] for g in groups for kw in g.get("keywords",[])}
                             kw_objs = []
                             for k in n_kws:
-                                t    = k.get("keyword") or k.get("keywordText","")
-                                bid  = k.get("bidAmt") or k.get("bid")
+                                t   = k.get("keyword") or k.get("keywordText","")
+                                bid = _resolve_bid(k)
                                 if t and t not in existing_kws:
-                                    kw_objs.append(new_kw_obj(t, int(bid) if bid else None))
+                                    kw_objs.append(new_kw_obj(t, bid))
                                     if len(kw_objs) >= MAX_KEYWORDS:
                                         break
 
