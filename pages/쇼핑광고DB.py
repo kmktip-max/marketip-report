@@ -16,6 +16,19 @@ PHONE_RE = re.compile(r'0\d{1,2}[\s\-]?\d{3,4}[\s\-]?\d{4}')
 FALLBACK_JSON = os.path.join(ROOT, "sales_leads_shopping.json")
 SESSION_KEY   = "shopping_results"
 
+LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-setuid-sandbox",
+]
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
 # ── Chromium 설치 (최초 1회) ──────────────────────────────────────────────────
 @st.cache_resource
 def _install_browser():
@@ -32,7 +45,7 @@ def _install_browser():
             pass
     return "failed"
 
-_install_result = _install_browser()
+_install_browser()
 
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 def _real_url(href):
@@ -66,16 +79,56 @@ def _contacts(html):
     phones = PHONE_RE.findall(html)
     return (emails[0] if emails else "미확인"), (phones[0] if phones else "미확인")
 
-# ── 수집 함수 (sync_playwright, try/finally 완결) ─────────────────────────────
+def _make_browser_and_page(pw, log):
+    """브라우저 + context + page 새로 생성. naver.com 워밍업 포함."""
+    log("   [BR] browser 생성 중...")
+    browser = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
+    ctx = browser.new_context(
+        user_agent=UA,
+        locale="ko-KR",
+        viewport={"width": 1366, "height": 768},
+    )
+    pg = ctx.new_page()
+    pg.add_init_script(
+        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        "window.chrome={runtime:{}};"
+    )
+    log("   [BR] browser/ctx/page 생성 완료")
+
+    log("   [BR] naver.com 세션 확보...")
+    pg.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=30000)
+    log(f"   [BR] naver.com 완료 — closed={pg.is_closed()}")
+    time.sleep(random.uniform(1.5, 2.0))
+    return browser, ctx, pg
+
+def _safe_goto(pg, url, log, timeout=25000):
+    """goto 실행 전후 closed 체크. 성공 여부 반환."""
+    if pg.is_closed():
+        log(f"   [GOTO] 시도 전 이미 closed — 중단: {url[:60]}")
+        return False
+    log(f"   [GOTO] → {url[:70]}")
+    try:
+        pg.goto(url, wait_until="domcontentloaded", timeout=timeout)
+        log(f"   [GOTO] 성공 — URL={pg.url[:60]}  closed={pg.is_closed()}")
+        return True
+    except Exception as e:
+        log(f"   [GOTO] 오류: {type(e).__name__}: {str(e)[:100]}")
+        log(f"   [GOTO] 이후 closed={pg.is_closed()}")
+        return False
+
+def _debug_page(pg, log):
+    """페이지 상태 디버그 로그 출력."""
+    try:
+        log(f"   [DBG] title={pg.title()[:40]}")
+        body = pg.evaluate("()=>document.body?.innerText?.slice(0,400)||''")
+        log(f"   [DBG] body: {body[:300]}")
+        n_ss = pg.locator('a[href*="smartstore.naver.com/"]').count()
+        log(f"   [DBG] smartstore links={n_ss}")
+    except Exception as e:
+        log(f"   [DBG] debug 실패: {e}")
+
+# ── 수집 함수 ─────────────────────────────────────────────────────────────────
 def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
-    """
-    규칙:
-    - browser/context/page 는 함수 내부에서만 생성
-    - page.goto() 는 with sync_playwright() 블록 내부에서만 실행
-    - close() 는 finally 에서만 실행
-    - 반복문/except 안에서 close() 금지
-    - st.session_state 에 Playwright 객체 저장 금지
-    """
     from playwright.sync_api import sync_playwright
 
     results  = []
@@ -84,108 +137,87 @@ def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
 
     def log(msg):
         logs.append(msg)
-        log_el.text("\n".join(logs[-12:]))
+        log_el.text("\n".join(logs[-14:]))
 
-    # ── ① collect 함수 시작 ────────────────────────────────────────────────────
     log("① collect 함수 시작")
 
-    # with 블록 전체가 Playwright 생명주기
     with sync_playwright() as pw:
         log("② playwright 시작 완료")
 
-        # browser / context / page 는 try 시작 전에 None 으로 선언
         browser = None
         ctx     = None
         pg      = None
 
         try:
-            # ── ③ browser 생성 ────────────────────────────────────────────────
-            log("③ browser 생성 중...")
-            status_el.text("🖥️ 브라우저 시작 중...")
-            browser = pw.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-setuid-sandbox",
-                ],
-            )
-            log("④ browser 생성 완료")
+            # ── 최초 브라우저 생성 ────────────────────────────────────────────
+            browser, ctx, pg = _make_browser_and_page(pw, log)
 
-            # ── ⑤ context 생성 ───────────────────────────────────────────────
-            ctx = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                locale="ko-KR",
-                viewport={"width": 1366, "height": 768},
-            )
-            log("⑤ context 생성 완료")
-
-            # ── ⑥ page 생성 ──────────────────────────────────────────────────
-            pg = ctx.new_page()
-            pg.add_init_script(
-                "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
-                "window.chrome={runtime:{}};"
-            )
-            log("⑥ page 생성 완료")
-
-            # ── ⑦ 쿠키 확보용 naver.com 방문 ────────────────────────────────────
-            log("⑦ goto 직전: https://www.naver.com")
-            status_el.text("🌐 네이버 세션 초기화 중...")
-            pg.goto("https://www.naver.com",
-                    wait_until="domcontentloaded", timeout=30000)
-            log(f"⑧ goto 성공 — URL: {pg.url}  closed: {pg.is_closed()}")
-            time.sleep(2)
-
-            # 검색창 인터랙션 없이 직접 search.naver.com으로 이동
-            # (검색창 click/type → SPA 탐색 → 페이지 교체 → TargetClosedError 방지)
-
-            # ── 키워드별 수집 ─────────────────────────────────────────────────
             total = len(keywords) * max_pages
             done  = 0
 
             for keyword in keywords:
-                log(f"── 키워드: [{keyword}]  page.is_closed={pg.is_closed()}")
-                if pg.is_closed():
-                    raise RuntimeError("page가 닫혔습니다 — 수집 중단")
-
-                status_el.text(f"🔍 [{keyword}] 검색 결과 이동 중...")
+                log(f"── 키워드: [{keyword}]")
+                status_el.text(f"🔍 [{keyword}] 수집 중...")
 
                 for page_num in range(1, max_pages + 1):
-                    status_el.text(f"📄 [{keyword}] {page_num}p 수집 중...")
-                    try:
-                        # 검색창 없이 직접 URL 탐색 (page_num=1도 동일)
-                        start = (page_num - 1) * 40 + 1
-                        nav = (
-                            f"https://search.naver.com/search.naver"
-                            f"?where=shopping&query={quote(keyword)}"
-                            f"&start={start}"
-                        )
-                        log(f"   goto: {nav[:70]}  closed={pg.is_closed()}")
-                        if pg.is_closed():
-                            raise RuntimeError("page 닫힘 — goto 불가")
-                        pg.goto(nav, wait_until="domcontentloaded", timeout=25000)
-                        log(f"   goto 성공 — {pg.url[:60]}")
-                        time.sleep(random.uniform(1.5, 2.5))
+                    # ── page 닫힘 감지 → 브라우저 재생성 (1회) ───────────────
+                    if pg.is_closed():
+                        log(f"   ⚠ page 닫힘 감지 — 브라우저 재생성")
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
+                        browser, ctx, pg = _make_browser_and_page(pw, log)
 
+                    # ── URL 구성: where=nexearch (shopping 리다이렉트 차단 회피) ──
+                    # where=shopping → search.shopping.naver.com 리다이렉트 → 차단 → page 강제 종료
+                    # where=nexearch → search.naver.com 유지 → 정상 동작
+                    start = (page_num - 1) * 10 + 1
+                    nav_url = (
+                        f"https://search.naver.com/search.naver"
+                        f"?where=nexearch&query={quote(keyword)}&start={start}"
+                    )
+
+                    status_el.text(f"📄 [{keyword}] {page_num}p...")
+                    ok = _safe_goto(pg, nav_url, log)
+
+                    if not ok or pg.is_closed():
+                        log(f"   ❌ {page_num}p goto 실패 — 루프 중단")
+                        done += 1
+                        prog_bar.progress(min(done / total, 1.0))
+                        break  # 이 키워드의 페이지 루프 중단
+
+                    # ── 스크롤 ────────────────────────────────────────────────
+                    try:
                         for y in [500, 1000, 1500, 2000]:
                             pg.evaluate(f"window.scrollTo(0,{y})")
                             time.sleep(0.4)
+                    except Exception:
+                        pass
 
+                    # ── 디버그 출력 ────────────────────────────────────────────
+                    _debug_page(pg, log)
+
+                    # ── 차단 감지 ─────────────────────────────────────────────
+                    try:
                         html = pg.content()
-                        if "접속이 일시적으로 제한" in html:
-                            log(f"   ⛔ {page_num}p 차단 — 다음 키워드")
-                            break
+                    except Exception:
+                        log("   ⛔ content() 실패 — 루프 중단")
+                        break
 
+                    if "접속이 일시적으로 제한" in html:
+                        log(f"   ⛔ {page_num}p 차단 페이지 감지")
+                        break
+
+                    # ── 스마트스토어 링크 추출 ────────────────────────────────
+                    count = 0
+                    try:
                         links = pg.locator('a[href*="smartstore.naver.com/"]').all()
-                        count = 0
                         for lnk in links:
-                            href = lnk.get_attribute("href") or ""
+                            try:
+                                href = lnk.get_attribute("href") or ""
+                            except Exception:
+                                continue
                             store_url, store_id = _store_key(href)
                             if not store_url:
                                 continue
@@ -198,15 +230,20 @@ def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
                                 continue
                             seen_key.add(k)
 
-                            name = lnk.inner_text().strip().replace("\n", " ")
+                            try:
+                                name = lnk.inner_text().strip().replace("\n", " ")
+                            except Exception:
+                                name = ""
                             if not name:
                                 name = store_id or store_url.split("/")[-1]
+
                             try:
                                 p_html = lnk.evaluate(
                                     'el => el.closest("li,div,article")?.innerHTML || ""'
                                 )
                             except Exception:
                                 p_html = ""
+
                             is_ad = any(x in p_html for x in ["광고","adBadge","ad_badge"])
                             grade = next(
                                 (g for g in ["프리미엄","빅파워","파워"] if g in p_html), ""
@@ -225,21 +262,22 @@ def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
                                 "found_keywords": [keyword],
                             })
                             count += 1
-
-                        log(f"   {page_num}p → {count}개")
-
                     except Exception as e:
-                        log(f"   ⚠ {page_num}p 오류: {str(e)[:80]}")
+                        log(f"   link 추출 오류: {e}")
 
+                    log(f"   {page_num}p → {count}개 수집")
                     done += 1
                     prog_bar.progress(min(done / total, 1.0))
-                    time.sleep(random.uniform(1, 2))
+                    time.sleep(random.uniform(1.5, 2.5))
 
-            # ── ⑨ 연락처 수집 ────────────────────────────────────────────────
+            # ── 연락처 수집 ───────────────────────────────────────────────────
             log(f"⑨ 수집 완료: {len(results)}개 — 연락처 수집 시작")
             for i, row in enumerate(results):
                 if "smartstore.naver.com" not in (row.get("store_url") or ""):
                     continue
+                if pg.is_closed():
+                    log("   page 닫힘 — 연락처 수집 중단")
+                    break
                 status_el.text(f"📞 연락처 {i+1}/{len(results)}: {row['store_name'][:15]}")
                 try:
                     pg.goto(row["store_url"],
@@ -252,31 +290,19 @@ def _collect(keywords, max_pages, dedup, prog_bar, status_el, log_el):
                     pass
 
         except Exception as e:
-            # close() 는 finally 에서만 — 여기서는 로그만
             log(f"❌ 오류: {type(e).__name__}: {str(e)[:120]}")
             raise
 
         finally:
-            # ── ⑩ finally 에서만 close ────────────────────────────────────────
-            log("⑩ finally close 시작")
-            if pg:
-                try:
-                    pg.close()
-                except Exception:
-                    pass
-            if ctx:
-                try:
-                    ctx.close()
-                except Exception:
-                    pass
-            if browser:
-                try:
-                    browser.close()
-                except Exception:
-                    pass
-            log("⑪ finally close 완료")
+            log("⑩ finally — close 시작")
+            for obj in [pg, ctx, browser]:
+                if obj:
+                    try:
+                        obj.close()
+                    except Exception:
+                        pass
+            log("⑪ finally — close 완료")
 
-    # with sync_playwright() 블록 종료 후 결과 반환
     return results
 
 
@@ -335,7 +361,7 @@ def _to_xlsx(rows):
 # UI
 # ══════════════════════════════════════════════════════════════════════════════
 st.title("🛍️ 쇼핑광고 DB 추출")
-st.caption("네이버 쇼핑 검색 결과에서 광고 집행 중인 스마트스토어 DB를 수집합니다.")
+st.caption("네이버 통합검색(nexearch) 기반으로 쇼핑 광고 스마트스토어 DB를 수집합니다.")
 
 col_kw, col_cfg, col_info = st.columns([3, 2, 2], gap="large")
 
@@ -377,7 +403,6 @@ if run_btn:
 
         prog.empty()
         status.empty()
-        # logbox 는 유지 (마지막 로그 확인용)
 
         if new_rows:
             merged = _merge(_load_existing(), new_rows)
