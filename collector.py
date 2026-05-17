@@ -165,7 +165,119 @@ SHOP_COLS = [
     "grade","owner","email","phone","memo","found_keywords",
 ]
 
+def _parse_ad_store(href):
+    """
+    inflow/outlink URL에서 실제 스토어 URL + store_id 추출.
+    반환: (store_url, store_id) 또는 (None, None)
+    """
+    try:
+        qs = parse_qs(urlparse(href).query)
+        actual = unquote(qs.get("url", [""])[0])
+    except Exception:
+        actual = href
+    if not actual or "smartstore.naver.com" not in actual:
+        return None, None
+    parts = urlparse(actual).path.strip("/").split("/")
+    if not parts or parts[0] in ["main","inflow","i","m","v","product","products",""]:
+        return None, None
+    store_id  = parts[0].split("?")[0]
+    store_url = f"https://smartstore.naver.com/{store_id}"
+    return store_url, store_id
+
+def _get_store_info(pg, store_url, store_id):
+    """
+    스마트스토어 판매자 정보 추출.
+    1차: 스토어 메인 → '판매자 정보' 팝업 클릭
+    2차: 스토어 페이지 직접 스크래핑
+    3차: 채널 API JSON 시도
+    """
+    owner = "미확인"
+    email = "미확인"
+    phone = "미확인"
+    grade = ""
+
+    # ── 1차: 스토어 메인 방문 + 판매자 정보 ─────────────────────────────────
+    try:
+        pg.goto(store_url, wait_until="domcontentloaded", timeout=15000)
+        time.sleep(random.uniform(1.5, 2))
+        html = pg.content()
+
+        # 등급 (파워/빅파워/프리미엄)
+        grade = next((g for g in ["프리미엄","빅파워","파워"] if g in html), "")
+
+        # 판매자 정보 버튼/링크 클릭 시도
+        for sel in [
+            'button:has-text("판매자 정보")',
+            'a:has-text("판매자 정보")',
+            '[class*="seller"] button',
+            'button:has-text("사업자 정보")',
+        ]:
+            try:
+                btn = pg.locator(sel).first
+                if btn.count() > 0:
+                    btn.click()
+                    time.sleep(1.5)
+                    popup_html = pg.content()
+                    # 팝업에서 이름/이메일/전화 추출
+                    owner2 = re.search(r'대표자\s*[：:]\s*([^\n<]{2,20})', popup_html)
+                    if owner2: owner = owner2.group(1).strip()
+                    e2, p2 = _contacts(popup_html)
+                    if e2 != "미확인": email = e2
+                    if p2 != "미확인": phone = p2
+                    print(f"    [팝업] owner={owner}  email={email}  phone={phone}")
+                    break
+            except Exception:
+                pass
+
+        # 팝업 안 열렸으면 메인 페이지에서 직접 추출
+        if email == "미확인" or phone == "미확인":
+            e2, p2 = _contacts(html)
+            if e2 != "미확인" and email == "미확인": email = e2
+            if p2 != "미확인" and phone == "미확인": phone = p2
+
+        # 대표자: JSON-LD 또는 meta 탐색
+        if owner == "미확인":
+            m = re.search(r'"representativeName"\s*:\s*"([^"]+)"', html)
+            if m: owner = m.group(1)
+
+        print(f"    [스토어] grade={grade}  owner={owner}  email={email}  phone={phone}")
+
+    except Exception as e:
+        print(f"    [스토어] 실패: {e}")
+
+    # ── 2차: 채널 API JSON 시도 ──────────────────────────────────────────────
+    if owner == "미확인" and email == "미확인":
+        for api_url in [
+            f"https://smartstore.naver.com/i/v2/channels/{store_id}",
+            f"https://smartstore.naver.com/{store_id}/i/v2/channels",
+        ]:
+            try:
+                pg.goto(api_url, wait_until="domcontentloaded", timeout=8000)
+                raw = pg.evaluate("() => document.body?.innerText || ''").strip()
+                if raw.startswith("{"):
+                    data = json.loads(raw)
+                    ch = data.get("channelDto") or data.get("channel") or data
+                    o = ch.get("representativeName","") or ch.get("ownerName","")
+                    e = ch.get("businessEmail","") or ch.get("email","")
+                    p = ch.get("businessPhoneNumber","") or ch.get("phoneNumber","")
+                    g = ch.get("sellerGrade","") or ch.get("grade","")
+                    if o: owner = o
+                    if e: email = e
+                    if p: phone = p
+                    if g: grade = g
+                    print(f"    [API] owner={owner}  email={email}  grade={grade}")
+                    break
+            except Exception:
+                pass
+
+    return owner, email, phone, grade
+
 def collect_shopping(keywords, max_pages, dedup=True):
+    """
+    광고 집행 중인 스마트스토어만 수집.
+    핵심: a[href*="inflow/outlink"] 링크 = 100% 네이버 쇼핑 광고 클릭 URL.
+    비광고 항목은 수집하지 않는다.
+    """
     from playwright.sync_api import sync_playwright
 
     print(f"\n[쇼핑광고] 키워드: {keywords}  페이지: {max_pages}")
@@ -176,15 +288,10 @@ def collect_shopping(keywords, max_pages, dedup=True):
         print("  브라우저 시작 (headless=False)...")
         browser = pw.chromium.launch(
             headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ]
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
         )
         ctx = browser.new_context(
-            user_agent=UA,
-            locale="ko-KR",
-            viewport={"width": 1366, "height": 768},
+            user_agent=UA, locale="ko-KR", viewport={"width": 1366, "height": 768}
         )
         pg = ctx.new_page()
         pg.add_init_script(
@@ -192,11 +299,10 @@ def collect_shopping(keywords, max_pages, dedup=True):
             "window.chrome={runtime:{}};"
         )
 
-        # naver.com 세션 확보
+        # 세션 확보
         print("  naver.com 접속...")
         pg.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=30000)
         time.sleep(random.uniform(2, 3))
-        print(f"  naver.com 완료 — closed={pg.is_closed()}")
 
         for keyword in keywords:
             print(f"\n  [키워드: {keyword}]")
@@ -206,23 +312,20 @@ def collect_shopping(keywords, max_pages, dedup=True):
                     f"https://search.naver.com/search.naver"
                     f"?where=nexearch&query={quote(keyword)}&start={start}"
                 )
-                print(f"  {page_num}p goto: {url}")
+                print(f"  {page_num}p → {url}")
                 try:
                     pg.goto(url, wait_until="domcontentloaded", timeout=25000)
-                    print(f"  {page_num}p 성공 — URL={pg.url[:60]}  closed={pg.is_closed()}")
                     time.sleep(random.uniform(1.5, 2.5))
+                    print(f"  {page_num}p 성공  title={pg.title()[:30]}")
                 except Exception as e:
-                    print(f"  {page_num}p goto 오류: {e}")
+                    print(f"  {page_num}p 오류: {e}")
                     if pg.is_closed():
-                        print("  page 닫힘 — 수집 중단")
                         break
                     continue
 
                 if pg.is_closed():
-                    print("  page 닫힘 — 수집 중단")
                     break
 
-                # 스크롤
                 for y in [500, 1000, 1500, 2000]:
                     try:
                         pg.evaluate(f"window.scrollTo(0,{y})")
@@ -230,65 +333,48 @@ def collect_shopping(keywords, max_pages, dedup=True):
                     except Exception:
                         break
 
-                # 페이지 상태 확인
+                # 광고 링크만 수집: inflow/outlink = 네이버 쇼핑 광고 클릭 URL
                 try:
-                    title = pg.title()
-                    html  = pg.content()
-                    print(f"  title: {title[:40]}")
-                    body  = pg.evaluate("()=>document.body?.innerText?.slice(0,300)||''")
-                    print(f"  body: {body[:200]}")
+                    ad_links = pg.locator('a[href*="inflow/outlink"]').all()
+                    print(f"  광고 링크 수: {len(ad_links)}  (전체 smartstore: {pg.locator('a[href*=\"smartstore\"]').count()})")
                 except Exception as e:
-                    print(f"  content 오류: {e}")
+                    print(f"  링크 추출 오류: {e}")
                     continue
 
-                if "접속이 일시적으로 제한" in html:
-                    print("  ⛔ 차단 페이지 감지")
-                    break
-
-                # 스마트스토어 링크 추출
-                try:
-                    links = pg.locator('a[href*="smartstore.naver.com/"]').all()
-                    print(f"  smartstore links: {len(links)}")
-                except Exception:
-                    links = []
-
                 count = 0
-                for lnk in links:
+                for lnk in ad_links:
                     try:
                         href = lnk.get_attribute("href") or ""
                     except Exception:
                         continue
-                    store_url, store_id = _store_key(href)
-                    if not store_url:
+
+                    store_url, store_id = _parse_ad_store(href)
+                    if not store_url or not store_id:
                         continue
-                    k = store_id or store_url
-                    if dedup and k in seen_key:
+
+                    # 중복 처리
+                    if dedup and store_id in seen_key:
                         for r in results:
-                            if (r.get("store_id") or r["store_url"]) == k:
-                                if keyword not in r["found_keywords"]:
-                                    r["found_keywords"].append(keyword)
+                            if r.get("store_id") == store_id and keyword not in r["found_keywords"]:
+                                r["found_keywords"].append(keyword)
                         continue
-                    seen_key.add(k)
+                    seen_key.add(store_id)
+
                     try:
                         name = lnk.inner_text().strip().replace("\n", " ")
                     except Exception:
                         name = ""
                     if not name:
-                        name = store_id or store_url.split("/")[-1]
-                    try:
-                        p_html = lnk.evaluate('el => el.closest("li,div,article")?.innerHTML || ""')
-                    except Exception:
-                        p_html = ""
-                    is_ad = any(x in p_html for x in ["광고","adBadge","ad_badge"])
-                    grade = next((g for g in ["프리미엄","빅파워","파워"] if g in p_html), "")
+                        name = store_id
+
                     results.append({
                         "keyword":        keyword,
                         "store_name":     name,
                         "store_url":      store_url,
-                        "store_id":       store_id or "",
-                        "is_ad":          "광고" if is_ad else "비광고",
+                        "store_id":       store_id,
+                        "is_ad":          "광고",   # inflow/outlink = 100% 광고
                         "page":           f"{page_num}페이지",
-                        "grade":          grade,
+                        "grade":          "",
                         "owner":          "미확인",
                         "email":          "미확인",
                         "phone":          "미확인",
@@ -296,27 +382,24 @@ def collect_shopping(keywords, max_pages, dedup=True):
                         "found_keywords": [keyword],
                     })
                     count += 1
-                print(f"  {page_num}p → {count}개 신규")
+                    print(f"    광고 스토어: {name} → {store_url}")
+
+                print(f"  {page_num}p → 신규 {count}개 (누적 {len(results)}개)")
                 time.sleep(random.uniform(1, 2))
 
-        # 연락처 수집
-        print(f"\n  연락처 수집 시작 ({len(results)}개)...")
+        # 판매자 정보 수집 (API + 페이지 스크래핑)
+        print(f"\n  판매자 정보 수집 ({len(results)}개)...")
         for i, row in enumerate(results):
             if pg.is_closed():
-                print("  page 닫힘 — 연락처 수집 중단")
+                print("  page 닫힘 — 판매자 정보 수집 중단")
                 break
-            if "smartstore.naver.com" not in (row.get("store_url") or ""):
-                continue
-            print(f"  [{i+1}/{len(results)}] {row['store_name'][:20]}: {row['store_url']}")
-            try:
-                pg.goto(row["store_url"], wait_until="domcontentloaded", timeout=15000)
-                time.sleep(random.uniform(1, 1.5))
-                email, phone = _contacts(pg.content())
-                row["email"] = email
-                row["phone"] = phone
-                print(f"    email={email}  phone={phone}")
-            except Exception as e:
-                print(f"    연락처 오류: {e}")
+            print(f"  [{i+1}/{len(results)}] {row['store_name']} ({row['store_id']})")
+            owner, email, phone, grade = _get_store_info(pg, row["store_url"], row["store_id"])
+            row["owner"] = owner
+            row["email"] = email
+            row["phone"] = phone
+            if grade:
+                row["grade"] = grade
 
         browser.close()
 
