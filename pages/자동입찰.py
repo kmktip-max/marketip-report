@@ -81,7 +81,18 @@ def calc_bid(current_rank, target_rank, current_bid, bid_unit, min_bid, max_bid)
     return round(new_bid / 10) * 10, status
 
 # ── 네이버 검색광고 API ───────────────────────────────────────────────────
-NAVER_API_BASE = "https://api.naver.com"
+# 정확한 API Base URL: api.searchad.naver.com (api.naver.com 아님)
+NAVER_API_BASE = "https://api.searchad.naver.com"
+
+CREDS_SB_KEY = f"naver_creds_{client_id}"
+CREDS_FB     = os.path.join(ROOT, f"naver_creds_{client_id}.json")
+
+def load_creds():
+    raw = sb_load(CREDS_SB_KEY, CREDS_FB)
+    return raw if isinstance(raw, dict) else {}
+
+def save_creds(d):
+    sb_save(CREDS_SB_KEY, d, CREDS_FB)
 
 def _naver_sig(secret_key, timestamp, method, uri):
     msg = f"{timestamp}.{method}.{uri}"
@@ -111,6 +122,14 @@ def naver_keywords(api_key, secret_key, cid, adgroup_id):
     return _naver_get("/ncc/keywords", api_key, secret_key, cid,
                       params={"adgroupId": adgroup_id}) or []
 
+def _get_id(obj, *keys):
+    """여러 키 이름 중 값이 있는 첫 번째 반환 (API 버전별 키 이름 차이 대응)"""
+    for k in keys:
+        v = obj.get(k)
+        if v:
+            return str(v)
+    return ""
+
 def _naver_creds():
     return (
         st.session_state.get("n_api_key","").strip(),
@@ -120,6 +139,15 @@ def _naver_creds():
 
 def _naver_connected():
     return all(_naver_creds())
+
+# 저장된 인증 정보 세션에 주입 (페이지 로드 시 1회)
+if "n_creds_loaded" not in st.session_state:
+    _saved = load_creds()
+    if _saved:
+        st.session_state.setdefault("n_api_key", _saved.get("api_key",""))
+        st.session_state.setdefault("n_secret",  _saved.get("secret_key",""))
+        st.session_state.setdefault("n_cid",     _saved.get("customer_id",""))
+    st.session_state["n_creds_loaded"] = True
 
 # ════════════════════════════════════════════════════════════════════════════
 # UI
@@ -340,7 +368,7 @@ with tab2:
 
         # ── 방식 2: 네이버 광고그룹 불러오기 ─────────────────────────────
         else:
-            # API 인증 정보 입력
+            # API 인증 정보 입력 + 저장
             with st.expander("🔑 네이버 검색광고 API 인증 정보", expanded=not _naver_connected()):
                 st.caption(
                     "네이버 광고 관리시스템 → 도구 → API 관리에서 발급한 정보를 입력하세요."
@@ -356,10 +384,19 @@ with tab2:
                     st.text_input("고객 ID", key="n_cid",
                                   placeholder="숫자 고객 ID")
 
+                # 저장 버튼 — 클릭 시 Supabase에 인증 정보 저장
+                if st.button("💾 인증 정보 저장", key="save_creds", use_container_width=True):
+                    ak, sk, ci = _naver_creds()
+                    if not all([ak, sk, ci]):
+                        st.error("세 항목을 모두 입력해주세요.")
+                    else:
+                        save_creds({"api_key": ak, "secret_key": sk, "customer_id": ci})
+                        st.success("✅ 저장 완료 — 다음 방문 시 자동으로 불러옵니다.")
+
             if not _naver_connected():
                 st.info(
-                    "📡 네이버 검색광고 API 인증 정보를 입력하면 "
-                    "광고그룹을 직접 불러올 수 있습니다.\n\n"
+                    "📡 API 인증 정보를 입력하고 **💾 인증 정보 저장**을 클릭하면 "
+                    "다음부터 자동으로 불러옵니다.\n\n"
                     "지금은 **📋 키워드 직접 입력** 방식을 사용하세요."
                 )
             else:
@@ -378,19 +415,18 @@ with tab2:
                 if not camps:
                     st.stop()
 
-                camp_map = {
-                    f"{c.get('name','(이름없음)')}": c for c in camps
-                }
+                camp_map = {f"{c.get('name','(이름없음)')}": c for c in camps}
                 sel_camp = camp_map[
                     st.selectbox("캠페인 선택", list(camp_map.keys()), key="n_sel_camp")
                 ]
+                camp_id = _get_id(sel_camp, "campaignId", "id")
 
                 # 광고그룹
                 if st.button("📂 광고그룹 불러오기", key="load_ags"):
                     with st.spinner("광고그룹 조회 중..."):
                         try:
                             st.session_state["n_ags"] = naver_adgroups(
-                                api_key, secret_key, cid, sel_camp.get("campaignId","")
+                                api_key, secret_key, cid, camp_id
                             )
                             st.success(f"광고그룹 {len(st.session_state['n_ags'])}개 로드됨")
                         except Exception as e:
@@ -400,19 +436,23 @@ with tab2:
                 if not ags:
                     st.stop()
 
-                ag_map = {
-                    f"{a.get('name','(이름없음)')}": a for a in ags
-                }
-                sel_ag = ag_map[
+                ag_map = {f"{a.get('name','(이름없음)')}": a for a in ags}
+                sel_ag  = ag_map[
                     st.selectbox("광고그룹 선택", list(ag_map.keys()), key="n_sel_ag")
                 ]
+                ag_id = _get_id(sel_ag, "adgroupId", "adGroupId", "id")
+
+                # 광고그룹 ID 확인 디버그
+                if not ag_id:
+                    st.warning(f"광고그룹 ID를 찾을 수 없습니다. API 응답 키: {list(sel_ag.keys())}")
+                    st.stop()
 
                 # 키워드
                 if st.button("🔍 키워드 불러오기", key="load_kws_tab2"):
                     with st.spinner("키워드 조회 중..."):
                         try:
                             st.session_state["n_kws"] = naver_keywords(
-                                api_key, secret_key, cid, sel_ag.get("adgroupId","")
+                                api_key, secret_key, cid, ag_id
                             )
                             st.success(f"키워드 {len(st.session_state['n_kws'])}개 로드됨")
                         except Exception as e:
@@ -482,8 +522,8 @@ with tab2:
                                 "check_interval": int(n_intvl),
                                 "auto_apply":     n_auto,
                                 "keywords":       kw_objs,
-                                "naver_campaign_id": sel_camp.get("campaignId",""),
-                                "naver_adgroup_id":  sel_ag.get("adgroupId",""),
+                                "naver_campaign_id": camp_id,
+                                "naver_adgroup_id":  ag_id,
                             })
                             save_data(data)
                             for k in ["n_camps","n_ags","n_kws"]:
