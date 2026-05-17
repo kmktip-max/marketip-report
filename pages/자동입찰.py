@@ -140,14 +140,17 @@ def _naver_creds():
 def _naver_connected():
     return all(_naver_creds())
 
-# 저장된 인증 정보 세션에 주입 (페이지 로드 시 1회)
-if "n_creds_loaded" not in st.session_state:
+# 저장된 인증 정보 세션에 주입 — 업체 전환 시 재로드
+_creds_flag = f"n_creds_loaded_{client_id}"
+if _creds_flag not in st.session_state:
+    for _k in ("n_api_key", "n_secret", "n_cid"):
+        st.session_state.pop(_k, None)
     _saved = load_creds()
     if _saved:
-        st.session_state.setdefault("n_api_key", _saved.get("api_key",""))
-        st.session_state.setdefault("n_secret",  _saved.get("secret_key",""))
-        st.session_state.setdefault("n_cid",     _saved.get("customer_id",""))
-    st.session_state["n_creds_loaded"] = True
+        st.session_state["n_api_key"] = _saved.get("api_key", "")
+        st.session_state["n_secret"]  = _saved.get("secret_key", "")
+        st.session_state["n_cid"]     = _saved.get("customer_id", "")
+    st.session_state[_creds_flag] = True
 
 # ════════════════════════════════════════════════════════════════════════════
 # UI
