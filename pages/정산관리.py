@@ -9,6 +9,7 @@ from datetime import date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+from db import sb_load, sb_save, is_supabase_connected
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
 FREELANCERS = [
@@ -27,20 +28,9 @@ if st.session_state.get("auth_type") != "admin":
     st.error("🔒 관리자만 접근 가능합니다.")
     st.stop()
 
-# ── 스토리지 헬퍼 ─────────────────────────────────────────────────────────────
-def _load(p):
-    try:
-        if os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f: return json.load(f)
-    except Exception: pass
-    return []
-
-def _save(p, d):
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=2)
-
-load_mapping  = lambda: _load(F_MAPPING)
-save_mapping  = lambda d: _save(F_MAPPING, d)
+# ── 스토리지 헬퍼 (Supabase 우선, JSON 폴백) ──────────────────────────────────
+load_mapping  = lambda: sb_load("freelancer_mapping",      F_MAPPING)  or []
+save_mapping  = lambda d: sb_save("freelancer_mapping",    d, F_MAPPING)
 
 # ── 프리랜서명 오타 마이그레이션 (임예솔 → 임예슬) ──────────────────────────
 def _migrate_mapping():
@@ -54,14 +44,14 @@ def _migrate_mapping():
     if changed:
         save_mapping(data)
 _migrate_mapping()
-load_expenses = lambda: _load(F_EXPENSES)
-save_expenses = lambda d: _save(F_EXPENSES, d)
-load_extra    = lambda: _load(F_EXTRA)
-save_extra    = lambda d: _save(F_EXTRA, d)
-load_pnl      = lambda: _load(F_PNL)
-save_pnl      = lambda d: _save(F_PNL, d)
-load_annual   = lambda: _load(F_ANNUAL)
-save_annual   = lambda d: _save(F_ANNUAL, d)
+load_expenses = lambda: sb_load("other_expenses",          F_EXPENSES) or []
+save_expenses = lambda d: sb_save("other_expenses",        d, F_EXPENSES)
+load_extra    = lambda: sb_load("monthly_extra_revenue",   F_EXTRA)    or []
+save_extra    = lambda d: sb_save("monthly_extra_revenue", d, F_EXTRA)
+load_pnl      = lambda: sb_load("monthly_pnl",            F_PNL)      or []
+save_pnl      = lambda d: sb_save("monthly_pnl",          d, F_PNL)
+load_annual   = lambda: sb_load("annual_pnl",             F_ANNUAL)   or []
+save_annual   = lambda d: sb_save("annual_pnl",           d, F_ANNUAL)
 
 def upsert_pnl(ym, search_owner, search_fl, place, blog,
                expenses, gross, after_tax, net, net_after_tax):

@@ -11,6 +11,9 @@ from datetime import date
 ROOT       = os.path.dirname(os.path.abspath(__file__))
 F_ACCOUNTS = os.path.join(ROOT, "client_accounts.json")
 
+from db import sb_load, sb_save
+_SB_ACCOUNTS = "client_accounts"
+
 try:
     from dotenv import load_dotenv
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -88,17 +91,10 @@ def enabled_perm_keys(perms_dict):
 
 # ── 광고주 계정 ────────────────────────────────────────────────────────────
 def load_accounts():
-    try:
-        if os.path.exists(F_ACCOUNTS):
-            with open(F_ACCOUNTS, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return []
+    return sb_load(_SB_ACCOUNTS, F_ACCOUNTS) or []
 
 def save_accounts(data):
-    with open(F_ACCOUNTS, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    sb_save(_SB_ACCOUNTS, data, F_ACCOUNTS)
 
 def verify_client(username, password):
     """유효한(승인된) 광고주 계정 dict 반환, 없으면 None"""
