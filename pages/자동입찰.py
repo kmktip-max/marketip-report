@@ -611,13 +611,13 @@ with tab2:
                             "naver_adgroup_id":  ag_id,
                         })
                         save_data(data)
-                            for k in ["n_camps","n_ags","n_kws"]:
-                                st.session_state.pop(k, None)
-                            st.success(
-                                f"그룹 **{n_name.strip()}** 생성 완료 "
-                                f"(키워드 {len(kw_objs)}개)"
-                            )
-                            st.rerun()
+                        for k in ["n_camps","n_ags","n_kws"]:
+                            st.session_state.pop(k, None)
+                        st.success(
+                            f"그룹 **{n_name.strip()}** 생성 완료 "
+                            f"(키워드 {len(kw_objs)}개)"
+                        )
+                        st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 탭3: 키워드 관리 (그룹 선택 후 키워드 추가/삭제)
