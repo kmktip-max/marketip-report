@@ -554,12 +554,20 @@ with tab2:
                 if t:
                     kw_texts.append(t)
 
+            _KW_STATUS = {
+                "ELIGIBLE":   "노출가능",
+                "PAUSED":     "일시중지",
+                "SUSPENDED":  "중지",
+                "UNAPPROVED": "미승인",
+                "DELETED":    "삭제됨",
+            }
+
             st.markdown(f"**불러온 키워드 {len(kw_texts)}개**")
             import pandas as pd
             preview = pd.DataFrame([{
                 "키워드":    k.get("keyword") or k.get("keywordText",""),
                 "현재입찰가": _resolve_bid(k) or "",
-                "상태":      k.get("statusDesc") or k.get("userLock",""),
+                "상태":      _KW_STATUS.get(k.get("status",""), k.get("status","") or "-"),
             } for k in n_kws])
             st.dataframe(preview, use_container_width=True, hide_index=True)
 
