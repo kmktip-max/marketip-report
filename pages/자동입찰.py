@@ -419,7 +419,7 @@ with tab2:
                 sel_camp = camp_map[
                     st.selectbox("캠페인 선택", list(camp_map.keys()), key="n_sel_camp")
                 ]
-                camp_id = _get_id(sel_camp, "campaignId", "id")
+                camp_id = _get_id(sel_camp, "nccCampaignId", "campaignId", "id")
 
                 # 광고그룹
                 if st.button("📂 광고그룹 불러오기", key="load_ags"):
@@ -440,7 +440,7 @@ with tab2:
                 sel_ag  = ag_map[
                     st.selectbox("광고그룹 선택", list(ag_map.keys()), key="n_sel_ag")
                 ]
-                ag_id = _get_id(sel_ag, "adgroupId", "adGroupId", "id")
+                ag_id = _get_id(sel_ag, "nccAdgroupId", "adgroupId", "adGroupId", "id")
 
                 # 광고그룹 ID 확인 디버그
                 if not ag_id:
