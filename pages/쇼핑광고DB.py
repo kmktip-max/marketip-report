@@ -21,10 +21,17 @@ SESSION_KEY   = "shopping_results"
 def _install_browser():
     import subprocess
     try:
-        subprocess.run(["playwright", "install", "chromium"],
-                       capture_output=True, timeout=180)
+        # --with-deps 로 시스템 의존성까지 설치
+        subprocess.run(
+            ["playwright", "install", "chromium", "--with-deps"],
+            capture_output=True, timeout=300,
+        )
     except Exception:
-        pass
+        try:
+            subprocess.run(["playwright", "install", "chromium"],
+                           capture_output=True, timeout=180)
+        except Exception:
+            pass
 
 _install_browser()
 
@@ -76,24 +83,38 @@ def _scrape(keywords, max_pages, dedup, prog_bar, status_el, log_el):
         logs.append(msg)
         log_el.text("\n".join(logs[-6:]))
 
+    BROWSER_ARGS = [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-setuid-sandbox",
+        "--single-process",          # 컨테이너 환경 안정성
+        "--no-zygote",
+        "--window-size=1366,768",
+    ]
+
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(
-            headless=True,
-            args=["--no-sandbox","--disable-dev-shm-usage","--disable-gpu",
-                  "--disable-blink-features=AutomationControlled","--window-size=1366,768"]
-        )
+        try:
+            browser = pw.chromium.launch(headless=True, args=BROWSER_ARGS)
+        except Exception as e:
+            raise RuntimeError(f"Chromium 실행 실패: {e}\n playwright install chromium 확인 필요") from e
+
         ctx = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             locale="ko-KR",
             viewport={"width":1366,"height":768},
         )
         pg = ctx.new_page()
-        if has_stealth:
-            Stealth().apply_stealth_sync(pg)
+        try:
+            if has_stealth:
+                Stealth().apply_stealth_sync(pg)
+        except Exception:
+            pass  # stealth 실패해도 진행
 
         # ── 쿠키/세션 확보 ─────────────────────────────────────────────────────
         status_el.text("🌐 네이버 세션 초기화 중...")
-        pg.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=20000)
+        pg.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=30000)
         time.sleep(random.uniform(1.5, 2.5))
 
         total = len(keywords) * max_pages
