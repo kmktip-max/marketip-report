@@ -202,8 +202,9 @@ with tab1:
                 st.rerun()
 
     st.caption(
-        "💡 **사용법:** ① 현재순위·현재입찰가 입력 → ② 입찰가 계산 → "
-        "③ 네이버에 입찰가 전송  |  자동입찰 시작 시 순위가 입력된 키워드를 자동 계산합니다."
+        "💡 **사용법:** ① 현재순위 입력 → ② 입찰가 계산 → ③ 입찰가 적용  |  "
+        "자동입찰 시작 시 순위가 입력된 키워드를 자동 계산합니다.  |  "
+        "⚠️ '실행 중' 상태는 이 시스템의 상태이며, 네이버 광고 계정 상태(비즈머니·노출)와는 별개입니다."
     )
     st.divider()
 
@@ -277,7 +278,7 @@ with tab1:
             unsafe_allow_html=True,
         )
 
-        b1, b2, b3 = st.columns(3)
+        b1, b2 = st.columns(2)
 
         # ① 입찰가 계산
         with b1:
@@ -307,53 +308,41 @@ with tab1:
                 st.success("계산 완료")
                 st.rerun()
 
-        # ② 앱 내 적용 (현재입찰가 ← 추천입찰가)
+        # ② 입찰가 적용 — Naver 연결 그룹은 API 전송, 아니면 앱 내만 적용
         with b2:
-            if st.button("✅ 앱 내 적용", use_container_width=True):
-                for g in groups:
-                    for kw_obj in g.get("keywords", []):
-                        if kw_obj.get("recommended_bid") is not None:
-                            kw_obj["current_bid"] = kw_obj["recommended_bid"]
-                data["groups"] = groups
-                save_data(data)
-                st.success("추천입찰가 → 현재입찰가 적용 완료")
-                st.rerun()
-
-        # ③ 네이버에 실제 전송
-        with b3:
-            if st.button("🚀 네이버에 입찰가 전송", type="primary",
-                         use_container_width=True):
+            if st.button("🚀 입찰가 적용", type="primary", use_container_width=True):
                 ad_accounts = load_ad_accounts()
                 acct_map    = {a["id"]: a for a in ad_accounts}
-                ok_cnt = err_cnt = skip_cnt = 0
+                ok_naver = err_naver = ok_local = 0
                 errs = []
                 for g in groups:
                     acct = acct_map.get(g.get("ad_account_id",""))
-                    if not acct:
-                        skip_cnt += len(g.get("keywords",[]))
-                        continue
-                    ak = acct["api_key"]
-                    sk = acct["secret_key"]
-                    ci = acct["customer_id"]
                     for kw_obj in g.get("keywords", []):
-                        kid = kw_obj.get("ncc_keyword_id","")
                         bid = kw_obj.get("recommended_bid")
-                        if not kid or bid is None:
-                            skip_cnt += 1
+                        if bid is None:
                             continue
-                        try:
-                            naver_update_bid(ak, sk, ci, kid, bid)
+                        kid = kw_obj.get("ncc_keyword_id","")
+                        if acct and kid:
+                            try:
+                                naver_update_bid(
+                                    acct["api_key"], acct["secret_key"],
+                                    acct["customer_id"], kid, bid,
+                                )
+                                kw_obj["current_bid"] = bid
+                                ok_naver += 1
+                            except Exception as e:
+                                err_naver += 1
+                                errs.append(f"{kw_obj['keyword']}: {e}")
+                        else:
                             kw_obj["current_bid"] = bid
-                            ok_cnt += 1
-                        except Exception as e:
-                            err_cnt += 1
-                            errs.append(f"{kw_obj['keyword']}: {e}")
+                            ok_local += 1
                 data["groups"] = groups
                 save_data(data)
                 msgs = []
-                if ok_cnt:   msgs.append(f"✅ {ok_cnt}개 전송 완료")
-                if skip_cnt: msgs.append(f"⏭ {skip_cnt}개 건너뜀 (ID 없음)")
-                if err_cnt:  msgs.append(f"❌ {err_cnt}개 실패")
+                if ok_naver:  msgs.append(f"✅ 네이버 전송 {ok_naver}개")
+                if ok_local:  msgs.append(f"💾 앱 내 적용 {ok_local}개 (Naver 연결 없음)")
+                if err_naver: msgs.append(f"❌ 전송 실패 {err_naver}개")
+                if not msgs:  msgs.append("적용할 추천입찰가가 없습니다.")
                 st.info("  |  ".join(msgs))
                 if errs:
                     with st.expander("오류 상세"):
