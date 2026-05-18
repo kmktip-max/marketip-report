@@ -237,10 +237,14 @@ def naver_refresh_group(api_key, secret_key, cid, group: dict) -> tuple[dict, li
 
     return group, log
 
-def _naver_put(uri, api_key, secret_key, customer_id, body: dict):
-    """PUT 요청 + 상세 디버그 정보 반환"""
+def _naver_put(uri, api_key, secret_key, customer_id, body: dict, params: dict = None):
+    """
+    PUT 요청 + 상세 디버그 정보 반환.
+    서명은 path만(uri), 실제 요청은 params(쿼리스트링) 별도 전달.
+    Naver API: PUT /ncc/keywords/{id}?fields=bidAmt 형태 필요.
+    """
     ts  = str(int(time.time() * 1000))
-    sig = _naver_sig(secret_key, ts, "PUT", uri)
+    sig = _naver_sig(secret_key, ts, "PUT", uri)   # 서명: path only
     headers = {
         "X-Timestamp": ts,
         "X-API-KEY":   api_key,
@@ -249,9 +253,9 @@ def _naver_put(uri, api_key, secret_key, customer_id, body: dict):
         "Content-Type": "application/json; charset=UTF-8",
     }
     full_url = NAVER_API_BASE + uri
-    r = requests.put(full_url, headers=headers, json=body, timeout=10)
+    r = requests.put(full_url, headers=headers, json=body, params=params, timeout=10)
     debug = {
-        "url":           full_url,
+        "url":           r.url,          # 실제 요청 URL (쿼리스트링 포함)
         "status_code":   r.status_code,
         "response_body": r.text[:800],
     }
@@ -299,8 +303,10 @@ def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt,
     body["bidAmt"]         = bid_amt
     body["useGroupBidAmt"] = False   # 개별 입찰 적용 (그룹 공유 해제)
 
-    uri = f"/ncc/keywords/{keyword_id}"
-    r, debug = _naver_put(uri, api_key, secret_key, cid, body)
+    # Naver API: PUT 시 수정할 필드명을 ?fields= 쿼리로 명시해야 함
+    uri    = f"/ncc/keywords/{keyword_id}"
+    qparams = {"fields": "bidAmt,useGroupBidAmt"}
+    r, debug = _naver_put(uri, api_key, secret_key, cid, body, params=qparams)
     debug["before_bid"]        = before_bid
     debug["after_bid"]         = bid_amt
     debug["keyword_id"]        = keyword_id
