@@ -257,42 +257,53 @@ def _naver_put(uri, api_key, secret_key, customer_id, body: dict):
     }
     return r, debug
 
+def naver_get_keyword(api_key, secret_key, cid, keyword_id):
+    """
+    단건 키워드 조회.
+    /ncc/keywords?ids={id} 방식 사용 (단건 경로 /ncc/keywords/{id}는 fields 파라미터 필요).
+    """
+    try:
+        result = _naver_get("/ncc/keywords", api_key, secret_key, cid,
+                            params={"ids": keyword_id})
+        if isinstance(result, list) and result:
+            return result[0]
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    return None
+
 def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt):
     """
     네이버 API 키워드 입찰가 실제 업데이트.
-    1) GET으로 현재 키워드 전체 객체 조회
-    2) bidAmt만 수정 후 PUT (전체 객체 전송 — Naver API 요구사항)
-    반환: (before_bid, response_body, debug_info)
+    1) GET /ncc/keywords?ids={id} 로 현재 전체 객체 조회
+    2) bidAmt + useGroupBidAmt 수정 후 PUT
+    반환: (response_body, debug_info)
     """
-    # 1. 현재 키워드 전체 데이터 GET
-    try:
-        current_kw = _naver_get(
-            f"/ncc/keywords/{keyword_id}", api_key, secret_key, cid
-        )
-    except Exception as e:
-        current_kw = None
-
+    # 1. 현재 키워드 전체 객체 조회
+    current_kw = naver_get_keyword(api_key, secret_key, cid, keyword_id)
     before_bid = current_kw.get("bidAmt", "?") if current_kw else "조회실패"
 
-    # 2. 전체 객체에 bidAmt만 교체해서 PUT
+    # 2. PUT 바디 구성
     if current_kw:
         body = dict(current_kw)
-        body["bidAmt"] = bid_amt
     else:
-        # GET 실패 시 최소 필드로 시도
-        body = {"nccKeywordId": keyword_id, "bidAmt": bid_amt}
+        # GET 실패 시 Naver 필수 필드 최소 세트
+        body = {"nccKeywordId": keyword_id}
+
+    body["bidAmt"]          = bid_amt
+    body["useGroupBidAmt"]  = False   # 그룹 입찰가 사용 해제 (개별 입찰 적용)
 
     uri = f"/ncc/keywords/{keyword_id}"
     r, debug = _naver_put(uri, api_key, secret_key, cid, body)
-    debug["before_bid"] = before_bid
-    debug["after_bid"]  = bid_amt
-    debug["keyword_id"] = keyword_id
+    debug["before_bid"]        = before_bid
+    debug["after_bid"]         = bid_amt
+    debug["keyword_id"]        = keyword_id
     debug["request_body_keys"] = list(body.keys())
+    debug["get_success"]       = current_kw is not None
 
     if not r.ok:
-        raise Exception(
-            f"HTTP {r.status_code} | {r.text[:300]}"
-        )
+        raise Exception(f"HTTP {r.status_code} | {r.text[:400]}")
 
     try:
         return r.json(), debug
