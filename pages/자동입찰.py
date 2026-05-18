@@ -711,6 +711,82 @@ with tab1:
                             )
                 st.rerun()
 
+        # ── 🧪 단일 키워드 API 테스트 ────────────────────────────────────
+        st.divider()
+        st.markdown("#### 🧪 단일 키워드 API 테스트")
+        st.caption("입찰가 변경이 실제로 동작하는지 키워드 1개로 먼저 검증합니다.")
+
+        all_kws = [
+            (g["name"], kw["keyword"], kw.get("ncc_keyword_id",""), kw.get("current_bid"), g)
+            for g in groups for kw in g.get("keywords",[])
+        ]
+        if all_kws:
+            kw_labels = [f"{gn} / {kw}" for gn, kw, kid, bid, g in all_kws]
+            sel_idx   = st.selectbox("테스트할 키워드 선택", range(len(kw_labels)),
+                                     format_func=lambda i: kw_labels[i],
+                                     key="test_kw_sel")
+            t_gname, t_kwname, t_kid, t_cur_bid, t_g = all_kws[sel_idx]
+            t_acct = acct_map.get(t_g.get("ad_account_id",""))
+
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.markdown(f"""
+| 항목 | 값 |
+|------|-----|
+| 그룹 | {t_gname} |
+| 키워드 | {t_kwname} |
+| ncc_keyword_id | `{t_kid or '❌ 없음'}` |
+| 현재입찰가 | {f'{t_cur_bid:,}원' if t_cur_bid else '미조회'} |
+| 광고계정 | {'✅ ' + t_acct['business_name'] if t_acct else '❌ 미연결'} |
+""")
+            with col_b:
+                default_test_bid = (t_cur_bid or 1000) + 100
+                test_bid_val = st.number_input(
+                    "테스트 입찰가 (원)",
+                    min_value=10, max_value=100000,
+                    value=int(default_test_bid), step=10,
+                    key="test_bid_input",
+                )
+
+            can_test = bool(t_kid and t_acct)
+            if not can_test:
+                if not t_kid:
+                    st.warning("⚠ ncc_keyword_id 없음 → 위의 [📡 API 데이터 조회] 먼저 실행")
+                if not t_acct:
+                    st.warning("⚠ 광고계정 미연결 → [그룹 관리]에서 네이버 불러오기로 재등록 필요")
+
+            if st.button("🧪 테스트 실행 (네이버 실제 API 호출)", type="primary",
+                         disabled=not can_test, key="test_run_btn"):
+                import json as _json
+                st.markdown(f"**실행:** `PUT /ncc/keywords/{t_kid}` → bidAmt={test_bid_val}")
+                try:
+                    with st.spinner("Naver API 호출 중..."):
+                        resp_data, dbg = naver_update_bid(
+                            t_acct["api_key"], t_acct["secret_key"],
+                            t_acct["customer_id"], t_kid, test_bid_val,
+                        )
+                    st.success(
+                        f"✅ API 성공! HTTP {dbg['status_code']} | "
+                        f"변경 전: {dbg['before_bid']}원 → 변경 후: {test_bid_val}원"
+                    )
+                    st.markdown("**API Response Body:**")
+                    st.code(_json.dumps(resp_data, ensure_ascii=False, indent=2, default=str),
+                            language="json")
+                    st.markdown("**Request 상세:**")
+                    st.code(_json.dumps({
+                        "url":              dbg["url"],
+                        "keyword_id":       t_kid,
+                        "before_bid":       dbg["before_bid"],
+                        "after_bid":        test_bid_val,
+                        "request_keys":     dbg.get("request_body_keys", []),
+                        "http_status":      dbg["status_code"],
+                    }, ensure_ascii=False, indent=2), language="json")
+                    st.info("📌 네이버 광고관리자에서 해당 키워드 입찰가 확인해주세요.")
+                except Exception as e:
+                    st.error(f"❌ API 실패: {e}")
+                    st.markdown("**디버그 정보:**")
+                    st.code(str(e))
+
 # ════════════════════════════════════════════════════════════════════════════
 # 탭2: 그룹 관리
 # ════════════════════════════════════════════════════════════════════════════
