@@ -29,10 +29,11 @@ if auth_type == "admin":
 else:
     client_id = auth_username
 
-SB_KEY        = f"bidding_{client_id}"
-FALLBACK_JSON = os.path.join(ROOT, f"bidding_{client_id}.json")
-MAX_GROUPS    = 5
-MAX_KEYWORDS  = 30
+SB_KEY             = f"bidding_{client_id}"
+FALLBACK_JSON      = os.path.join(ROOT, f"bidding_{client_id}.json")
+MAX_GROUPS         = 5
+MAX_KEYWORDS       = 30
+DEFAULT_INTERVAL_MIN = 15  # 그룹 check_interval 기본값 (분)
 
 STATUS_ICON = {
     "증액중":       "🔴",
@@ -567,211 +568,193 @@ with tab1:
     ad_accounts = load_ad_accounts()
     acct_map    = {a["id"]: a for a in ad_accounts}
 
+    # ── 상태 카드 ─────────────────────────────────────────────────────
+    bid_state  = data.get("state", {})
+    is_running = bid_state.get("running", False)
+    last_run   = bid_state.get("last_run", "")
+    next_run   = bid_state.get("next_run", "")
+    cycle_cnt  = bid_state.get("cycle_count", 0)
+    interval   = bid_state.get("interval_min", DEFAULT_INTERVAL_MIN)
+
+    if is_running:
+        st.markdown(
+            f"<div style='padding:12px 18px;background:#EFF6FF;border-left:4px solid #0D47A1;"
+            f"border-radius:8px;font-weight:700;color:#1E3A8A;'>"
+            f"● 자동입찰 실행중 (스케줄러)  "
+            f"<span style='font-weight:400;font-size:12px;'>"
+            f"마지막: {last_run} | 다음: {next_run} | 사이클: {cycle_cnt}회 | 주기: {interval}분"
+            f"</span></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div style='padding:12px 18px;background:#F9FAFB;border-left:4px solid #9CA3AF;"
+            "border-radius:8px;font-weight:700;color:#6B7280;'>"
+            "● 자동입찰 중지됨</div>",
+            unsafe_allow_html=True,
+        )
+    st.caption(
+        "자동입찰은 run_scheduler.bat(로컬 실행)이 실제 반복 처리합니다. "
+        "Streamlit 화면은 상태 조회 · 제어만 담당합니다."
+    )
+
     if not groups:
         st.info("등록된 그룹이 없습니다. [그룹 관리] 탭에서 그룹을 추가하세요.")
+    else:
+        # ── 제어 버튼 4개 ───────────────────────────────────────────────
+        b1, b2, b3, b4 = st.columns(4)
+        with b1:
+            if st.button("▶ 자동입찰 시작", type="primary", use_container_width=True,
+                         disabled=is_running):
+                data["state"] = {**bid_state, "running": True,
+                                  "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+                save_data(data)
+                st.success("자동입찰 ON — run_scheduler.bat이 실행 중이어야 합니다.")
+                st.rerun()
+        with b2:
+            if st.button("⏹ 자동입찰 중지", use_container_width=True,
+                         disabled=not is_running):
+                data["state"] = {**bid_state, "running": False}
+                save_data(data)
+                st.rerun()
+        with b3:
+            if st.button("⚡ 지금 한 바퀴 실행", use_container_width=True):
+                data["state"] = {**bid_state, "trigger_now": True}
+                save_data(data)
+                st.info("트리거 전송 — 스케줄러가 실행 중이면 수 초 내 처리됩니다.")
+                st.rerun()
+        with b4:
+            if st.button("🔄 이력 새로고침", use_container_width=True):
+                st.rerun()
 
-    if groups:
-        # ── 그룹 선택 ──────────────────────────────────────────────────
+        st.divider()
+
+        # ── 수동 실행 (그룹 선택) ──────────────────────────────────────
         group_names = [g["name"] for g in groups]
-        sel_group   = st.selectbox("실행할 그룹 선택", ["전체 그룹"] + group_names,
-                                   key="rolling_group_sel")
-        run_groups  = groups if sel_group == "전체 그룹" else [g for g in groups if g["name"] == sel_group]
+        sel_group   = st.selectbox("수동 실행 그룹 선택",
+                                   ["전체 그룹"] + group_names, key="rolling_group_sel")
+        run_groups  = (groups if sel_group == "전체 그룹"
+                       else [g for g in groups if g["name"] == sel_group])
 
         def _run_and_save(entries_: list, mode_label: str):
-            """실행 결과 저장 + 로그 + 화면 표시 공통 처리"""
             data["groups"] = groups
             save_data(data)
-            logs_ = load_log()
-            chg_  = sum(1 for e in entries_ if e.get("changed"))
-            logs_.append({
+            chg_ = sum(1 for e in entries_ if e.get("changed"))
+            logs_cur = load_log()
+            logs_cur.append({
                 "run_time": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                 "mode":     mode_label,
                 "summary": {
                     "total":   len(entries_),
                     "changed": chg_,
-                    "kept":    sum(1 for e in entries_ if e.get("status") == "유지"),
-                    "no_data": sum(1 for e in entries_ if "데이터 없음" in e.get("status","")),
-                    "failed":  sum(1 for e in entries_ if e.get("status") == "API 실패"),
+                    "kept":    sum(1 for e in entries_ if "목표도달" in e.get("status", "")),
+                    "no_data": sum(1 for e in entries_ if e.get("status") in
+                                   ("데이터없음", "ID없음", "입찰가없음")),
+                    "failed":  sum(1 for e in entries_ if e.get("status") == "API실패"),
                 },
                 "entries": entries_,
             })
-            save_log(logs_)
-
-            # 상세 실행 로그 표시
+            save_log(logs_cur)
             with st.expander(f"📋 실행 로그 ({len(entries_)}개 키워드)", expanded=True):
                 for e in entries_:
-                    bid_before = e.get("before_bid", "?")
-                    bid_after  = e.get("after_bid")
                     bid_str = (
-                        f"{bid_before}원 → **{bid_after}원**"
+                        f"{e.get('before_bid','?')}원 → **{e.get('after_bid','?')}원**"
                         if e.get("changed") else
-                        f"{bid_before}원 (변경 없음)"
+                        f"{e.get('before_bid','?')}원 (변경없음)"
                     )
-                    rank_str = f"{e['current_rank']:.1f}위" if e.get("current_rank") else "순위없음"
+                    rank_str = (f"{e['current_rank']:.1f}위"
+                                if e.get("current_rank") else "순위없음")
                     st.markdown(
                         f"- `{e.get('time','')}` **{e['keyword']}** | "
-                        f"keywordId: `{e.get('keyword_id','없음')[:20]}` | "
+                        f"`{(e.get('keyword_id') or '')[:18]}` | "
                         f"{rank_str} | {bid_str} | "
                         f"**{e.get('status','')}** {e.get('api_response','')}"
                     )
             if chg_:
-                st.success(f"✅ 완료 — 변경 {chg_}개 / 유지 {sum(1 for e in entries_ if e.get('status')=='유지')}개 / 실패 {sum(1 for e in entries_ if e.get('status')=='API 실패')}개")
+                st.success(f"✅ 완료 — 변경 {chg_}개")
             else:
-                st.info(f"완료 — 변경 없음 | 처리 {len(entries_)}개 (이유: 로그 참조)")
+                st.info(f"완료 — 변경 없음 | 처리 {len(entries_)}개")
 
-        # ── 버튼 3개 가로 배치 ────────────────────────────────────────
-        ba, bb, bc = st.columns(3)
-
-        # ① 첫 키워드 +100원 테스트
-        with ba:
-            if st.button("🧪 첫 키워드 +100원 테스트", use_container_width=True):
-                # 선택 그룹의 첫 번째 키워드만 강제 +100원
-                first_g   = run_groups[0] if run_groups else None
-                first_kw  = (first_g.get("keywords",[]) or [None])[0] if first_g else None
-                acct      = acct_map.get(first_g.get("ad_account_id","")) if first_g else None
-
+        ma, mb, mc = st.columns(3)
+        with ma:
+            if st.button("🧩 첫 키워드 +100원 테스트", use_container_width=True):
+                first_g  = run_groups[0] if run_groups else None
+                first_kw = (first_g.get("keywords", []) or [None])[0] if first_g else None
+                acct     = acct_map.get(first_g.get("ad_account_id", "")) if first_g else None
                 if not first_kw:
-                    st.error("선택 그룹에 키워드 없음")
+                    st.error("키워드 없음")
                 elif not acct:
                     st.error("광고계정 미연결")
-                elif not first_kw.get("ncc_keyword_id","").strip():
-                    st.error(f"ncc_keyword_id 없음 — 키워드: {first_kw['keyword']}\n그룹 관리에서 네이버 불러오기 재등록 필요")
+                elif not (first_kw.get("ncc_keyword_id") or "").strip():
+                    st.error(f"ncc_keyword_id 없음: {first_kw['keyword']}")
                 else:
-                    kid  = first_kw["ncc_keyword_id"].strip()
-                    cur  = first_kw.get("current_bid") or 1000
-                    test_bid = min(cur + 100, first_g["max_bid"])
-                    st.markdown(f"**테스트:** `{first_kw['keyword']}` | `{kid}` | {cur}원 → {test_bid}원")
-                    try:
-                        with st.spinner("API 호출 중..."):
-                            _, dbg = naver_update_bid(
-                                acct["api_key"], acct["secret_key"], acct["customer_id"],
-                                kid, test_bid,
-                                keyword_text=first_kw["keyword"],
-                                adgroup_id=first_g.get("naver_adgroup_id",""),
-                                verify=True,
-                            )
-                        v = dbg.get("after_bid_verified")
-                        if dbg.get("verify_ok"):
-                            st.success(f"✅ 성공! {dbg['before_bid']}원 → 재조회 {v}원")
-                            first_kw["current_bid"] = v
-                            first_kw["last_checked"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                            save_data(data)
-                        else:
-                            st.warning(f"HTTP {dbg['status_code']} | 요청:{test_bid}원 재조회:{v}원")
-                        st.caption(f"keywordId: {kid} | HTTP {dbg['status_code']} | GET 성공: {dbg.get('get_before_success')}")
-                    except Exception as e:
-                        st.error(f"❌ {e}")
+                    kid = first_kw["ncc_keyword_id"].strip()
+                    cur = first_kw.get("current_bid") or 1000
+                    tb  = min(cur + 100, first_g["max_bid"])
+                    with st.spinner(f"{first_kw['keyword']} 변경 중..."):
+                        _, dbg = naver_update_bid(
+                            acct["api_key"], acct["secret_key"], acct["customer_id"],
+                            kid, tb, keyword_text=first_kw["keyword"],
+                            adgroup_id=first_g.get("naver_adgroup_id", ""), verify=True,
+                        )
+                    v = dbg.get("after_bid_verified")
+                    if dbg.get("verify_ok"):
+                        st.success(f"✅ {dbg['before_bid']} → {v}원 | HTTP {dbg['status_code']}")
+                        first_kw["current_bid"] = v
+                        save_data(data)
+                    else:
+                        st.warning(f"HTTP {dbg['status_code']} | 재조회:{v}원")
 
-        # ② 테스트 모드 (+100원 전체, 순위 무관)
-        with bb:
-            if st.button("⚡ 테스트 모드 (+100원)", use_container_width=True):
+        with mb:
+            if st.button("⚡ 수동 롤링 (+bid_unit)", use_container_width=True):
                 now_str  = datetime.now().strftime("%H:%M:%S")
                 entries_ = []
                 for g in run_groups:
-                    acct = acct_map.get(g.get("ad_account_id",""))
+                    acct = acct_map.get(g.get("ad_account_id", ""))
                     for kw_obj in g.get("keywords", []):
-                        kid = kw_obj.get("ncc_keyword_id","").strip()
+                        kid = (kw_obj.get("ncc_keyword_id") or "").strip()
                         cur = kw_obj.get("current_bid") or 0
                         e   = {
                             "time": now_str, "group": g["name"],
                             "keyword": kw_obj["keyword"], "keyword_id": kid,
                             "current_rank": kw_obj.get("current_rank"),
-                            "target_rank": g["target_rank"],
+                            "target_rank":  g["target_rank"],
                             "before_bid": cur, "after_bid": None,
                             "changed": False, "status": "", "api_response": "",
                         }
                         if not acct:
-                            e["status"] = "계정 미연결"; entries_.append(e); continue
+                            e["status"] = "계정미연결"; entries_.append(e); continue
                         if not kid:
-                            e["status"] = "ID 없음"; entries_.append(e); continue
+                            e["status"] = "ID없음";    entries_.append(e); continue
                         if cur == 0:
-                            e["status"] = "현재입찰가 없음 — API 조회 필요"; entries_.append(e); continue
-                        new_bid = min(cur + 100, g["max_bid"])
-                        try:
-                            with st.spinner(f"{kw_obj['keyword']} 변경 중..."):
-                                _, dbg = naver_update_bid(
-                                    acct["api_key"], acct["secret_key"], acct["customer_id"],
-                                    kid, new_bid,
-                                    keyword_text=kw_obj["keyword"],
-                                    adgroup_id=g.get("naver_adgroup_id",""),
-                                    verify=True,
-                                )
-                            v = dbg.get("after_bid_verified")
-                            ok = dbg.get("verify_ok", False)
-                            kw_obj["current_bid"]  = v or new_bid
-                            kw_obj["last_checked"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                            e["after_bid"]    = v
-                            e["changed"]      = ok
-                            e["status"]       = "변경 성공" if ok else "변경(검증불일치)"
-                            e["api_response"] = f"HTTP {dbg['status_code']}"
-                        except Exception as ex:
-                            e["status"]       = "API 실패"
-                            e["api_response"] = str(ex)[:80]
-                        entries_.append(e)
-                _run_and_save(entries_, "테스트(+100원)")
-                st.rerun()
-
-        # ③ 롤링 입찰 실행 (bid_unit만큼 증액, 순위 없어도 진행)
-        with bc:
-            if st.button("🔄 롤링 입찰 실행", type="primary", use_container_width=True):
-                now_str  = datetime.now().strftime("%H:%M:%S")
-                entries_ = []
-                for g in run_groups:
-                    acct = acct_map.get(g.get("ad_account_id",""))
-                    for kw_obj in g.get("keywords", []):
-                        kid = kw_obj.get("ncc_keyword_id","").strip()
-                        cur = kw_obj.get("current_bid") or 0
-                        e   = {
-                            "time":         now_str,
-                            "group":        g["name"],
-                            "keyword":      kw_obj["keyword"],
-                            "keyword_id":   kid,
-                            "current_rank": kw_obj.get("current_rank"),
-                            "target_rank":  g["target_rank"],
-                            "before_bid":   cur,
-                            "after_bid":    None,
-                            "changed":      False,
-                            "status":       "",
-                            "api_response": "",
-                        }
-                        # 사전 검증
-                        if not acct:
-                            e["status"] = "계정 미연결"; entries_.append(e); continue
-                        if not kid:
-                            e["status"] = "ID 없음 (API 조회 필요)"; entries_.append(e); continue
-                        if cur == 0:
-                            e["status"] = "현재입찰가 없음 — API 조회 필요"; entries_.append(e); continue
+                            e["status"] = "입찰가없음"; entries_.append(e); continue
                         if cur >= g["max_bid"]:
-                            e["status"] = "최대입찰 도달"; entries_.append(e); continue
-
-                        # bid_unit만큼 증액 (최대입찰가 클램프)
+                            e["status"] = "최대입찰도달"; entries_.append(e); continue
                         new_bid = min(cur + g["bid_unit"], g["max_bid"])
-                        rank = kw_obj.get("current_rank")
-                        e["status"] = "순위없음·증액" if rank is None else "증액"
-
                         try:
-                            with st.spinner(f"{kw_obj['keyword']} 변경 중..."):
-                                _, dbg = naver_update_bid(
-                                    acct["api_key"], acct["secret_key"],
-                                    acct["customer_id"], kid, new_bid,
-                                    keyword_text=kw_obj["keyword"],
-                                    adgroup_id=g.get("naver_adgroup_id",""),
-                                    verify=True,
-                                )
+                            _, dbg = naver_update_bid(
+                                acct["api_key"], acct["secret_key"], acct["customer_id"],
+                                kid, new_bid, keyword_text=kw_obj["keyword"],
+                                adgroup_id=g.get("naver_adgroup_id", ""), verify=True,
+                            )
                             v  = dbg.get("after_bid_verified")
                             ok = dbg.get("verify_ok", False)
                             kw_obj["current_bid"]  = v or new_bid
                             kw_obj["last_checked"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                            e["after_bid"]    = v
-                            e["changed"]      = ok
-                            e["status"]       = ("변경 성공" if ok else "변경(검증불일치)") + (f" (순위없음)" if rank is None else "")
+                            e["after_bid"] = v; e["changed"] = ok
+                            e["status"] = "변경성공" if ok else "검증불일치"
                             e["api_response"] = f"HTTP {dbg['status_code']}"
                         except Exception as ex:
-                            e["status"]       = "API 실패"
-                            e["api_response"] = str(ex)[:80]
+                            e["status"] = "API실패"; e["api_response"] = str(ex)[:60]
                         entries_.append(e)
+                _run_and_save(entries_, "수동롤링")
+                st.rerun()
 
-                _run_and_save(entries_, "롤링(bid_unit증액)")
+        with mc:
+            if st.button("🔄 순위기반 1회 실행", use_container_width=True):
+                with st.spinner("순위 조회 → 계산 → 변경..."):
+                    entries_ = run_auto_bidding_once(run_groups, acct_map)
+                _run_and_save(entries_, "순위기반")
                 st.rerun()
 
         st.divider()
@@ -780,7 +763,7 @@ with tab1:
         rows = []
         for g in groups:
             for kw in g.get("keywords", []):
-                s = kw.get("status", "데이터 없음")
+                s = kw.get("status", "데이터없음")
                 rows.append({
                     "그룹명":      g["name"],
                     "키워드":      kw["keyword"],
@@ -799,33 +782,35 @@ with tab1:
                 "추천입찰가": st.column_config.NumberColumn(format="%d원"),
             },
         )
-        st.caption("🔴 증액  🔵 감액  🟢 유지  ⚪ 데이터 없음  🟠 최대입찰  🟡 최소입찰  ❌ 변경 실패")
+        st.caption("🔴 증액중  🔵 감액중  🟢 목표도달  ⚪ 데이터없음  🟠 최대입찰  🟡 최소입찰")
 
         st.divider()
 
         # ── 실행 이력 ───────────────────────────────────────────────────
         st.markdown("##### 실행 이력")
-        logs = load_log()
-        if not logs:
+        logs_all = load_log()
+        if not logs_all:
             st.caption("아직 실행 이력이 없습니다.")
         else:
-            for run in reversed(logs[-10:]):
-                s = run.get("summary", {})
-                label = (
-                    f"🕒 {run['run_time']}  —  "
-                    f"변경 {s.get('changed',0)}개 · 유지 {s.get('kept',0)}개 · "
-                    f"데이터 없음 {s.get('no_data',0)}개 · 실패 {s.get('failed',0)}개"
+            for run in reversed(logs_all[-15:]):
+                s   = run.get("summary", {})
+                cyc = run.get("cycle", "")
+                lbl = (
+                    f"🕒 {run['run_time']} [{run.get('mode','')}] — "
+                    f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)} · "
+                    f"데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
+                    + (f" | 사이클#{cyc}" if cyc else "")
                 )
-                with st.expander(label, expanded=False):
+                with st.expander(lbl, expanded=False):
                     hist = [{
-                        "실행시간":    e.get("time",""),
-                        "그룹명":      e.get("group",""),
-                        "키워드":      e.get("keyword",""),
-                        "현재순위":    e.get("current_rank"),
-                        "목표순위":    e.get("target_rank"),
-                        "변경 전(원)": e.get("before_bid"),
-                        "변경 후(원)": e.get("after_bid"),
-                        "상태":        e.get("status",""),
+                        "시간":      e.get("time", ""),
+                        "그룹":      e.get("group", ""),
+                        "키워드":    e.get("keyword", ""),
+                        "현재순위":  e.get("current_rank"),
+                        "목표순위":  e.get("target_rank"),
+                        "변경전(원)": e.get("before_bid"),
+                        "변경후(원)": e.get("after_bid"),
+                        "상태":      e.get("status", ""),
                     } for e in run.get("entries", [])]
                     if hist:
                         st.dataframe(pd.DataFrame(hist),
