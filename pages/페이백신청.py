@@ -120,12 +120,12 @@ with st.expander("ℹ️  광고비 페이백이란?"):
 }
 .pb-rate-row:last-child { border-bottom:none; }
 .pb-rate-label { color:#555; }
-.pb-rate-pct { font-weight:700; color:#0064FF; font-size:14px; }
+.pb-rate-pct { font-weight:700; color:#0D47A1; font-size:14px; }
 .pb-intro {
   font-size:15px; font-weight:700; color:#111;
   margin-bottom:16px; line-height:1.6;
 }
-.pb-pct-hl { color:#0064FF; }
+.pb-pct-hl { color:#0D47A1; }
 </style>
 <div class="pb-intro">
   마케팁 광고 계정을 연동하면,<br>
@@ -202,7 +202,7 @@ with right:
     </div>
     <div class="notice-row">
       <span class="notice-key">문의처</span>
-      <span class="notice-val">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0064FF;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
+      <span class="notice-val">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0D47A1;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
     </div>
   </div>
 </div>

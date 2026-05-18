@@ -74,7 +74,7 @@ padding:18px 22px;margin-bottom:28px;">
 <div style="text-align:center;">
   <a href="{GPT_URL}" target="_blank" style="
     display:inline-block;
-    background:#006633;
+    background:#0D47A1;
     color:#ffffff;
     font-size:16px;
     font-weight:700;
