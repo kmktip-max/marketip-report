@@ -150,8 +150,92 @@ def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt):
 # ════════════════════════════════════════════════════════════════════════════
 # UI
 # ════════════════════════════════════════════════════════════════════════════
-st.title("📊 목표순위 자동입찰")
-st.caption("목표순위 근접 유지를 위한 입찰가 조정 보조 시스템")
+st.markdown("""
+<style>
+/* ── 페이지 헤더 ── */
+.bid-page-header {
+    padding: 20px 0 4px;
+}
+.bid-page-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: -.5px;
+    margin: 0 0 4px;
+}
+.bid-page-sub {
+    font-size: 13px;
+    color: #6B7280;
+    margin: 0 0 20px;
+}
+/* ── 상태 배너 ── */
+.bid-status-on {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    border-left: 4px solid #0D47A1;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #1E3A8A;
+}
+.bid-status-off {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background: #F9FAFB;
+    border: 1px solid #E5E7EB;
+    border-left: 4px solid #9CA3AF;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #6B7280;
+}
+.bid-status-time {
+    font-size: 12px;
+    font-weight: 400;
+    color: #3B82F6;
+    margin-left: 4px;
+}
+/* ── 사용법 안내 ── */
+.bid-guide {
+    background: #F8FAFC;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+    color: #6B7280;
+    margin: 12px 0 4px;
+    line-height: 1.7;
+}
+.bid-guide b { color: #111827; }
+/* ── 섹션 타이틀 ── */
+.bid-section {
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+    border-left: 3px solid #0D47A1;
+    padding-left: 10px;
+    margin: 20px 0 10px;
+}
+/* ── 상태 범례 ── */
+.bid-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+    color: #6B7280;
+    margin: 8px 0 16px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="bid-page-title">📊 목표순위 자동입찰</div>', unsafe_allow_html=True)
+st.markdown('<div class="bid-page-sub">목표순위 근접 유지를 위한 입찰가 자동 계산 · 전송 시스템</div>', unsafe_allow_html=True)
 
 data   = load_data()
 groups = data.get("groups", [])
@@ -168,22 +252,22 @@ with tab1:
     is_running = bid_state.get("running", False)
 
     # ── 자동입찰 상태 패널 ────────────────────────────────────────────
-    sc1, sc2 = st.columns([3, 1])
+    sc1, sc2 = st.columns([4, 1])
     with sc1:
         if is_running:
             started = bid_state.get("started_at", "")
             st.markdown(
-                f'<div style="padding:10px 16px;background:#d4edda;border-radius:8px;'
-                f'color:#155724;font-weight:700;font-size:15px;">'
-                f'🟢 자동입찰 실행 중 &nbsp;<span style="font-weight:400;font-size:13px;">'
-                f'(시작: {started})</span></div>',
+                f'<div class="bid-status-on">'
+                f'<span style="font-size:16px;">●</span> 자동입찰 실행 중'
+                f'<span class="bid-status-time">시작: {started}</span>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                '<div style="padding:10px 16px;background:#f8f9fa;border-radius:8px;'
-                'color:#6c757d;font-weight:700;font-size:15px;">'
-                '🔴 자동입찰 중지됨</div>',
+                '<div class="bid-status-off">'
+                '<span style="font-size:16px;">●</span> 자동입찰 중지됨'
+                '</div>',
                 unsafe_allow_html=True,
             )
     with sc2:
@@ -193,7 +277,7 @@ with tab1:
                 save_data(data)
                 st.rerun()
         else:
-            if st.button("▶ 자동입찰 시작", type="primary", use_container_width=True):
+            if st.button("▶ 시작", type="primary", use_container_width=True):
                 data["state"] = {
                     "running":    True,
                     "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
@@ -201,12 +285,14 @@ with tab1:
                 save_data(data)
                 st.rerun()
 
-    st.caption(
-        "💡 **사용법:** ① 현재순위 입력 → ② 입찰가 계산 → ③ 입찰가 적용  |  "
-        "자동입찰 시작 시 순위가 입력된 키워드를 자동 계산합니다.  |  "
-        "⚠️ '실행 중' 상태는 이 시스템의 상태이며, 네이버 광고 계정 상태(비즈머니·노출)와는 별개입니다."
+    st.markdown(
+        '<div class="bid-guide">'
+        '<b>사용법</b> &nbsp;①&nbsp;현재순위 입력 → ②&nbsp;입찰가 계산 → ③&nbsp;입찰가 적용'
+        '&nbsp;&nbsp;|&nbsp;&nbsp;자동입찰 시작 시 순위가 입력된 키워드를 페이지 로드마다 자동 계산합니다.'
+        '&nbsp;&nbsp;|&nbsp;&nbsp;⚠ 이 시스템 상태는 네이버 계정(비즈머니·노출)과 무관합니다.'
+        '</div>',
+        unsafe_allow_html=True,
     )
-    st.divider()
 
     # ── 자동입찰 실행 중 → 순위 있는 키워드 자동 계산 ────────────────
     if is_running:
@@ -273,8 +359,10 @@ with tab1:
         )
 
         st.markdown(
-            "**상태:** 🔴 증액중 &nbsp;🔵 감액중 &nbsp;🟢 유지 &nbsp;"
-            "⚪ 데이터 부족 &nbsp;🟠 최대입찰 도달 &nbsp;🟡 최소입찰 도달",
+            '<div class="bid-legend">'
+            '<span>🔴 증액중</span><span>🔵 감액중</span><span>🟢 유지</span>'
+            '<span>⚪ 데이터 부족</span><span>🟠 최대입찰 도달</span><span>🟡 최소입찰 도달</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
 
