@@ -260,7 +260,7 @@ with st.sidebar:
     if LOGO_PATH:
         st.image(LOGO_PATH, width=136)
     else:
-        st.markdown('<div style="font-size:20px;font-weight:900;color:#ffffff;">마케팁</div>',
+        st.markdown('<div style="font-size:20px;font-weight:900;color:#111827;">마케팁</div>',
                     unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 

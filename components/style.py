@@ -64,10 +64,10 @@ button[aria-label="View fullscreen"] { display: none !important; }
     background: #F8FAFC !important;
 }
 
-/* ══ 사이드바 — Deep Navy ══════════════════════════════════════════════ */
+/* ══ 사이드바 — 흰색 ══════════════════════════════════════════════════ */
 [data-testid="stSidebar"] {
-    background: #111827 !important;
-    border-right: none !important;
+    background: #ffffff !important;
+    border-right: 1px solid #E5E8ED !important;
 }
 [data-testid="stSidebar"] > div,
 [data-testid="stSidebar"] > div > div,
@@ -80,15 +80,13 @@ button[aria-label="View fullscreen"] { display: none !important; }
     padding-left: 0 !important;
     padding-right: 0 !important;
     gap: 0 !important;
-    background: #111827 !important;
 }
 
 /* ══ 로고 영역 ══════════════════════════════════════════════════════════ */
 .sb-logo-wrap {
-    padding: 16px 20px 14px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding: 10px 18px 10px;
+    border-bottom: 1px solid #E5E8ED;
     margin: 0;
-    background: #111827;
 }
 .sb-logo-wrap img { display: block; }
 .sb-logo-wrap button,
@@ -97,12 +95,12 @@ button[aria-label="View fullscreen"] { display: none !important; }
 /* ══ 그룹 레이블 ══════════════════════════════════════════════════════ */
 .sb-label {
     display: block !important;
-    font-size: 10px !important;
+    font-size: 11px !important;
     font-weight: 700 !important;
-    color: rgba(255,255,255,0.35) !important;
-    letter-spacing: 1.2px !important;
+    color: #9CA3AF !important;
+    letter-spacing: .9px !important;
     text-transform: uppercase !important;
-    padding: 20px 20px 6px !important;
+    padding: 22px 20px 6px !important;
     margin: 0 !important;
     line-height: 1 !important;
 }
@@ -116,11 +114,11 @@ button[aria-label="View fullscreen"] { display: none !important; }
 [data-testid="stPageLink"] a {
     display: flex !important;
     align-items: center !important;
-    height: 40px !important;
-    padding: 0 12px !important;
-    border-radius: 8px !important;
-    color: rgba(255,255,255,0.72) !important;
-    font-size: 13.5px !important;
+    height: 44px !important;
+    padding: 0 14px !important;
+    border-radius: 10px !important;
+    color: #374151 !important;
+    font-size: 14px !important;
     font-weight: 500 !important;
     text-decoration: none !important;
     transition: background .15s, color .15s !important;
@@ -129,58 +127,33 @@ button[aria-label="View fullscreen"] { display: none !important; }
     white-space: nowrap !important;
 }
 [data-testid="stPageLink"] a:hover {
-    background: rgba(255,255,255,0.08) !important;
-    color: #ffffff !important;
+    background: #F0F4FF !important;
+    color: #0D47A1 !important;
 }
 [data-testid="stPageLink"] a[aria-current="page"] {
-    background: #0D47A1 !important;
-    color: #ffffff !important;
+    background: #EEF2F7 !important;
+    color: #0D47A1 !important;
     font-weight: 700 !important;
 }
 
 /* ══ 페이백신청 강조 ══════════════════════════════════════════════════ */
 [data-testid="stPageLink"] a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"],
 [data-testid="stPageLink"] a[href*="페이백"] {
-    color: #93C5FD !important;
-    font-weight: 600 !important;
+    color: #0D47A1 !important;
+    font-weight: 700 !important;
 }
 
 /* ══ 사이드바 하단 ══════════════════════════════════════════════════════ */
 .sb-bottom {
-    border-top: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid #E5E8ED;
     padding: 14px 18px 16px;
     margin-top: 32px;
-    background: #111827;
 }
 .sb-user-info {
     font-size: 12px;
-    color: rgba(255,255,255,0.45);
+    color: #6B7280;
     padding: 4px 0 8px;
     line-height: 1.5;
-}
-
-/* ══ 사이드바 내 버튼 (로그아웃) ══════════════════════════════════════ */
-[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
-    background: rgba(255,255,255,0.07) !important;
-    border: 1px solid rgba(255,255,255,0.15) !important;
-    color: rgba(255,255,255,0.75) !important;
-    font-size: 13px !important;
-}
-[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:hover {
-    background: rgba(255,255,255,0.13) !important;
-    color: #fff !important;
-}
-
-/* ══ 사이드바 selectbox (클라이언트 선택) ══════════════════════════════ */
-[data-testid="stSidebar"] [data-testid="stSelectbox"] label,
-[data-testid="stSidebar"] .stSelectbox label {
-    color: rgba(255,255,255,0.5) !important;
-    font-size: 11px !important;
-}
-[data-testid="stSidebar"] [data-baseweb="select"] > div {
-    background: rgba(255,255,255,0.07) !important;
-    border-color: rgba(255,255,255,0.15) !important;
-    color: #fff !important;
 }
 
 /* ══ 전역 Primary 버튼 ══════════════════════════════════════════════════ */
