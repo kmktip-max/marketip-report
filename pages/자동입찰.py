@@ -711,12 +711,67 @@ with tab1:
                 _run_and_save(entries_, "테스트(+100원)")
                 st.rerun()
 
-        # ③ 롤링 입찰 실행 (순위 기반 정상)
+        # ③ 롤링 입찰 실행 (bid_unit만큼 증액, 순위 없어도 진행)
         with bc:
             if st.button("🔄 롤링 입찰 실행", type="primary", use_container_width=True):
-                with st.spinner("순위 조회 → 계산 → 변경..."):
-                    entries_ = run_auto_bidding_once(run_groups, acct_map)
-                _run_and_save(entries_, "롤링(순위기반)")
+                now_str  = datetime.now().strftime("%H:%M:%S")
+                entries_ = []
+                for g in run_groups:
+                    acct = acct_map.get(g.get("ad_account_id",""))
+                    for kw_obj in g.get("keywords", []):
+                        kid = kw_obj.get("ncc_keyword_id","").strip()
+                        cur = kw_obj.get("current_bid") or 0
+                        e   = {
+                            "time":         now_str,
+                            "group":        g["name"],
+                            "keyword":      kw_obj["keyword"],
+                            "keyword_id":   kid,
+                            "current_rank": kw_obj.get("current_rank"),
+                            "target_rank":  g["target_rank"],
+                            "before_bid":   cur,
+                            "after_bid":    None,
+                            "changed":      False,
+                            "status":       "",
+                            "api_response": "",
+                        }
+                        # 사전 검증
+                        if not acct:
+                            e["status"] = "계정 미연결"; entries_.append(e); continue
+                        if not kid:
+                            e["status"] = "ID 없음 (API 조회 필요)"; entries_.append(e); continue
+                        if cur == 0:
+                            e["status"] = "현재입찰가 없음 — API 조회 필요"; entries_.append(e); continue
+                        if cur >= g["max_bid"]:
+                            e["status"] = "최대입찰 도달"; entries_.append(e); continue
+
+                        # bid_unit만큼 증액 (최대입찰가 클램프)
+                        new_bid = min(cur + g["bid_unit"], g["max_bid"])
+                        rank = kw_obj.get("current_rank")
+                        e["status"] = "순위없음·증액" if rank is None else "증액"
+
+                        try:
+                            with st.spinner(f"{kw_obj['keyword']} 변경 중..."):
+                                _, dbg = naver_update_bid(
+                                    acct["api_key"], acct["secret_key"],
+                                    acct["customer_id"], kid, new_bid,
+                                    keyword_text=kw_obj["keyword"],
+                                    adgroup_id=g.get("naver_adgroup_id",""),
+                                    verify=True,
+                                )
+                            v  = dbg.get("after_bid_verified")
+                            ok = dbg.get("verify_ok", False)
+                            kw_obj["current_bid"]  = v or new_bid
+                            kw_obj["last_checked"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                            e["after_bid"]    = v
+                            e["changed"]      = ok
+                            e["status"]       = ("변경 성공" if ok else "변경(검증불일치)") + (f" (순위없음)" if rank is None else "")
+                            e["api_response"] = f"HTTP {dbg['status_code']}"
+                        except Exception as ex:
+                            e["status"]       = "API 실패"
+                            e["api_response"] = str(ex)[:80]
+                        entries_.append(e)
+
+                _run_and_save(entries_, "롤링(bid_unit증액)")
                 st.rerun()
 
         st.divider()
