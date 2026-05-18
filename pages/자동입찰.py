@@ -278,50 +278,69 @@ def naver_get_keyword(api_key, secret_key, cid, keyword_id):
     return None
 
 def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt,
-                     keyword_text="", adgroup_id=""):
+                     keyword_text="", adgroup_id="", verify=True):
     """
     네이버 API 키워드 입찰가 실제 업데이트.
-    - GET ?ids 로 현재 전체 객체 조회 시도
-    - 실패 시 known 필드로 바디 직접 구성 (keyword_text, adgroup_id 필수)
-    반환: (response_body, debug_info)
+    흐름:
+      1) GET ?ids → 변경 전 bidAmt 확인
+      2) PUT ?fields=bidAmt,useGroupBidAmt → 입찰가 변경
+      3) verify=True 시 GET 재조회 → 실제 변경 검증
+    반환: (put_response, debug_info)
     """
-    # 1. 현재 전체 객체 GET 시도
-    current_kw  = naver_get_keyword(api_key, secret_key, cid, keyword_id)
-    before_bid  = current_kw.get("bidAmt", "?") if current_kw else "GET실패"
+    # ── 1. 변경 전 GET ─────────────────────────────────────────────────
+    current_kw = naver_get_keyword(api_key, secret_key, cid, keyword_id)
+    before_bid = current_kw.get("bidAmt", "?") if current_kw else "GET실패"
+    before_group_bid = current_kw.get("useGroupBidAmt") if current_kw else "?"
 
-    # 2. PUT 바디: GET 성공이면 전체 덮어쓰기, 실패면 known 필드 직접 구성
+    # ── 2. PUT 바디 구성 ───────────────────────────────────────────────
     if current_kw:
         body = dict(current_kw)
     else:
         body = {
-            "nccKeywordId":  keyword_id,
-            "keyword":       keyword_text,
-            "nccAdgroupId":  adgroup_id,
+            "nccKeywordId": keyword_id,
+            "keyword":      keyword_text,
+            "nccAdgroupId": adgroup_id,
         }
-
-    # 입찰가 변경 핵심 필드
     body["bidAmt"]         = bid_amt
-    body["useGroupBidAmt"] = False   # 개별 입찰 적용 (그룹 공유 해제)
+    body["useGroupBidAmt"] = False
 
-    # Naver API: PUT 시 수정할 필드명을 ?fields= 쿼리로 명시해야 함
-    uri    = f"/ncc/keywords/{keyword_id}"
+    uri     = f"/ncc/keywords/{keyword_id}"
     qparams = {"fields": "bidAmt,useGroupBidAmt"}
     r, debug = _naver_put(uri, api_key, secret_key, cid, body, params=qparams)
-    debug["before_bid"]        = before_bid
-    debug["after_bid"]         = bid_amt
-    debug["keyword_id"]        = keyword_id
-    debug["get_success"]       = current_kw is not None
-    debug["request_body_keys"] = list(body.keys())
-    debug["request_body"]      = {k: v for k, v in body.items()
-                                  if k not in ("nccSecretKey",)}  # 민감정보 제외
 
     if not r.ok:
         raise Exception(f"HTTP {r.status_code} | {r.text[:500]}")
 
     try:
-        return r.json(), debug
+        put_resp = r.json()
     except Exception:
-        return {}, debug
+        put_resp = {}
+
+    # ── 3. 변경 후 GET 재조회 (검증) ──────────────────────────────────
+    verified_bid       = None
+    verified_group_bid = None
+    verify_ok          = False
+    if verify:
+        time.sleep(0.5)   # 짧은 대기 후 재조회
+        after_kw = naver_get_keyword(api_key, secret_key, cid, keyword_id)
+        if after_kw:
+            verified_bid       = after_kw.get("bidAmt")
+            verified_group_bid = after_kw.get("useGroupBidAmt")
+            verify_ok          = (verified_bid == bid_amt)
+
+    debug.update({
+        "keyword_id":          keyword_id,
+        "before_bid":          before_bid,
+        "before_useGroupBid":  before_group_bid,
+        "requested_bid":       bid_amt,
+        "after_bid_verified":  verified_bid,
+        "after_useGroupBid":   verified_group_bid,
+        "verify_ok":           verify_ok,
+        "get_before_success":  current_kw is not None,
+        "request_body":        {k: v for k, v in body.items()
+                                if k not in ("nccSecretKey",)},
+    })
+    return put_resp, debug
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -793,19 +812,43 @@ with tab1:
                             keyword_text=t_kwname,
                             adgroup_id=t_g.get("naver_adgroup_id",""),
                         )
-                    st.success(
-                        f"✅ API 성공! HTTP {dbg['status_code']} | "
-                        f"변경 전: {dbg['before_bid']}원 → 변경 후: {test_bid_val}원"
-                    )
-                    st.info("📌 네이버 광고관리자에서 해당 키워드 입찰가 확인해주세요.")
-                    with st.expander("API 상세 (Response + Request Body)"):
-                        st.markdown(f"- GET 성공: {dbg.get('get_success')}")
-                        st.markdown("**Response Body:**")
-                        st.code(_json.dumps(resp_data, ensure_ascii=False, indent=2, default=str),
-                                language="json")
-                        st.markdown("**Request Body (PUT):**")
+                    # ── 검증 결과 표시 ──────────────────────────────────
+                    v_bid = dbg.get("after_bid_verified")
+                    v_ok  = dbg.get("verify_ok", False)
+
+                    if v_ok:
+                        st.success(
+                            f"✅ 변경 확인 완료! "
+                            f"변경 전: **{dbg['before_bid']}원** → "
+                            f"요청: **{test_bid_val}원** → "
+                            f"재조회: **{v_bid}원** ✓"
+                        )
+                    else:
+                        st.warning(
+                            f"⚠ PUT 성공(HTTP {dbg['status_code']})이지만 재조회 불일치 — "
+                            f"요청: {test_bid_val}원 / 재조회: {v_bid}원"
+                        )
+
+                    # 상세 검증 테이블
+                    st.markdown(f"""
+| 항목 | 값 |
+|------|-----|
+| 변경 전 bidAmt | {dbg['before_bid']}원 |
+| 요청 bidAmt | {test_bid_val}원 |
+| 재조회 bidAmt | {v_bid if v_bid is not None else '조회실패'}원 |
+| useGroupBidAmt (변경 후) | {dbg.get('after_useGroupBid')} |
+| 검증 결과 | {'✅ 일치' if v_ok else '❌ 불일치 또는 조회실패'} |
+| HTTP 상태 | {dbg['status_code']} |
+""")
+                    st.info("📌 네이버 광고관리자는 캐시 지연이 있을 수 있습니다. API 재조회값이 기준입니다.")
+
+                    with st.expander("🔍 Raw API 상세"):
+                        st.markdown("**PUT Request Body:**")
                         st.code(_json.dumps(dbg.get("request_body",{}),
                                             ensure_ascii=False, indent=2, default=str),
+                                language="json")
+                        st.markdown("**PUT Response Body:**")
+                        st.code(_json.dumps(resp_data, ensure_ascii=False, indent=2, default=str),
                                 language="json")
                 except Exception as e:
                     st.error(f"❌ API 실패: {e}")
