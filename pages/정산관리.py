@@ -1307,14 +1307,17 @@ with t_share:
     {_r['공제후 실수령액']:,}원
   </div>
 </div>"""
-                        # 리베이트 카드 (업체 단위, 리베이트 있는 경우만)
+
+                    # 리베이트 안내 섹션 (카드 맨 아래)
+                    _rb_section_html = ""
+                    for _biz_nm in _biz_order_share:
                         _rb = _rb_by_biz.get(_biz_nm, {})
                         if _rb.get("amt", 0) > 0:
-                            _rows_html += f"""
+                            _rb_section_html += f"""
 <div style="background:#FEF2F2;border:1.5px solid #DC2626;border-radius:10px;
-            padding:12px 16px;margin-bottom:12px;margin-left:16px;">
+            padding:12px 16px;margin-bottom:8px;">
   <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:6px;">
-    🔴 리베이트/세금계산서 안내
+    🔴 {_biz_nm} — 리베이트/세금계산서 안내
   </div>
   <div style="font-size:12px;color:#DC2626;">
     광고비 합계: {_rb['vat']:,}원 &nbsp;|&nbsp; 리베이트율: {_rb['rate']:.1f}%
@@ -1352,6 +1355,7 @@ with t_share:
     <span style="font-size:14px;font-weight:700;color:#1D4ED8;">공제후 실수령액</span>
     <span style="font-size:22px;font-weight:900;color:#1D4ED8;">{_t_net:,}원</span>
   </div>
+  {f'<hr style="border:none;border-top:1px solid #FECACA;margin:14px 0;">{_rb_section_html}' if _rb_section_html else ''}
   <div style="text-align:center;margin-top:14px;font-size:13px;color:#9CA3AF;">
     입금 예정입니다 🙏
   </div>
@@ -1375,13 +1379,6 @@ with t_share:
                             _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
                             _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
                             _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
-                        _rb = _rb_by_biz.get(_biz_nm, {})
-                        if _rb.get("amt", 0) > 0:
-                            _lines.append(f"")
-                            _lines.append(f"  ※ 리베이트/세금계산서 안내")
-                            _lines.append(f"  광고비 합계: {_rb['vat']:,}원")
-                            _lines.append(f"  리베이트율: {_rb['rate']:.1f}%")
-                            _lines.append(f"  세금계산서 발행금액: {_rb['amt']:,}원")
                     _lines += [
                         "",
                         "━━━━━━━━━━━━━━━━",
@@ -1393,6 +1390,18 @@ with t_share:
                         "",
                         "입금 예정입니다 🙏",
                     ]
+                    # 리베이트 안내 (맨 아래)
+                    for _biz_nm in _biz_order_share:
+                        _rb = _rb_by_biz.get(_biz_nm, {})
+                        if _rb.get("amt", 0) > 0:
+                            _lines += [
+                                "",
+                                f"━━━━━━━━━━━━━━━━",
+                                f"※ {_biz_nm} 리베이트/세금계산서 안내",
+                                f"광고비 합계: {_rb['vat']:,}원",
+                                f"리베이트율: {_rb['rate']:.1f}%",
+                                f"세금계산서 발행금액: {_rb['amt']:,}원",
+                            ]
                     _kakao_text = "\n".join(_lines)
                     st.code(_kakao_text, language=None)
 
