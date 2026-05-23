@@ -609,7 +609,7 @@ def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
     return buf.getvalue()
 
 # ── 정산 공유 HTML 생성 (Playwright PNG 소스 겸 다운로드용) ───────────────────
-def _gen_share_html(fl_name, ym, rows, total_gross, total_tax, total_net):
+def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, total_net):
     yr = ym[:4]; mo = ym[5:7].lstrip("0") if len(ym) >= 7 else ""
 
     rows_html = ""
@@ -666,6 +666,7 @@ body{{background:#fff;display:flex;justify-content:center;padding:36px;
     <hr class="sep">
     <div class="srow"><span style="color:#374151;">공제전 정산액</span>
                       <span style="color:#374151;">{total_gross:,}원</span></div>
+    {f'<div class="srow"><span style="color:#059669;">리베이트 지급액</span><span style="color:#059669;">+{total_rebate:,}원</span></div>' if total_rebate else ''}
     <div class="srow"><span style="color:#DC2626;">3.3% 공제액</span>
                       <span style="color:#DC2626;">-{total_tax:,}원</span></div>
     <div class="net-box">
@@ -1234,8 +1235,11 @@ with t_share:
                     "업체명":       str(_row.get("display_name","")).strip(),
                     "매체사":       _media or "—",
                     "광고비 공급가": int(_ad_s),
+                    "광고비합계VAT": int(_ad_t),
+                    "리베이트율":   _rr,
                     "정산율(%)":    _fr,
                     "공제전 지급액": _r["fl_gross"],
+                    "리베이트 지급액": _r["rebate"],
                     "3.3% 공제액":  _r["fl_tax"],
                     "공제후 실수령액": _r["fl_net"],
                 })
@@ -1246,23 +1250,48 @@ with t_share:
                 if not _fl_rows:
                     st.info(f"{_sel_fl} 프리랜서에게 배정된 업체가 없습니다.")
                 else:
-                    _t_gross = sum(r["공제전 지급액"]    for r in _fl_rows)
-                    _t_tax   = sum(r["3.3% 공제액"]      for r in _fl_rows)
-                    _t_net   = sum(r["공제후 실수령액"]   for r in _fl_rows)
+                    _t_gross   = sum(r["공제전 지급액"]    for r in _fl_rows)
+                    _t_rebate  = sum(r["리베이트 지급액"]  for r in _fl_rows)
+                    _t_tax     = sum(r["3.3% 공제액"]      for r in _fl_rows)
+                    _t_net     = sum(r["공제후 실수령액"]   for r in _fl_rows)
+
+                    # 업체별 리베이트 집계 (리베이트 > 0인 업체만)
+                    _rb_by_biz: dict = {}
+                    for _r in _fl_rows:
+                        _biz = _r["업체명"]
+                        if _biz not in _rb_by_biz:
+                            _rb_by_biz[_biz] = {"vat": 0, "amt": 0, "rate": _r["리베이트율"]}
+                        _rb_by_biz[_biz]["vat"] += _r["광고비합계VAT"]
+                        _rb_by_biz[_biz]["amt"] += _r["리베이트 지급액"]
+                        if _r["리베이트율"] > 0:
+                            _rb_by_biz[_biz]["rate"] = _r["리베이트율"]
+                    _rb_list = [(biz, d) for biz, d in _rb_by_biz.items() if d["amt"] > 0]
+
+                    # 업체명 기준 그룹핑 (순서 보존)
+                    _biz_order_share = []
+                    _biz_rows_map_share: dict = {}
+                    for _r in _fl_rows:
+                        _biz = _r["업체명"]
+                        if _biz not in _biz_rows_map_share:
+                            _biz_order_share.append(_biz)
+                            _biz_rows_map_share[_biz] = []
+                        _biz_rows_map_share[_biz].append(_r)
+
                     _ym_lbl  = sel_ym or "YYYY-MM"
                     _yr      = _ym_lbl[:4]
                     _mo      = _ym_lbl[5:7].lstrip("0") if len(_ym_lbl) >= 7 else ""
 
                     # ── HTML 프리뷰 카드 ──────────────────────────────────────────
                     _rows_html = ""
-                    for _r in _fl_rows:
-                        _media_badge = (
-                            f'<span style="display:inline-block;background:#E0E7FF;color:#3730A3;'
-                            f'font-size:11px;font-weight:600;padding:2px 8px;'
-                            f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
-                            f'{_r["매체사"]}</span>'
-                        ) if _r["매체사"] and _r["매체사"] != "—" else ""
-                        _rows_html += f"""
+                    for _biz_nm in _biz_order_share:
+                        for _r in _biz_rows_map_share[_biz_nm]:
+                            _media_badge = (
+                                f'<span style="display:inline-block;background:#E0E7FF;color:#3730A3;'
+                                f'font-size:11px;font-weight:600;padding:2px 8px;'
+                                f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
+                                f'{_r["매체사"]}</span>'
+                            ) if _r["매체사"] and _r["매체사"] != "—" else ""
+                            _rows_html += f"""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
             padding:12px 16px;margin-bottom:8px;
             display:flex;justify-content:space-between;align-items:center;">
@@ -1276,6 +1305,22 @@ with t_share:
   </div>
   <div style="font-size:15px;font-weight:800;color:#1D4ED8;">
     {_r['공제후 실수령액']:,}원
+  </div>
+</div>"""
+                        # 리베이트 카드 (업체 단위, 리베이트 있는 경우만)
+                        _rb = _rb_by_biz.get(_biz_nm, {})
+                        if _rb.get("amt", 0) > 0:
+                            _rows_html += f"""
+<div style="background:#FEF2F2;border:1.5px solid #DC2626;border-radius:10px;
+            padding:12px 16px;margin-bottom:12px;margin-left:16px;">
+  <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:6px;">
+    🔴 리베이트/세금계산서 안내
+  </div>
+  <div style="font-size:12px;color:#DC2626;">
+    광고비 합계: {_rb['vat']:,}원 &nbsp;|&nbsp; 리베이트율: {_rb['rate']:.1f}%
+  </div>
+  <div style="font-size:13px;font-weight:700;color:#DC2626;margin-top:4px;">
+    세금계산서 발행금액: {_rb['amt']:,}원
   </div>
 </div>"""
 
@@ -1293,6 +1338,10 @@ with t_share:
     <span style="font-size:13px;color:#374151;">공제전 정산액</span>
     <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
   </div>
+  {f'''<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+    <span style="font-size:13px;color:#059669;">리베이트 지급액</span>
+    <span style="font-size:13px;color:#059669;">+{_t_rebate:,}원</span>
+  </div>''' if _t_rebate else ''}
   <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
     <span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>
     <span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>
@@ -1320,17 +1369,27 @@ with t_share:
                         "",
                         "■ 업체별 정산",
                     ]
-                    for _r in _fl_rows:
-                        _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
-                        _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
-                        _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
-                        _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
+                    for _biz_nm in _biz_order_share:
+                        for _r in _biz_rows_map_share[_biz_nm]:
+                            _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
+                            _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
+                            _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
+                            _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
+                        _rb = _rb_by_biz.get(_biz_nm, {})
+                        if _rb.get("amt", 0) > 0:
+                            _lines.append(f"")
+                            _lines.append(f"  ※ 리베이트/세금계산서 안내")
+                            _lines.append(f"  광고비 합계: {_rb['vat']:,}원")
+                            _lines.append(f"  리베이트율: {_rb['rate']:.1f}%")
+                            _lines.append(f"  세금계산서 발행금액: {_rb['amt']:,}원")
                     _lines += [
                         "",
                         "━━━━━━━━━━━━━━━━",
                         "",
                         f"공제전 정산액: {_t_gross:,}원",
-                        f"3.3% 공제 후 실수령액: {_t_net:,}원",
+                        *([ f"리베이트 지급액: +{_t_rebate:,}원" ] if _t_rebate else []),
+                        f"3.3% 공제액: -{_t_tax:,}원",
+                        f"공제후 실수령액: {_t_net:,}원",
                         "",
                         "입금 예정입니다 🙏",
                     ]
@@ -1340,7 +1399,7 @@ with t_share:
                     # ── HTML 저장 ────────────────────────────────────────────────
                     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
                     _html_str = _gen_share_html(
-                        _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_tax, _t_net
+                        _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_rebate, _t_tax, _t_net
                     )
                     st.download_button(
                         "📄 HTML 저장 (브라우저에서 열면 정상 표시)",
