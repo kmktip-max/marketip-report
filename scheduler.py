@@ -11,7 +11,7 @@
 종료: Ctrl+C
 """
 
-import os, sys, time, hmac, hashlib, base64, math
+import os, sys, time, hmac, hashlib, base64
 import requests
 from datetime import datetime, timedelta
 
@@ -23,6 +23,8 @@ if sys.platform == "win32":
         pass
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, ROOT)
+from utils.bid_calc import calc_bid
 
 try:
     from dotenv import load_dotenv
@@ -187,33 +189,6 @@ def update_bid(ak, sk, cid, kid, new_bid, keyword_text="", adgroup_id=""):
     verify   = (after == new_bid)
     return before, after, verify, http_status
 
-# ── 입찰 계산 ─────────────────────────────────────────────────────────────────
-def calc_bid(current_rank, target_rank, current_bid, bid_unit, min_bid, max_bid):
-    """
-    목표순위 기반 입찰가 조정.
-    반환: (new_bid, status)
-    """
-    MAX_SINGLE = 500
-    if current_rank is None or current_bid is None:
-        return current_bid, "데이터없음"
-
-    diff = current_rank - target_rank   # 양수 = 현재순위가 낮음(나쁨) → 증액
-
-    if diff > 0.5:     # 순위 낮음 → 증액
-        # 차이가 클수록 더 많이 증액 (최대 bid_unit*3)
-        factor = min(math.ceil(abs(diff)), 3)
-        delta  = min(bid_unit * factor, MAX_SINGLE)
-        new_b  = min(current_bid + delta, max_bid)
-        status = "최대입찰도달" if new_b >= max_bid else "증액중"
-    elif diff < -0.5:  # 순위 높음 → 감액
-        delta  = min(bid_unit, MAX_SINGLE)
-        new_b  = max(current_bid - delta, min_bid)
-        status = "최소입찰도달" if new_b <= min_bid else "감액중"
-    else:              # 목표 근접
-        new_b  = current_bid
-        status = "목표도달"
-
-    return round(new_b / 10) * 10, status
 
 # ── 1회 사이클 실행 ─────────────────────────────────────────────────────────────
 def run_cycle(client_id: str) -> list:
@@ -267,9 +242,17 @@ def run_cycle(client_id: str) -> list:
         for kw in g.get("keywords", []):
             kid = (kw.get("ncc_keyword_id") or "").strip()
             cur_bid = kw.get("current_bid")
-            rank    = stats.get(kid)
-            if rank:
-                kw["current_rank"] = rank
+
+            # 실시간 순위(rank_checker.py) 우선, 없으면 avgRnk fallback
+            stored_rank = kw.get("current_rank")
+            api_rank    = stats.get(kid)
+            if stored_rank is not None:
+                rank = stored_rank
+            elif api_rank:
+                rank = api_rank
+                kw["current_rank"] = api_rank
+            else:
+                rank = None
 
             e = {
                 "time":         now_str,
@@ -281,21 +264,21 @@ def run_cycle(client_id: str) -> list:
                 "before_bid":   cur_bid,
                 "after_bid":    None,
                 "changed":      False,
-                "status":       "데이터없음",
+                "status":       "데이터 부족",
                 "api_response": "",
             }
 
             if not kid:
-                e["status"] = "ID없음"; entries.append(e); continue
+                e["status"] = "ID없음";   entries.append(e); continue
             if cur_bid is None:
-                e["status"] = "입찰가없음"; entries.append(e); continue
+                e["status"] = "데이터 부족"; entries.append(e); continue
 
             # 입찰 계산
             new_bid, status = calc_bid(rank, g["target_rank"], cur_bid,
                                        g["bid_unit"], g["min_bid"], g["max_bid"])
             e["status"] = status
 
-            if new_bid == cur_bid or status in ("목표도달", "최대입찰도달", "최소입찰도달"):
+            if new_bid == cur_bid or status in ("유지", "최대입찰 도달", "최소입찰 도달"):
                 # 변경 불필요
                 entries.append(e)
                 print(f"  {kw['keyword']}: {status} ({cur_bid}원) 순위={rank}")
@@ -303,6 +286,7 @@ def run_cycle(client_id: str) -> list:
 
             # 실제 입찰가 변경
             print(f"  {kw['keyword']}: {cur_bid}원 → {new_bid}원 ({status})")
+            time.sleep(0.3)   # API rate limit
             before, after, verify, http_st = update_bid(
                 ak, sk, ci, kid, new_bid,
                 keyword_text=kw["keyword"],
@@ -333,10 +317,17 @@ def main():
     print("  종료: Ctrl+C")
     print("=" * 60)
 
-    cycle_count = 0
+    cycle_count  = 0
+    _last_hb_t   = 0.0   # heartbeat 마지막 저장 시각
 
     while True:
         now = datetime.now()
+
+        # 스케줄러 alive heartbeat (3분마다 Supabase 저장)
+        if time.time() - _last_hb_t > 180:
+            sb_save("scheduler_heartbeat", now.strftime("%Y-%m-%dT%H:%M:%S"))
+            _last_hb_t = time.time()
+
         print(f"\n[{now.strftime('%H:%M:%S')}] 사이클 #{cycle_count + 1} 시작")
 
         # client 목록 조회
@@ -385,8 +376,8 @@ def main():
             summary_ = {
                 "total":   len(entries),
                 "changed": sum(1 for e in entries if e.get("changed")),
-                "kept":    sum(1 for e in entries if "목표도달" in e.get("status","")),
-                "no_data": sum(1 for e in entries if e.get("status") in ("데이터없음","ID없음","입찰가없음")),
+                "kept":    sum(1 for e in entries if e.get("status") in ("유지", "최대입찰 도달", "최소입찰 도달")),
+                "no_data": sum(1 for e in entries if e.get("status") in ("데이터 부족", "ID없음")),
                 "failed":  sum(1 for e in entries if "API 실패" in e.get("status","")),
             }
             logs.append({

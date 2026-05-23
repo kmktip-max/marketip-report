@@ -7,6 +7,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from db import sb_load, sb_save
+from utils.bid_calc import calc_bid
 
 # ── 인증 ─────────────────────────────────────────────────────────────────────
 auth_type     = st.session_state.get("auth_type", "")
@@ -75,24 +76,6 @@ def new_kw_obj(keyword, current_bid=None, ncc_keyword_id=None):
         "last_checked":    None,
     }
 
-# ── 입찰 계산 ─────────────────────────────────────────────────────────────
-def calc_bid(current_rank, target_rank, current_bid, bid_unit, min_bid, max_bid):
-    MAX_SINGLE = 500
-    if current_rank is None or current_bid is None:
-        return current_bid, "데이터 부족"
-    diff = current_rank - target_rank
-    if diff > 0.5:
-        delta   = min(bid_unit, MAX_SINGLE)
-        new_bid = min(current_bid + delta, max_bid)
-        status  = "최대입찰 도달" if new_bid >= max_bid else "증액중"
-    elif diff < -0.5:
-        delta   = min(bid_unit // 2 or bid_unit, MAX_SINGLE)
-        new_bid = max(current_bid - delta, min_bid)
-        status  = "최소입찰 도달" if new_bid <= min_bid else "감액중"
-    else:
-        new_bid = current_bid
-        status  = "유지"
-    return round(new_bid / 10) * 10, status
 
 # ── 네이버 검색광고 API ───────────────────────────────────────────────────
 # 정확한 API Base URL: api.searchad.naver.com (api.naver.com 아님)
@@ -356,12 +339,12 @@ def naver_update_bid(api_key, secret_key, cid, keyword_id, bid_amt,
     return put_resp, debug
 
 
-def run_auto_bidding_once(groups: list, acct_map: dict) -> list:
+def run_auto_bidding_once(groups: list, acct_map: dict, test_mode: bool = False) -> list:
     """
     등록된 모든 그룹의 키워드를 순회하며:
     1) API로 현재 입찰가·순위 최신화
     2) 추천입찰가 계산
-    3) 변경 필요 시 실제 PUT 호출 + 재조회 검증
+    3) 변경 필요 시 실제 PUT 호출 + 재조회 검증 (test_mode=True 시 계산만)
     4) 키워드별 처리 결과 리스트 반환
     """
     entries = []
@@ -437,7 +420,14 @@ def run_auto_bidding_once(groups: list, acct_map: dict) -> list:
                 entries.append(entry)
                 continue
 
-            # ── 3. 실제 API 입찰가 변경 + 재조회 검증 ────────────────
+            # ── 3. 테스트 모드: 계산만, API 전송 없음 ─────────────────
+            if test_mode:
+                entry["status"]    = f"[테스트] {status}"
+                entry["after_bid"] = rec_bid
+                entries.append(entry)
+                continue
+
+            # ── 4. 실제 API 입찰가 변경 + 재조회 검증 ────────────────
             try:
                 _, dbg = naver_update_bid(
                     ak, sk, ci, kid, rec_bid,
@@ -576,21 +566,38 @@ with tab1:
     cycle_cnt  = bid_state.get("cycle_count", 0)
     interval   = bid_state.get("interval_min", DEFAULT_INTERVAL_MIN)
 
+    # 스케줄러 heartbeat 표시
+    _sched_hb = sb_load("scheduler_heartbeat") or ""
+    _sched_hb_str = ""
+    if _sched_hb and isinstance(_sched_hb, str):
+        try:
+            _hb_delta = int((datetime.now() - datetime.fromisoformat(_sched_hb)).total_seconds() / 60)
+            if _hb_delta < 10:
+                _sched_hb_str = f" | 🟢 스케줄러 {_hb_delta}분 전 확인"
+            elif _hb_delta < 60:
+                _sched_hb_str = f" | 🟡 스케줄러 {_hb_delta}분 전 확인"
+            else:
+                _sched_hb_str = f" | 🔴 스케줄러 미실행 ({_hb_delta}분 전)"
+        except Exception:
+            pass
+
     if is_running:
         st.markdown(
             f"<div style='padding:12px 18px;background:#EFF6FF;border-left:4px solid #0D47A1;"
             f"border-radius:8px;font-weight:700;color:#1E3A8A;'>"
             f"● 자동입찰 실행중 (스케줄러)  "
             f"<span style='font-weight:400;font-size:12px;'>"
-            f"마지막: {last_run} | 다음: {next_run} | 사이클: {cycle_cnt}회 | 주기: {interval}분"
+            f"마지막: {last_run} | 다음: {next_run} | 사이클: {cycle_cnt}회 | 주기: {interval}분{_sched_hb_str}"
             f"</span></div>",
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            "<div style='padding:12px 18px;background:#F9FAFB;border-left:4px solid #9CA3AF;"
-            "border-radius:8px;font-weight:700;color:#6B7280;'>"
-            "● 자동입찰 중지됨</div>",
+            f"<div style='padding:12px 18px;background:#F9FAFB;border-left:4px solid #9CA3AF;"
+            f"border-radius:8px;font-weight:700;color:#6B7280;'>"
+            f"● 자동입찰 중지됨"
+            f"<span style='font-weight:400;font-size:12px;color:#9CA3AF;'>{_sched_hb_str}</span>"
+            f"</div>",
             unsafe_allow_html=True,
         )
     st.caption(
@@ -631,8 +638,13 @@ with tab1:
 
         # ── 수동 실행 (그룹 선택) ──────────────────────────────────────
         group_names = [g["name"] for g in groups]
-        sel_group   = st.selectbox("수동 실행 그룹 선택",
-                                   ["전체 그룹"] + group_names, key="rolling_group_sel")
+        _col_sel, _col_tm = st.columns([3, 1])
+        with _col_sel:
+            sel_group = st.selectbox("수동 실행 그룹 선택",
+                                     ["전체 그룹"] + group_names, key="rolling_group_sel")
+        with _col_tm:
+            _test_mode = st.checkbox("🧪 테스트 모드", value=False, key="bid_test_mode",
+                                     help="체크 시 입찰가 계산만 하고 실제 API 전송 없음")
         run_groups  = (groups if sel_group == "전체 그룹"
                        else [g for g in groups if g["name"] == sel_group])
 
@@ -729,8 +741,13 @@ with tab1:
                         if cur == 0:
                             e["status"] = "입찰가없음"; entries_.append(e); continue
                         if cur >= g["max_bid"]:
-                            e["status"] = "최대입찰도달"; entries_.append(e); continue
+                            e["status"] = "최대입찰 도달"; entries_.append(e); continue
                         new_bid = min(cur + g["bid_unit"], g["max_bid"])
+                        if _test_mode:
+                            e["status"]    = "[테스트] 롤링 시뮬레이션"
+                            e["after_bid"] = new_bid
+                            entries_.append(e)
+                            continue
                         try:
                             _, dbg = naver_update_bid(
                                 acct["api_key"], acct["secret_key"], acct["customer_id"],
@@ -747,14 +764,14 @@ with tab1:
                         except Exception as ex:
                             e["status"] = "API실패"; e["api_response"] = str(ex)[:60]
                         entries_.append(e)
-                _run_and_save(entries_, "수동롤링")
+                _run_and_save(entries_, "수동롤링" if not _test_mode else "수동롤링(테스트)")
                 st.rerun()
 
         with mc:
             if st.button("🔄 순위기반 1회 실행", use_container_width=True):
                 with st.spinner("순위 조회 → 계산 → 변경..."):
-                    entries_ = run_auto_bidding_once(run_groups, acct_map)
-                _run_and_save(entries_, "순위기반")
+                    entries_ = run_auto_bidding_once(run_groups, acct_map, test_mode=_test_mode)
+                _run_and_save(entries_, "순위기반" if not _test_mode else "순위기반(테스트)")
                 st.rerun()
 
         st.divider()
