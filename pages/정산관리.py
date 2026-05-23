@@ -608,8 +608,33 @@ def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
     img.crop((0, 0, W, y + FOOT_H)).save(buf, format="PNG")
     return buf.getvalue()
 
+# ── 리베이트 HTML 섹션 생성 헬퍼 ─────────────────────────────────────────────
+def _rb_html_section(rb_list):
+    if not rb_list:
+        return ""
+    cards = ""
+    for biz_nm, d in rb_list:
+        cards += f"""
+<div class="rb-card">
+  <div class="rb-title">🔴 {biz_nm} — 리베이트/세금계산서 안내</div>
+  <div class="rb-meta">
+    <span>광고비 합계: <b>{d['vat']:,}원</b></span>
+    <span>리베이트율: <b>{d['rate']:.1f}%</b></span>
+  </div>
+  <div class="rb-amt-box">
+    <div class="rb-amt-lbl">세금계산서 발행금액</div>
+    <div class="rb-amt-val">{d['amt']:,}원</div>
+  </div>
+  <div class="rb-email">
+    <span style="font-size:14px;">📧</span>
+    <span class="rb-email-lbl">발행 이메일:</span>
+    <span class="rb-email-val">mktip@naver.com</span>
+  </div>
+</div>"""
+    return f'<hr class="rb-sep">{cards}'
+
 # ── 정산 공유 HTML 생성 (Playwright PNG 소스 겸 다운로드용) ───────────────────
-def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, total_net):
+def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, total_net, rb_list=None):
     yr = ym[:4]; mo = ym[5:7].lstrip("0") if len(ym) >= 7 else ""
 
     rows_html = ""
@@ -629,32 +654,65 @@ def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, tot
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;}}
-body{{background:#fff;display:flex;justify-content:center;padding:36px;
+body{{background:#F3F4F6;display:flex;justify-content:center;padding:28px 16px;
      font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif;}}
-#settlement-card{{width:680px;border:1.5px solid #E5E8ED;border-radius:16px;overflow:hidden;background:#fff;}}
-.hdr{{background:#CC0000;color:#fff;padding:18px 28px;font-size:18px;font-weight:800;text-align:center;}}
-.body{{padding:24px 28px;}}
-.fl-name{{font-size:16px;font-weight:700;color:#111827;margin-bottom:18px;}}
+#settlement-card{{width:100%;max-width:680px;border:1.5px solid #E5E8ED;
+                  border-radius:16px;overflow:hidden;background:#fff;}}
+.hdr{{background:#CC0000;color:#fff;padding:18px 28px;font-size:18px;
+      font-weight:800;text-align:center;letter-spacing:-0.3px;line-height:1.4;}}
+.body{{padding:24px 26px;}}
+.fl-name{{font-size:15px;font-weight:700;color:#111827;margin-bottom:16px;line-height:1.5;}}
 .acc-row{{background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
           padding:14px 16px;margin-bottom:10px;
-          display:flex;justify-content:space-between;align-items:center;}}
-.acc-name{{font-size:14px;font-weight:700;color:#111;margin-bottom:5px;}}
-.acc-sub{{font-size:12px;color:#6B7280;}}
-.acc-amt{{font-size:15px;font-weight:800;color:#1D4ED8;white-space:nowrap;margin-left:12px;}}
+          display:flex;justify-content:space-between;align-items:center;gap:10px;}}
+.acc-name{{font-size:14px;font-weight:700;color:#111;margin-bottom:4px;line-height:1.4;}}
+.acc-sub{{font-size:12px;color:#6B7280;line-height:1.5;}}
+.acc-amt{{font-size:15px;font-weight:800;color:#1D4ED8;white-space:nowrap;flex-shrink:0;}}
 .mbadge{{display:inline-block;background:#E0E7FF;color:#3730A3;
-         font-size:11px;font-weight:600;padding:2px 8px;border-radius:100px;margin-left:8px;}}
+         font-size:10px;font-weight:600;padding:2px 7px;border-radius:100px;margin-left:7px;
+         vertical-align:middle;}}
 .sep{{border:none;border-top:1px solid #E5E7EB;margin:16px 0;}}
-.srow{{display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px;}}
+.srow{{display:flex;justify-content:space-between;align-items:center;
+       margin-bottom:12px;font-size:13px;line-height:1.7;}}
 .net-box{{background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
           padding:16px 18px;display:flex;justify-content:space-between;
-          align-items:center;margin:12px 0 16px;}}
-.net-lbl{{font-size:14px;font-weight:700;color:#1D4ED8;}}
-.net-val{{font-size:22px;font-weight:900;color:#1D4ED8;}}
-.foot{{text-align:center;font-size:13px;color:#9CA3AF;padding-bottom:4px;}}
+          align-items:center;gap:8px;margin:4px 0 16px;}}
+.net-lbl{{font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;}}
+.net-val{{font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;}}
+.rb-sep{{border:none;border-top:1px solid #FECACA;margin:16px 0;}}
+.rb-card{{background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;
+          padding:14px 16px;margin-bottom:10px;}}
+.rb-title{{font-size:13px;font-weight:800;color:#DC2626;
+           margin-bottom:10px;letter-spacing:-0.2px;line-height:1.5;}}
+.rb-meta{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;line-height:1.7;}}
+.rb-meta span{{font-size:12px;color:#B91C1C;}}
+.rb-meta b{{font-size:13px;color:#7F1D1D;}}
+.rb-amt-box{{background:#fff;border:1px solid #FECACA;border-radius:8px;
+             padding:10px 14px;margin-bottom:10px;}}
+.rb-amt-lbl{{font-size:11px;color:#9CA3AF;margin-bottom:4px;letter-spacing:0.2px;}}
+.rb-amt-val{{font-size:18px;font-weight:900;color:#DC2626;line-height:1.2;}}
+.rb-email{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+           padding:9px 13px;background:#FFE4E4;border-radius:8px;line-height:1.6;}}
+.rb-email-lbl{{font-size:12px;font-weight:700;color:#B91C1C;}}
+.rb-email-val{{font-size:13px;font-weight:800;color:#991B1B;letter-spacing:0.1px;}}
+.foot{{text-align:center;font-size:13px;color:#9CA3AF;padding-bottom:4px;line-height:1.6;}}
+@media(max-width:480px){{
+  body{{padding:16px 10px;}}
+  .hdr{{font-size:15px;padding:14px 16px;}}
+  .body{{padding:16px 14px;}}
+  .acc-row{{padding:12px 13px;}}
+  .acc-name{{font-size:13px;}}
+  .acc-amt{{font-size:14px;}}
+  .net-val{{font-size:19px;}}
+  .rb-title{{font-size:12px;}}
+  .rb-amt-val{{font-size:16px;}}
+  .rb-email-val{{font-size:12px;}}
+}}
 </style>
 </head>
 <body>
@@ -666,13 +724,13 @@ body{{background:#fff;display:flex;justify-content:center;padding:36px;
     <hr class="sep">
     <div class="srow"><span style="color:#374151;">공제전 정산액</span>
                       <span style="color:#374151;">{total_gross:,}원</span></div>
-    {f'<div class="srow"><span style="color:#059669;">리베이트 지급액</span><span style="color:#059669;">+{total_rebate:,}원</span></div>' if total_rebate else ''}
     <div class="srow"><span style="color:#DC2626;">3.3% 공제액</span>
                       <span style="color:#DC2626;">-{total_tax:,}원</span></div>
     <div class="net-box">
       <span class="net-lbl">공제후 실수령액</span>
       <span class="net-val">{total_net:,}원</span>
     </div>
+    {_rb_html_section(rb_list)}
     <div class="foot">입금 예정입니다</div>
   </div>
 </div>
@@ -1314,50 +1372,68 @@ with t_share:
                         _rb = _rb_by_biz.get(_biz_nm, {})
                         if _rb.get("amt", 0) > 0:
                             _rb_section_html += f"""
-<div style="background:#FEF2F2;border:1.5px solid #DC2626;border-radius:10px;
-            padding:12px 16px;margin-bottom:8px;">
-  <div style="font-size:12px;font-weight:700;color:#DC2626;margin-bottom:6px;">
+<div style="background:#FEF2F2;border:2px solid #DC2626;border-radius:12px;
+            padding:14px 16px;margin-bottom:10px;">
+  <div style="font-size:13px;font-weight:800;color:#DC2626;
+              margin-bottom:10px;letter-spacing:-0.2px;line-height:1.4;">
     🔴 {_biz_nm} — 리베이트/세금계산서 안내
   </div>
-  <div style="font-size:12px;color:#DC2626;">
-    광고비 합계: {_rb['vat']:,}원 &nbsp;|&nbsp; 리베이트율: {_rb['rate']:.1f}%
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;line-height:1.6;">
+    <span style="font-size:12px;color:#B91C1C;">
+      광고비 합계: <b style="font-size:13px;color:#7F1D1D;">{_rb['vat']:,}원</b>
+    </span>
+    <span style="font-size:12px;color:#B91C1C;">
+      리베이트율: <b style="font-size:13px;color:#7F1D1D;">{_rb['rate']:.1f}%</b>
+    </span>
   </div>
-  <div style="font-size:13px;font-weight:700;color:#DC2626;margin-top:4px;">
-    세금계산서 발행금액: {_rb['amt']:,}원
+  <div style="background:#fff;border:1px solid #FECACA;border-radius:8px;
+              padding:10px 14px;margin-bottom:10px;">
+    <div style="font-size:11px;color:#9CA3AF;margin-bottom:3px;">세금계산서 발행금액</div>
+    <div style="font-size:17px;font-weight:900;color:#DC2626;line-height:1.2;">
+      {_rb['amt']:,}원
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+              padding:9px 13px;background:#FFE4E4;border-radius:8px;line-height:1.6;">
+    <span style="font-size:14px;">📧</span>
+    <span style="font-size:12px;font-weight:700;color:#B91C1C;">발행 이메일:</span>
+    <span style="font-size:13px;font-weight:800;color:#991B1B;letter-spacing:0.1px;">mktip@naver.com</span>
   </div>
 </div>"""
 
                     st.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
-            padding:24px 28px;max-width:560px;">
-  <div style="background:#CC0000;color:white;padding:12px 18px;
-              border-radius:10px;font-size:15px;font-weight:800;margin-bottom:18px;">
+            overflow:hidden;max-width:560px;box-sizing:border-box;">
+  <div style="background:#CC0000;color:white;padding:13px 20px;
+              font-size:15px;font-weight:800;
+              text-align:center;line-height:1.5;letter-spacing:-0.2px;">
     마케팁 정산 안내 &nbsp;|&nbsp; {_yr}년 {_mo}월
   </div>
-  <div style="font-size:15px;font-weight:700;margin-bottom:14px;">{_sel_fl} 프리랜서님</div>
-  {_rows_html}
-  <hr style="border:none;border-top:1px solid #E5E8ED;margin:14px 0;">
-  <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-    <span style="font-size:13px;color:#374151;">공제전 정산액</span>
-    <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
-  </div>
-  {f'''<div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-    <span style="font-size:13px;color:#059669;">리베이트 지급액</span>
-    <span style="font-size:13px;color:#059669;">+{_t_rebate:,}원</span>
-  </div>''' if _t_rebate else ''}
-  <div style="display:flex;justify-content:space-between;margin-bottom:12px;">
-    <span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>
-    <span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>
-  </div>
-  <div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
-              padding:14px 18px;display:flex;justify-content:space-between;
-              align-items:center;">
-    <span style="font-size:14px;font-weight:700;color:#1D4ED8;">공제후 실수령액</span>
-    <span style="font-size:22px;font-weight:900;color:#1D4ED8;">{_t_net:,}원</span>
-  </div>
-  {f'<hr style="border:none;border-top:1px solid #FECACA;margin:14px 0;">{_rb_section_html}' if _rb_section_html else ''}
-  <div style="text-align:center;margin-top:14px;font-size:13px;color:#9CA3AF;">
-    입금 예정입니다 🙏
+  <div style="padding:18px 20px;">
+    <div style="font-size:15px;font-weight:700;margin-bottom:14px;
+                color:#111827;line-height:1.5;">{_sel_fl} 프리랜서님</div>
+    {_rows_html}
+    <hr style="border:none;border-top:1px solid #E5E8ED;margin:14px 0;">
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                margin-bottom:10px;line-height:1.7;">
+      <span style="font-size:13px;color:#374151;">공제전 정산액</span>
+      <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                margin-bottom:12px;line-height:1.7;">
+      <span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>
+      <span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>
+    </div>
+    <div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
+                padding:14px 18px;display:flex;justify-content:space-between;
+                align-items:center;gap:8px;margin-bottom:4px;">
+      <span style="font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;">공제후 실수령액</span>
+      <span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>
+    </div>
+    {f'<hr style="border:none;border-top:1px solid #FECACA;margin:16px 0;">{_rb_section_html}' if _rb_section_html else ''}
+    <div style="text-align:center;margin-top:14px;font-size:13px;color:#9CA3AF;line-height:1.7;">
+      입금 예정입니다 🙏
+    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1384,7 +1460,7 @@ with t_share:
                         "━━━━━━━━━━━━━━━━",
                         "",
                         f"공제전 정산액: {_t_gross:,}원",
-                        *([ f"리베이트 지급액: +{_t_rebate:,}원" ] if _t_rebate else []),
+
                         f"3.3% 공제액: -{_t_tax:,}원",
                         f"공제후 실수령액: {_t_net:,}원",
                         "",
@@ -1401,6 +1477,7 @@ with t_share:
                                 f"광고비 합계: {_rb['vat']:,}원",
                                 f"리베이트율: {_rb['rate']:.1f}%",
                                 f"세금계산서 발행금액: {_rb['amt']:,}원",
+                                f"발행이메일: mktip@naver.com",
                             ]
                     _kakao_text = "\n".join(_lines)
                     st.code(_kakao_text, language=None)
@@ -1408,7 +1485,8 @@ with t_share:
                     # ── HTML 저장 ────────────────────────────────────────────────
                     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
                     _html_str = _gen_share_html(
-                        _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_rebate, _t_tax, _t_net
+                        _sel_fl, _ym_lbl, _fl_rows, _t_gross, _t_rebate, _t_tax, _t_net,
+                        rb_list=_rb_list,
                     )
                     st.download_button(
                         "📄 HTML 저장 (브라우저에서 열면 정상 표시)",
