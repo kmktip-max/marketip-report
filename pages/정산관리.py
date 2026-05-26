@@ -1448,10 +1448,12 @@ with t_share:
   </div>
 </div>
 """, unsafe_allow_html=True)
-                    st.markdown(
-                        '<p style="text-align:center;margin-top:14px;font-size:13px;color:#6B7280;width:100%;">입금 예정입니다 🙏</p>',
-                        unsafe_allow_html=True,
-                    )
+                    _fc1, _fc2, _fc3 = st.columns([1, 2, 1])
+                    with _fc2:
+                        st.markdown(
+                            '<p style="text-align:center;font-size:13px;color:#6B7280;margin-top:10px;">입금 예정입니다 🙏</p>',
+                            unsafe_allow_html=True,
+                        )
 
                     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
 
