@@ -594,7 +594,7 @@ def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
             _rr(draw, (_mb_x, y+13, _mb_x+_mb_w, y+30), r=8, fill="#E0E7FF")
             draw.text((_mb_x+8, y+14), _med, font=f_med, fill="#3730A3")
 
-        _sub = f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:.0f}%"
+        _sub = f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:g}%"
         draw.text((PAD+14, y+42), _sub, font=f_sub, fill="#6B7280")
 
         _as = f"{r['공제후 실수령액']:,}원"
@@ -669,7 +669,7 @@ def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, tot
 <div class="acc-row">
   <div class="acc-info">
     <div class="acc-name">{r['업체명']}{mbadge}</div>
-    <div class="acc-sub">광고비 {r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {r['정산율(%)']:.0f}%</div>
+    <div class="acc-sub">광고비 {r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {r['정산율(%)']:g}%</div>
   </div>
   <div class="acc-amt">{r['공제후 실수령액']:,}원</div>
 </div>"""
@@ -1517,7 +1517,7 @@ with t_share:
       {_r['업체명']}{_media_badge}
     </div>
     <div style="font-size:12px;color:#6B7280;">
-      광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:.0f}%
+      광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:g}%
     </div>
   </div>
   <div style="font-size:15px;font-weight:800;color:#1D4ED8;">
@@ -1614,7 +1614,7 @@ with t_share:
                         for _r in _biz_rows_map_share[_biz_nm]:
                             _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
                             _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
-                            _lines.append(f"  정산율: {_r['정산율(%)']:.0f}%")
+                            _lines.append(f"  정산율: {_r['정산율(%)']:g}%")
                             _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
                     _lines += [
                         "",
