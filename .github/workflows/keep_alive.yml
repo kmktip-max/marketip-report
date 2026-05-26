@@ -1,0 +1,57 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"   # 4시간마다
+  workflow_dispatch:         # 수동 실행
+
+jobs:
+  ping:
+    name: Ping Streamlit App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping app
+        env:
+          APP_URL: ${{ secrets.STREAMLIT_APP_URL }}
+        run: |
+          python - <<'EOF'
+          import os
+          import sys
+          import time
+
+          try:
+              import requests
+          except ImportError:
+              import subprocess
+              subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests"])
+              import requests
+
+          url = os.environ.get("APP_URL", "").strip()
+          if not url:
+              print("STREAMLIT_APP_URL is not set — skipping ping.")
+              sys.exit(0)
+
+          headers = {"User-Agent": "Marketip-KeepAlive/1.0"}
+          max_retries = 2
+
+          for attempt in range(1, max_retries + 1):
+              print(f"Attempt {attempt}/{max_retries}: GET {url}")
+              try:
+                  t0 = time.time()
+                  resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+                  elapsed = time.time() - t0
+                  print(f"  Status  : {resp.status_code}")
+                  print(f"  Final URL: {resp.url}")
+                  print(f"  Time    : {elapsed:.2f}s")
+                  if 200 <= resp.status_code < 400:
+                      print("  Result  : SUCCESS")
+                      sys.exit(0)
+                  else:
+                      print(f"  Result  : WARNING — unexpected status {resp.status_code}")
+              except Exception as e:
+                  print(f"  Result  : ERROR — {e}")
+
+          # 모든 시도 실패해도 workflow는 성공으로 종료 (배포 흐름 차단 방지)
+          print("All attempts finished (non-fatal).")
+          EOF
