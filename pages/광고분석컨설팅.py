@@ -1590,7 +1590,7 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
     def kpi_card(x, y, cw, ch, lbl, val, sub="", bg=(232,240,254), vc=(13,71,161)):
         pdf.set_fill_color(*bg); pdf.set_draw_color(200, 215, 245)
         pdf.rect(x, y, cw, ch, "FD")
-        kf(6.5); pdf.set_text_color(90, 105, 130)
+        kfb(7); pdf.set_text_color(40, 55, 80)
         pdf.set_xy(x+2, y+2.5); safe_cell(lbl, cw-4, 4.5)
         kf(11); pdf.set_text_color(*vc)
         pdf.set_xy(x+2, y+7.5)
@@ -1618,8 +1618,12 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
 
     # ② 우측 프로필 이미지 (카드 아래 y=184 ~ 푸터 위 y=274, x=109 우측 절반)
     _profile_path = os.path.normpath(
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "profile.png")
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "profile_nobg.png")
     )
+    if not os.path.exists(_profile_path):
+        _profile_path = os.path.normpath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "profile.png")
+        )
     if os.path.exists(_profile_path):
         try: pdf.image(_profile_path, x=109, y=184, w=90)
         except Exception: pass
