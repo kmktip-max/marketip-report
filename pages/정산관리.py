@@ -1575,14 +1575,31 @@ with t_share:
                         + _rb_section_html
                     ) if _rb_section_html else ""
                     # 3.3% 공제 행: 권혁우(대표)는 표시 안 함
-                    _tax_html = "" if _t_tax == 0 else (
+                    _net_label = "정산액" if _sel_fl == OWNER_FL else "공제후 실수령액"
+                    # 요약 섹션을 하나의 변수로 미리 조립 (빈 줄로 HTML 블록이 끊기는 현상 방지)
+                    _summary_html = (
                         f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                        f'margin-bottom:12px;line-height:1.7;">'
-                        f'<span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>'
-                        f'<span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>'
+                        f'margin-bottom:10px;line-height:1.7;">'
+                        f'<span style="font-size:13px;color:#374151;">공제전 정산액</span>'
+                        f'<span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>'
                         f'</div>'
                     )
-                    _net_label = "정산액" if _sel_fl == OWNER_FL else "공제후 실수령액"
+                    if _t_tax > 0:
+                        _summary_html += (
+                            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                            f'margin-bottom:12px;line-height:1.7;">'
+                            f'<span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>'
+                            f'<span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>'
+                            f'</div>'
+                        )
+                    _summary_html += (
+                        f'<div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;'
+                        f'padding:14px 18px;display:flex;justify-content:space-between;'
+                        f'align-items:center;gap:8px;margin-bottom:4px;">'
+                        f'<span style="font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;">{_net_label}</span>'
+                        f'<span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>'
+                        f'</div>'
+                    )
                     st.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
             overflow:hidden;max-width:560px;box-sizing:border-box;">
@@ -1596,18 +1613,7 @@ with t_share:
                 color:#111827;line-height:1.5;">{_sel_fl} 프리랜서님</div>
     {_rows_html}
     <hr style="border:none;border-top:1px solid #E5E8ED;margin:14px 0;">
-    <div style="display:flex;justify-content:space-between;align-items:center;
-                margin-bottom:10px;line-height:1.7;">
-      <span style="font-size:13px;color:#374151;">공제전 정산액</span>
-      <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
-    </div>
-    {_tax_html}
-    <div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
-                padding:14px 18px;display:flex;justify-content:space-between;
-                align-items:center;gap:8px;margin-bottom:4px;">
-      <span style="font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;">{_net_label}</span>
-      <span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>
-    </div>
+    {_summary_html}
     {_rb_insert}
   </div>
 </div>
