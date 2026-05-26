@@ -438,6 +438,28 @@ def parse_excel(f):
 
     return df_g, None, df, debug
 
+# ── 대표 정산공유용 매체별 기본 정산율 ───────────────────────────────────────
+def _owner_share_rate(media: str, display_name: str = "") -> float:
+    """권혁우(대표) 정산공유 카드 전용: 매체명 기준 기본 정산율(%) 반환."""
+    t = f"{media} {display_name}".lower()
+    if "애드부스트" in t or "adboost" in t or "ad boost" in t:
+        return 9.5
+    if "당근" in t:
+        return 12.0
+    if ("카카오" in t or "kakao" in t or "모먼트" in t
+            or "키워드광고" in t and "카카오" in t):
+        return 14.5
+    if "gfa" in t or "성과형" in t or "da" in t:
+        return 14.5
+    if ("브랜드검색" in t or "브랜드라이트" in t or "브검" in t
+            or "brand" in t):
+        return 14.5
+    # 네이버 CPC / 쇼핑 / 파워링크 / 기타 네이버
+    if "네이버" in t or "cpc" in t or "쇼핑" in t or "파워링크" in t:
+        return 14.5
+    return 14.5  # 미분류도 기본 14.5%
+
+
 # ── 정산 계산 ─────────────────────────────────────────────────────────────────
 def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
          direct_mode=False, direct_rate_pct=0.0):
@@ -1302,6 +1324,11 @@ with t_share:
                 _ad_s  = float(_row.get("ad_supply", 0))
                 _ad_t  = float(_row.get("ad_total", 0))
                 _cm_s  = float(_row.get("comm_supply", 0))
+                # 대표(권혁우) 정산공유: is_own/freelancer_rate=0 → 매체별 기본율 적용
+                if _sel_fl == OWNER_FL:
+                    _fr   = _owner_share_rate(_media, str(_row.get("display_name", "")))
+                    _is_o = False   # calc()의 is_own=True 분기(fl_gross=0) 우회
+                    _dm   = False
                 _r     = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
                 _fl_rows.append({
                     "업체명":       str(_row.get("display_name","")).strip(),
