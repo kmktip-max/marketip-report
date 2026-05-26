@@ -143,30 +143,24 @@ section[data-testid="stSidebar"] { display: none !important; }
         with tab_join:
             st.caption("가입 신청 후 관리자 승인을 받으면 서비스를 이용할 수 있습니다.")
             with st.form("join_form", clear_on_submit=True):
-                j_biz     = st.text_input("업체명 *",    placeholder="예: 마케팁")
-                j_contact = st.text_input("담당자명 *",  placeholder="예: 홍길동")
-                j_id      = st.text_input("아이디 *",    placeholder="영문+숫자 조합")
-                j_pw1     = st.text_input("비밀번호 *",  type="password")
-                j_pw2     = st.text_input("비밀번호 확인 *", type="password")
-                j_phone   = st.text_input("이메일 *", placeholder="example@email.com")
+                j_contact = st.text_input("성함 *",     placeholder="예: 홍길동")
+                j_id      = st.text_input("아이디 *",   placeholder="영문+숫자 조합")
+                j_pw1     = st.text_input("비밀번호 *", type="password")
+                j_phone   = st.text_input("이메일 *",   placeholder="example@email.com")
 
                 if st.form_submit_button("가입 신청", type="primary",
                                          use_container_width=True):
-                    if not j_biz.strip():
-                        st.error("업체명을 입력해주세요.")
-                    elif not j_contact.strip():
-                        st.error("담당자명을 입력해주세요.")
+                    if not j_contact.strip():
+                        st.error("성함을 입력해주세요.")
                     elif not j_id.strip():
                         st.error("아이디를 입력해주세요.")
                     elif not j_pw1:
                         st.error("비밀번호를 입력해주세요.")
-                    elif j_pw1 != j_pw2:
-                        st.error("비밀번호가 일치하지 않습니다.")
                     elif not j_phone.strip():
                         st.error("이메일을 입력해주세요.")
                     else:
                         ok, msg = register_pending(
-                            j_biz, j_id, j_pw1, j_contact, j_phone
+                            j_contact, j_id, j_pw1, j_contact, j_phone
                         )
                         if ok:
                             st.success(
@@ -256,7 +250,20 @@ def _logout():
 with st.sidebar:
     st.markdown('<div class="sb-logo-wrap">', unsafe_allow_html=True)
     if LOGO_PATH:
-        st.image(LOGO_PATH, width=136)
+        try:
+            import base64 as _b64
+            _ext = LOGO_PATH.rsplit(".", 1)[-1].lower().replace("jpg", "jpeg")
+            with open(LOGO_PATH, "rb") as _lf:
+                _lb64 = _b64.b64encode(_lf.read()).decode()
+            st.markdown(
+                f'<img src="data:image/{_ext};base64,{_lb64}" '
+                f'style="width:136px;height:auto;display:block;'
+                f'pointer-events:none;cursor:default;user-select:none;" />',
+                unsafe_allow_html=True,
+            )
+        except Exception:
+            st.markdown('<div style="font-size:20px;font-weight:900;color:#111827;">마케팁</div>',
+                        unsafe_allow_html=True)
     else:
         st.markdown('<div style="font-size:20px;font-weight:900;color:#111827;">마케팁</div>',
                     unsafe_allow_html=True)
