@@ -1271,11 +1271,11 @@ with t_share:
     if _sdf is None:
         st.info("엑셀을 먼저 업로드해주세요.")
     else:
-        # 프리랜서 목록 (미분류·대표 직접 제외)
+        # 프리랜서 목록 (미분류·대표 직접 제외 / 권혁우 포함)
         _all_fls = sorted({
             m.get("freelancer","")
             for m in load_mapping()
-            if m.get("freelancer","") not in ["","미분류","대표 직접", OWNER_FL]
+            if m.get("freelancer","") not in ["","미분류","대표 직접"]
         })
         if not _all_fls:
             st.info("업체 분류 탭에서 프리랜서를 먼저 지정해주세요.")
