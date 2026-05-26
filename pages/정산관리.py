@@ -1420,12 +1420,6 @@ with t_share:
                         '<hr style="border:none;border-top:1px solid #FECACA;margin:16px 0;">'
                         + _rb_section_html
                     ) if _rb_section_html else ""
-                    _footer_div = (
-                        '<div style="width:100%;text-align:center;margin-top:18px;'
-                        'padding-top:12px;border-top:1px solid #E5E7EB;'
-                        'color:#6B7280;font-size:13px;line-height:1.5;">'
-                        '입금 예정입니다 🙏</div>'
-                    )
                     st.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
             overflow:hidden;max-width:560px;box-sizing:border-box;">
@@ -1456,7 +1450,6 @@ with t_share:
       <span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>
     </div>
     {_rb_insert}
-    {_footer_div}
   </div>
 </div>
 """, unsafe_allow_html=True)
