@@ -1449,7 +1449,7 @@ with t_share:
 </div>
 """, unsafe_allow_html=True)
                     st.markdown(
-                        '<div style="text-align:center;margin-top:14px;font-size:13px;color:#6B7280;">입금 예정입니다 🙏</div>',
+                        '<p style="text-align:center;margin-top:14px;font-size:13px;color:#6B7280;width:100%;">입금 예정입니다 🙏</p>',
                         unsafe_allow_html=True,
                     )
 
