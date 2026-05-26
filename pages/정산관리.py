@@ -442,6 +442,8 @@ def parse_excel(f):
 def _owner_share_rate(media: str, display_name: str = "") -> float:
     """권혁우(대표) 정산공유 카드 전용: 매체명 기준 기본 정산율(%) 반환."""
     t = f"{media} {display_name}".lower()
+    if "구글" in t or "google" in t:
+        return 0.0
     if "애드부스트" in t or "adboost" in t or "ad boost" in t:
         return 9.5
     if "당근" in t:
