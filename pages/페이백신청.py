@@ -41,45 +41,453 @@ def get_secret(key, default=""):
 
 ADMIN_PW = get_secret("ADMIN_PASSWORD", "mktip")
 
+# ─── Platform config ──────────────────────────────────────────────────────────
+_PLAT_CFG = {
+    "네이버": {
+        "accent": "#03C75A", "light": "#E8F9EF", "border": "#A5D6A7",
+        "text": "#014E24", "tab_fg": "#fff", "key": "naver",
+        "icon": "🟢", "desc": "검색광고 · GFA · 애드부스트",
+    },
+    "당근": {
+        "accent": "#FF6F0F", "light": "#FFF3EA", "border": "#FFCBA4",
+        "text": "#7C3300", "tab_fg": "#fff", "key": "daangn",
+        "icon": "🟠", "desc": "당근 전문가광고",
+    },
+    "카카오": {
+        "accent": "#FAD400", "light": "#FFFDE7", "border": "#FFF176",
+        "text": "#3A1D1D", "tab_fg": "#3A1D1D", "key": "kakao",
+        "icon": "🟡", "desc": "모먼트 · 키워드 · 브랜드검색 · 카톡채널",
+    },
+}
+
+_DIALOG_CSS = """
+<style>
+/* ══════════════════════════════════════════════
+   DIALOG — 컨테이너 폭 제한 & 레이아웃
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] *,
+div[data-testid="stDialog"] *::before,
+div[data-testid="stDialog"] *::after { box-sizing: border-box !important; }
+
+/* 모달 패널 폭 제한 */
+div[data-testid="stDialog"] > div > div,
+div[data-testid="stDialogContent"] {
+    max-width: min(840px, calc(100vw - 48px)) !important;
+    width: min(840px, calc(100vw - 48px)) !important;
+}
+div[data-testid="stDialog"] > div > div > div {
+    width: 100% !important; max-width: 100% !important; overflow-x: hidden !important;
+}
+
+/* ══════════════════════════════════════════════
+   PLATFORM TABS — 3등분 균등 버튼형 탭
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] [data-testid="stTabs"] {
+    width: 100% !important; overflow-x: hidden !important;
+}
+/* tablist: 3등분 grid */
+div[data-testid="stDialog"] div[role="tablist"] {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    width: 100% !important;
+    background: #F3F4F6 !important;
+    border-radius: 14px !important;
+    padding: 5px !important;
+    gap: 6px !important;
+    border: none !important;
+    border-bottom: none !important;
+    overflow: hidden !important;
+}
+/* tab 버튼 — 균등 높이, 중앙 정렬 */
+div[data-testid="stDialog"] button[role="tab"] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 44px !important;
+    border-radius: 10px !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    padding: 0 !important;
+    transition: all 0.2s ease !important;
+    border: none !important;
+    letter-spacing: -0.3px;
+    color: #9CA3AF !important;
+    background: transparent !important;
+    cursor: pointer !important;
+}
+div[data-testid="stDialog"] button[role="tab"][aria-selected="true"] {
+    background: #fff !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.10) !important;
+}
+/* 플랫폼별 활성 색상 */
+div[data-testid="stDialog"] button[role="tab"]:nth-child(1)[aria-selected="true"] { color: #03C75A !important; }
+div[data-testid="stDialog"] button[role="tab"]:nth-child(2)[aria-selected="true"] { color: #E05E00 !important; }
+div[data-testid="stDialog"] button[role="tab"]:nth-child(3)[aria-selected="true"] { color: #9A7D00 !important; }
+/* 탭 언더라인 완전 제거 */
+div[data-testid="stDialog"] button[role="tab"]::after,
+div[data-testid="stDialog"] button[role="tab"]::before,
+div[data-testid="stDialog"] [data-testid="stTabs"] > div:first-child::after,
+div[data-testid="stDialog"] [data-testid="stTabs"] > div:first-child::before {
+    display: none !important; content: none !important; border: none !important;
+}
+
+/* ══════════════════════════════════════════════
+   TAB CONTENT — fade-in 전환 애니메이션
+══════════════════════════════════════════════ */
+@keyframes dlgFadeSlide {
+    from { opacity: 0; transform: translateY(7px); }
+    to   { opacity: 1; transform: translateY(0px); }
+}
+div[data-testid="stDialog"] [data-testid="stTabsContent"] {
+    width: 100% !important; max-width: 100% !important; overflow-x: hidden !important;
+}
+div[data-testid="stDialog"] [data-testid="stTabsContent"] > div {
+    animation: dlgFadeSlide 0.28s cubic-bezier(.22,.68,0,1.2) !important;
+}
+
+/* ══════════════════════════════════════════════
+   PLATFORM HEADER CARD
+══════════════════════════════════════════════ */
+.pb-plat-header {
+    display: flex; align-items: center; gap: 14px;
+    border-radius: 14px; padding: 14px 18px;
+    margin: 10px 0 18px; width: 100%;
+}
+.pb-plat-logo { font-size: 28px; line-height: 1; flex-shrink: 0; }
+.pb-plat-info  { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pb-plat-name  { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+.pb-plat-desc  { font-size: 12px; color: #6B7280; }
+
+/* ══════════════════════════════════════════════
+   WIDGET LABELS
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] label[data-testid="stWidgetLabel"] p,
+div[data-testid="stDialog"] label[data-testid="stWidgetLabel"] > div > p {
+    font-size: 13px !important; font-weight: 600 !important;
+    color: #374151 !important; letter-spacing: -0.2px;
+}
+
+/* ══════════════════════════════════════════════
+   TEXT INPUT — border + focus ring
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] [data-baseweb="input"],
+div[data-testid="stDialog"] div[data-testid="stTextInputRootElement"] {
+    border: 1.5px solid #E5E7EB !important;
+    border-radius: 10px !important;
+    background: #FAFAFA !important;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+    overflow: hidden !important;
+    min-height: 46px !important;
+}
+div[data-testid="stDialog"] [data-baseweb="input"]:focus-within,
+div[data-testid="stDialog"] div[data-testid="stTextInputRootElement"]:focus-within {
+    border-color: #0D47A1 !important;
+    box-shadow: 0 0 0 3px rgba(13,71,161,0.09) !important;
+    background: #fff !important;
+}
+div[data-testid="stDialog"] [data-baseweb="input"] input,
+div[data-testid="stDialog"] div[data-testid="stTextInputRootElement"] input {
+    background: transparent !important; border: none !important;
+    font-size: 14px !important; color: #111 !important;
+    padding: 10px 14px !important; line-height: 1.4 !important;
+}
+div[data-testid="stDialog"] input::placeholder { color: #9CA3AF !important; font-size: 13px !important; }
+
+/* ══════════════════════════════════════════════
+   SELECTBOX — 텍스트 클리핑 완전 방지
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] [data-baseweb="select"] {
+    overflow: visible !important;
+}
+/* 외곽 컨트롤 박스 */
+div[data-testid="stDialog"] [data-baseweb="select"] > div:first-child {
+    display: flex !important;
+    align-items: center !important;
+    min-height: 46px !important;
+    height: auto !important;
+    padding: 0 14px !important;
+    border: 1.5px solid #E5E7EB !important;
+    border-radius: 10px !important;
+    background: #FAFAFA !important;
+    transition: border-color 0.18s, box-shadow 0.18s !important;
+    overflow: visible !important;
+}
+/* 내부 값 텍스트 컨테이너 */
+div[data-testid="stDialog"] [data-baseweb="select"] > div:first-child > div {
+    overflow: visible !important;
+    height: auto !important;
+    line-height: 1.5 !important;
+    font-size: 14px !important;
+    color: #111 !important;
+    display: flex !important;
+    align-items: center !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+}
+/* 선택된 값 텍스트 */
+div[data-testid="stDialog"] [data-baseweb="select"] [data-baseweb="value"],
+div[data-testid="stDialog"] [data-baseweb="select"] span[data-value] {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+    overflow: visible !important;
+    white-space: nowrap !important;
+    color: #111 !important;
+}
+div[data-testid="stDialog"] [data-baseweb="select"]:focus-within > div:first-child {
+    border-color: #0D47A1 !important;
+    box-shadow: 0 0 0 3px rgba(13,71,161,0.09) !important;
+    background: #fff !important;
+}
+
+/* ══════════════════════════════════════════════
+   COLUMNS & FULL-WIDTH CONTROLS
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] input,
+div[data-testid="stDialog"] select,
+div[data-testid="stDialog"] textarea {
+    width: 100% !important; max-width: 100% !important;
+}
+div[data-testid="stDialog"] [data-testid="stHorizontalBlock"] {
+    width: 100% !important; max-width: 100% !important;
+    gap: 12px !important; margin-top: 8px !important;
+}
+div[data-testid="stDialog"] [data-testid="stHorizontalBlock"] > div {
+    flex: 1 1 0 !important; min-width: 0 !important;
+}
+
+/* ══════════════════════════════════════════════
+   BUTTONS — 높이 50px + hover
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] .stButton > button {
+    width: 100% !important;
+    height: 50px !important;
+    border-radius: 12px !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    padding: 0 !important;
+    transition: all 0.22s cubic-bezier(.22,.68,0,1.2) !important;
+    letter-spacing: -0.2px;
+}
+div[data-testid="stDialog"] .stButton > button[kind="secondary"] {
+    border: 1.5px solid #E5E7EB !important;
+    color: #6B7280 !important;
+    background: #F9FAFB !important;
+}
+div[data-testid="stDialog"] .stButton > button[kind="secondary"]:hover {
+    background: #F3F4F6 !important; border-color: #D1D5DB !important; color: #374151 !important;
+}
+div[data-testid="stDialog"] .stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #0D47A1 0%, #1A5DCC 100%) !important;
+    border: none !important; color: #fff !important;
+    box-shadow: 0 4px 16px rgba(13,71,161,0.28) !important;
+}
+div[data-testid="stDialog"] .stButton > button[kind="primary"]:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 24px rgba(13,71,161,0.38) !important;
+    filter: brightness(1.06) !important;
+}
+div[data-testid="stDialog"] .stButton > button[kind="primary"]:active {
+    transform: translateY(0px) !important; box-shadow: 0 2px 8px rgba(13,71,161,0.25) !important;
+}
+
+/* ══════════════════════════════════════════════
+   HELPER / CAPTION
+══════════════════════════════════════════════ */
+div[data-testid="stDialog"] [data-testid="InputInstructions"],
+div[data-testid="stDialog"] small,
+div[data-testid="stDialog"] .stCaption { font-size: 11px !important; color: #9CA3AF !important; }
+
+/* ══════════════════════════════════════════════
+   모바일 대응 (640px 이하)
+══════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    div[data-testid="stDialog"] > div > div {
+        width: 100vw !important; max-width: 100vw !important; margin: 0 !important;
+        border-radius: 20px 20px 0 0 !important; bottom: 0 !important;
+        top: auto !important; position: fixed !important;
+    }
+    div[data-testid="stDialog"] button[role="tab"] { font-size: 12px !important; height: 40px !important; }
+    .pb-plat-header { padding: 12px 14px !important; }
+}
+</style>
+"""
+
+
+def _render_naver_form() -> dict:
+    manager_name = st.text_input(
+        "담당자명 *", placeholder="예: 홍길동", key="dlg_naver_manager",
+    )
+    ad_type = st.selectbox(
+        "네이버 광고 종류 *",
+        ["검색광고", "GFA", "애드부스트"],
+        key="dlg_naver_ad_type",
+    )
+    account_name = st.text_input(
+        "광고주명 *", placeholder="예: 마케팁", key="dlg_naver_acname",
+    )
+    naver_id = st.text_input(
+        "광고 영문 아이디 *",
+        placeholder="로그인시 사용하는 영문 ID",
+        key="dlg_naver_id",
+    )
+    customer_id = st.text_input(
+        "광고 숫자 아이디 (Customer ID) *",
+        placeholder="예: 2815366",
+        help="searchad.naver.com 로그인 후 우상단에서 확인",
+        key="dlg_naver_cid",
+    )
+    monthly_budget = st.text_input(
+        "대략적 월 예산", placeholder="예: 5,000,000원", key="dlg_naver_budget",
+    )
+    return {
+        "manager_name": manager_name,
+        "ad_type": ad_type,
+        "account_name": account_name,
+        "naver_login_id": naver_id,
+        "customer_id": customer_id,
+        "monthly_budget": monthly_budget,
+    }
+
+
+def _render_daangn_form() -> dict:
+    manager_name = st.text_input(
+        "담당자명 *", placeholder="예: 홍길동", key="dlg_daangn_manager",
+    )
+    account_name = st.text_input(
+        "광고주명 *", placeholder="예: 마케팁", key="dlg_daangn_acname",
+    )
+    account_id = st.text_input(
+        "계정번호 *", placeholder="예: 12345678", key="dlg_daangn_id",
+    )
+    monthly_budget = st.text_input(
+        "대략적인 월 예산", placeholder="예: 2,000,000원", key="dlg_daangn_budget",
+    )
+    return {
+        "manager_name": manager_name,
+        "account_name": account_name,
+        "account_id": account_id,
+        "monthly_budget": monthly_budget,
+    }
+
+
+def _render_kakao_form() -> dict:
+    manager_name = st.text_input(
+        "담당자명 *", placeholder="예: 홍길동", key="dlg_kakao_manager",
+    )
+    ad_type = st.selectbox(
+        "카카오 광고 종류 *",
+        ["모먼트", "키워드", "브랜드검색", "카톡채널"],
+        key="dlg_kakao_ad_type",
+    )
+    account_name = st.text_input(
+        "브랜드명 *", placeholder="예: 마케팁", key="dlg_kakao_acname",
+    )
+    business_category = st.text_input(
+        "업종 *", placeholder="예: 마케팅/광고", key="dlg_kakao_category",
+    )
+    account_id = st.text_input(
+        "아이디 (숫자) *", placeholder="예: 123456789", key="dlg_kakao_id",
+    )
+    monthly_budget = st.text_input(
+        "대략적인 월 예산", placeholder="예: 3,000,000원", key="dlg_kakao_budget",
+    )
+    return {
+        "manager_name": manager_name,
+        "ad_type": ad_type,
+        "account_name": account_name,
+        "business_category": business_category,
+        "account_id": account_id,
+        "monthly_budget": monthly_budget,
+    }
+
+
+def _handle_submit(plat_key: str, fd: dict):
+    plat_label = next(k for k, v in _PLAT_CFG.items() if v["key"] == plat_key)
+    name = fd.get("account_name", "").strip()
+    if not name:
+        st.error("광고주명(브랜드명)은 필수 입력 항목입니다.")
+        return
+    if plat_key == "naver":
+        required = ["manager_name", "naver_login_id", "customer_id"]
+    elif plat_key == "daangn":
+        required = ["manager_name", "account_id"]
+    else:  # kakao
+        required = ["manager_name", "business_category", "account_id"]
+    if any(not str(fd.get(f, "")).strip() for f in required):
+        st.error("* 표시된 필수 항목을 모두 입력해 주세요.")
+        return
+    record = {
+        "id": str(uuid.uuid4()),
+        "platform": plat_key,
+        "platform_label": plat_label,
+        "status": "연동신청",
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    record.update({k: (v.strip() if isinstance(v, str) else v) for k, v in fd.items()})
+    accs = load_accounts()
+    accs.append(record)
+    save_accounts(accs)
+    st.success("✅ 연동 신청이 완료되었습니다. 확인 후 연락드리겠습니다!")
+    st.rerun()
+
+
 # ── Styles ────────────────────────────────────────────────────────────────────
 st.markdown(PAYBACK_CSS, unsafe_allow_html=True)
 
 
 # ── Modal: 계정 추가 ──────────────────────────────────────────────────────────
-@st.dialog("광고 계정 추가")
-def add_account_dialog():
-    st.markdown('<p style="color:#666;font-size:13px;margin-bottom:4px;">네이버 광고 계정 정보를 입력해 주세요. 연동 신청 후 1~2 영업일 내 확인됩니다.</p>', unsafe_allow_html=True)
-    st.markdown("")
+def _plat_header(plat_name: str) -> None:
+    cfg = _PLAT_CFG[plat_name]
+    st.markdown(f"""
+<div class="pb-plat-header" style="background:{cfg['light']};border:1.5px solid {cfg['border']};">
+  <div class="pb-plat-logo">{cfg['icon']}</div>
+  <div class="pb-plat-info">
+    <div class="pb-plat-name" style="color:{cfg['text']};">{plat_name} 광고 계정 연동</div>
+    <div class="pb-plat-desc">{cfg['desc']}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
 
-    naver_id     = st.text_input("네이버 로그인 ID *", placeholder="naver_login_id")
-    account_name = st.text_input("광고 계정 이름 *",   placeholder="예: 마케팁 검색광고 계정")
-    customer_id  = st.text_input("광고 계정 번호 (Customer ID) *", placeholder="예: 2815366",
-                                  help="searchad.naver.com 로그인 후 URL의 숫자")
-    alias        = st.text_input("별칭 (선택)", placeholder="예: 메인 계정")
 
-    st.markdown("")
+def _tab_buttons(plat_key: str, fd: dict) -> None:
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("취소", use_container_width=True):
+        if st.button("취소", use_container_width=True, key=f"dlg_cancel_{plat_key}"):
             st.rerun()
     with c2:
-        if st.button("연동 신청", type="primary", use_container_width=True):
-            if not all([naver_id.strip(), account_name.strip(), customer_id.strip()]):
-                st.error("* 필수 항목을 모두 입력해 주세요.")
-            else:
-                accs = load_accounts()
-                accs.append({
-                    "id":             str(uuid.uuid4()),
-                    "naver_login_id": naver_id.strip(),
-                    "account_name":   account_name.strip(),
-                    "customer_id":    customer_id.strip(),
-                    "alias":          alias.strip(),
-                    "status":         "연동신청",
-                    "created_at":     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                })
-                save_accounts(accs)
-                st.success("✅ 연동 신청이 완료되었습니다!")
-                st.rerun()
+        if st.button(
+            f"연동 신청하기  →",
+            type="primary",
+            use_container_width=True,
+            key=f"dlg_submit_{plat_key}",
+        ):
+            _handle_submit(plat_key, fd)
+
+
+@st.dialog("광고 계정 추가", width="large")
+def add_account_dialog():
+    st.markdown(_DIALOG_CSS, unsafe_allow_html=True)
+
+    tab_n, tab_d, tab_k = st.tabs(["🟢 네이버", "🟠 당근", "🟡 카카오"])
+
+    with tab_n:
+        _plat_header("네이버")
+        fd = _render_naver_form()
+        st.markdown("<br>", unsafe_allow_html=True)
+        _tab_buttons("naver", fd)
+
+    with tab_d:
+        _plat_header("당근")
+        fd = _render_daangn_form()
+        st.markdown("<br>", unsafe_allow_html=True)
+        _tab_buttons("daangn", fd)
+
+    with tab_k:
+        _plat_header("카카오")
+        fd = _render_kakao_form()
+        st.markdown("<br>", unsafe_allow_html=True)
+        _tab_buttons("kakao", fd)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -202,7 +610,7 @@ with right:
     </div>
     <div class="notice-row">
       <span class="notice-key">문의처</span>
-      <span class="notice-val">검색광고 문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0D47A1;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
+      <span class="notice-val">검색광고 대행문의는 <a href="https://pf.kakao.com/_wMLIn" target="_blank" style="color:#0D47A1;font-weight:700;text-decoration:none;">마케팁 카카오채널</a>로 부탁드립니다.</span>
     </div>
   </div>
 </div>
@@ -216,7 +624,7 @@ accounts = load_accounts()
 col_title, col_btn = st.columns([4, 1])
 with col_title:
     st.markdown(
-        f'<div class="sec-ttl">내 네이버 광고 계정'
+        f'<div class="sec-ttl">내 광고 계정'
         f'<span class="count-pill">연동된 계정 {len(accounts)}개</span></div>',
         unsafe_allow_html=True
     )
@@ -249,7 +657,32 @@ if not filtered:
 </div>
 """, unsafe_allow_html=True)
 else:
+    _PLAT_COLORS = {"naver": "#03C75A", "daangn": "#FF6F0F", "kakao": "#FAD400"}
+    _PLAT_FG     = {"naver": "#fff",    "daangn": "#fff",    "kakao": "#3A1D1D"}
     for acc in filtered:
+        plat     = acc.get("platform", "naver")
+        plat_lbl = acc.get("platform_label", "네이버")
+        pbg = _PLAT_COLORS.get(plat, "#03C75A")
+        pfg = _PLAT_FG.get(plat, "#fff")
+        plat_badge = (
+            f'<span style="background:{pbg};color:{pfg};font-size:11px;font-weight:700;'
+            f'padding:2px 8px;border-radius:6px;margin-right:6px;">{plat_lbl}</span>'
+        )
+        if plat == "naver":
+            ad = f"{acc.get('ad_type','')} &nbsp;·&nbsp; " if acc.get('ad_type') else ""
+            meta = (
+                f"{ad}{acc.get('naver_login_id','-')} &nbsp;·&nbsp;"
+                f" Customer ID: <b style='color:#333;'>{acc.get('customer_id','-')}</b>"
+            )
+        elif plat == "daangn":
+            meta = f"계정 ID: <b style='color:#333;'>{acc.get('account_id','-')}</b>"
+        else:  # kakao
+            ad = f"{acc.get('ad_type','')} &nbsp;·&nbsp; " if acc.get('ad_type') else ""
+            cat = acc.get('business_category') or acc.get('brand_name', '-')
+            meta = (
+                f"{ad}업종: {cat} &nbsp;·&nbsp;"
+                f" 계정 ID: <b style='color:#333;'>{acc.get('account_id','-')}</b>"
+            )
         alias_html = (
             f'<span style="margin-left:6px;background:#F5F5F5;color:#888;'
             f'font-size:11px;padding:1px 7px;border-radius:6px;">{acc["alias"]}</span>'
@@ -259,13 +692,10 @@ else:
 <div class="acc-card">
   <div>
     <div class="acc-name">
-      {acc.get("account_name", "-")}
-      {alias_html}
+      {plat_badge}{acc.get("account_name", "-")}{alias_html}
     </div>
     <div class="acc-meta">
-      {acc.get("naver_login_id", "-")} &nbsp;·&nbsp;
-      Customer ID: <b style="color:#333;">{acc.get("customer_id", "-")}</b> &nbsp;·&nbsp;
-      신청일: {acc.get("created_at", "-")[:10]}
+      {meta} &nbsp;·&nbsp; 신청일: {acc.get("created_at", "-")[:10]}
     </div>
   </div>
   <div style="margin-top:2px;">{badge(acc.get("status","연동신청"))}</div>
@@ -300,14 +730,15 @@ with st.expander("🔐 관리자 — 상태 관리"):
         if not all_accs:
             st.info("등록된 계정이 없습니다.")
         else:
-            import pandas as pd
             for i, acc in enumerate(all_accs):
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([4, 2, 1])
                     with c1:
+                        plat_info = acc.get("platform_label", "네이버")
+                        detail = acc.get("customer_id") or acc.get("account_id") or ""
                         st.markdown(
-                            f"**{acc['account_name']}** &nbsp; `{acc['customer_id']}`  \n"
-                            f"{acc['naver_login_id']} · 신청일: {acc['created_at'][:10]}"
+                            f"**{acc['account_name']}** &nbsp; `{detail}`  \n"
+                            f"{plat_info} · 신청일: {acc['created_at'][:10]}"
                         )
                         st.markdown(badge(acc["status"]), unsafe_allow_html=True)
                     with c2:

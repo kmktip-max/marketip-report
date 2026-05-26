@@ -765,6 +765,20 @@ def _gen_png_playwright(html_str):
         except: pass
 
 # ── Styler 헬퍼 ───────────────────────────────────────────────────────────────
+import importlib.util as _ilu
+_JINJA2_OK = _ilu.find_spec("jinja2") is not None
+
+
+def _safe_dataframe(df, style_fn, axis=0, **kwargs):
+    """Styler.apply() with jinja2 fallback — jinja2 없으면 plain dataframe 표시."""
+    if _JINJA2_OK:
+        try:
+            return st.dataframe(df.style.apply(style_fn, axis=axis), **kwargs)
+        except Exception:
+            pass
+    return st.dataframe(df, **kwargs)
+
+
 def _style_fl(col):
     if col.name == "프리랜서 지급액":
         return ["color: #dc2626; font-weight: 700"] * len(col)
@@ -1213,8 +1227,8 @@ with t_fl:
                 "대표 수익":       w(sum(g["대표 수익"]       for g in fl_sum.values())),
                 "대표 세후 추정":  w(round(sum(g["대표 수익"] for g in fl_sum.values()) * 0.8)),
             })
-            st.dataframe(
-                pd.DataFrame(s_rows).style.apply(_style_fl, axis=0),
+            _safe_dataframe(
+                pd.DataFrame(s_rows), _style_fl, axis=0,
                 use_container_width=True, hide_index=True,
             )
 
@@ -1239,8 +1253,8 @@ with t_fl:
                 "대표 세후 추정":  w(round(d["대표 수익"] * 0.8)),
                 "⚠️": d["⚠️"],
             })
-        st.dataframe(
-            pd.DataFrame(fmt_details).style.apply(_style_fl, axis=0),
+        _safe_dataframe(
+            pd.DataFrame(fmt_details), _style_fl, axis=0,
             use_container_width=True, hide_index=True,
         )
 
@@ -1832,8 +1846,8 @@ with t_annual:
         out.iloc[last, sdf.columns.get_loc("기타비용 제외 금액")] = "font-weight:800;color:#059669;"
         return out
 
-    st.dataframe(
-        pd.DataFrame(_tbl).style.apply(_ann_style, axis=None),
+    _safe_dataframe(
+        pd.DataFrame(_tbl), _ann_style, axis=None,
         use_container_width=True, hide_index=True,
     )
 
