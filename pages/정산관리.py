@@ -1002,136 +1002,252 @@ with t_cl:
     if df is None:
         st.info("엑셀 업로드 탭에서 파일을 먼저 업로드해주세요.")
     else:
-        st.caption("같은 업체명이라도 매체사·수수료율이 다르면 별개 카드로 표시됩니다.")
-
-        for _, row in df.iterrows():
-            cid    = str(row.get("customer_id","")).strip()
-            ano    = str(row.get("ad_account_no","")).strip()
-            aid    = str(row.get("account_id","")).strip()
-            name   = str(row.get("계정명","")).strip()
-            disp   = str(row.get("display_name", name)).strip()
-            media  = _norm_media(row.get("매체사",""))
-            cr     = float(row.get("comm_rate", 0))   # 상위 수수료율
-            cr_pct = cr * 100 if cr < 1 else cr       # 항상 % 단위
-
-            ad_s  = float(row.get("ad_supply",  0))
-            ad_v  = float(row.get("ad_vat",     0))
-            ad_t  = float(row.get("ad_total",   0))
-            cm_s  = float(row.get("comm_supply",0))
-            cm_v  = float(row.get("comm_vat",   0))
-            cm_t  = float(row.get("comm_total", 0))
-
-            ex  = get_mapping(cid, ano, media, cr_pct) or {}
-            wk  = _wk(cid, ano, media, cr_pct)
-
-            is_locked = ex.get("locked", True) if ex else True
-            lock_icon = "🔒" if is_locked else "🔓"
-            media_lbl = media or "—"
-            label = (f"{lock_icon} **{disp}** │ CID:{cid} │ "
-                     f"{media_lbl} {cr_pct:.1f}% │ 광고비:{w(ad_s)}")
-
-            with st.expander(label, expanded=(ex.get("freelancer","미분류")=="미분류")):
-                # ── 계정 요약 정보 ──────────────────────────────────────
-                st.markdown(
-                    f"**{media_lbl}** &nbsp; `{cr_pct:.1f}%`  \n"
-                    f"광고비 공급가: **{w(ad_s)}** &nbsp;│&nbsp; 수수료 공급가: **{w(cm_s)}**",
-                    unsafe_allow_html=True,
-                )
-                st.markdown("")
-
-                lc, rc = st.columns([2, 3])
-
-                with lc:
-                    fl_idx = FREELANCERS.index(ex["freelancer"]) if ex.get("freelancer") in FREELANCERS else 0
-                    fl     = st.selectbox("담당 프리랜서", FREELANCERS, index=fl_idx, key=f"fl_{wk}")
-                    is_own = st.checkbox("대표 직접 운영", ex.get("is_owner_managed", False), key=f"own_{wk}")
-                    locked = st.checkbox("🔒 담당자 고정 (다음 업로드 시 유지)",
-                                         ex.get("locked", True), key=f"lk_{wk}")
-                    fr = st.number_input("프리랜서 기본 정산율(%)", 0.0, 100.0,
-                                         float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{wk}")
-                    rr = st.number_input("리베이트율(%)", 0.0, 100.0,
-                                         float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{wk}")
-                    st.markdown("---")
-                    direct_mode = st.checkbox("💡 광고주 직접 수수료 구조 (구글 등)",
-                                              ex.get("direct_commission_mode", False),
-                                              key=f"dm_{wk}")
-                    direct_rate = 0.0
-                    if direct_mode:
-                        direct_rate = st.number_input("광고주 직접 수수료율(%)", 0.0, 100.0,
-                                                      float(ex.get("direct_commission_rate", 0)),
-                                                      step=0.5, key=f"dr_{wk}")
-
-                with rc:
-                    r = calc(ad_s, ad_t, cm_s, fr, rr, is_own, direct_mode, direct_rate)
-
-                    data_rows = [("광고비 공급가", w(ad_s)),
-                                 ("광고비 VAT",   w(ad_v)),
-                                 ("광고비 합계",  w(ad_t))]
-
-                    if direct_mode:
-                        data_rows += [
-                            ("───","───"),
-                            ("광고주 직접 수수료율",    pct(direct_rate)),
-                            ("광고주 직접 수수료 금액", w(r["direct_comm"])),
-                        ]
-                    else:
-                        data_rows += [
-                            ("상위 수수료율",  pct(cr_pct)),
-                            ("수수료 공급가",  w(cm_s)),
-                            ("수수료 VAT",     w(cm_v)),
-                            ("수수료 합계",    w(cm_t)),
-                        ]
-
-                    data_rows += [
-                        ("───","───"),
-                        ("프리랜서 정산율",           pct(fr)),
-                        ("리베이트율",                pct(rr)),
-                        ("실지급률",                  pct(r["eff_pct"])),
-                        ("───","───"),
-                        ("리베이트 지급액",           w(r["rebate"])),
-                        ("프리랜서 공제전 지급액",    w(r["fl_gross"])),
-                        ("프리랜서 3.3% 공제액",      w(r["fl_tax"])),
-                        ("프리랜서 공제후 실수령액",  w(r["fl_net"])),
-                        ("───","───"),
-                        ("대표 수익",                 w(r["owner"])),
-                        ("대표 세후 추정 (×0.8)",     w(round(r["owner"] * 0.8))),
-                    ]
-
-                    tbl = "| 항목 | 금액 |\n|---|---:|\n"
-                    for k, v in data_rows:
-                        tbl += f"| {k} | {v} |\n"
-                    st.markdown(tbl)
-                    if r["warn"]: st.error("⚠️ 실지급률이 음수입니다!")
-
-                if st.button("💾 저장", key=f"sv_{wk}", type="primary"):
-                    upsert_mapping(cid, ano, aid, name, disp, media, cr_pct,
-                                   fl, fr, rr, is_own, direct_mode, direct_rate, locked)
-                    st.success(f"✅ {disp} ({media_lbl} {cr_pct:.1f}%) 저장 완료")
-                    st.rerun()
-
+        view_mode = st.radio("보기 방식", ["업체별 보기", "프리랜서별 보기"],
+                              horizontal=True, key="cl_view_mode")
         st.divider()
-        if st.button("💾 전체 일괄 저장", type="primary", use_container_width=True):
+
+        if view_mode == "업체별 보기":
+            st.caption("같은 업체명이라도 매체사·수수료율이 다르면 별개 카드로 표시됩니다.")
+
             for _, row in df.iterrows():
                 cid    = str(row.get("customer_id","")).strip()
                 ano    = str(row.get("ad_account_no","")).strip()
                 aid    = str(row.get("account_id","")).strip()
                 name   = str(row.get("계정명","")).strip()
-                disp   = str(row.get("display_name","")).strip()
+                disp   = str(row.get("display_name", name)).strip()
                 media  = _norm_media(row.get("매체사",""))
-                cr     = float(row.get("comm_rate", 0))
-                cr_pct = cr * 100 if cr < 1 else cr
-                wk     = _wk(cid, ano, media, cr_pct)
-                upsert_mapping(
-                    cid, ano, aid, name, disp, media, cr_pct,
-                    st.session_state.get(f"fl_{wk}","미분류"),
-                    float(st.session_state.get(f"fr_{wk}",0)),
-                    float(st.session_state.get(f"rr_{wk}",0)),
-                    bool(st.session_state.get(f"own_{wk}",False)),
-                    bool(st.session_state.get(f"dm_{wk}",False)),
-                    float(st.session_state.get(f"dr_{wk}",0)),
-                    bool(st.session_state.get(f"lk_{wk}",True)),
+                cr     = float(row.get("comm_rate", 0))   # 상위 수수료율
+                cr_pct = cr * 100 if cr < 1 else cr       # 항상 % 단위
+
+                ad_s  = float(row.get("ad_supply",  0))
+                ad_v  = float(row.get("ad_vat",     0))
+                ad_t  = float(row.get("ad_total",   0))
+                cm_s  = float(row.get("comm_supply",0))
+                cm_v  = float(row.get("comm_vat",   0))
+                cm_t  = float(row.get("comm_total", 0))
+
+                ex  = get_mapping(cid, ano, media, cr_pct) or {}
+                wk  = _wk(cid, ano, media, cr_pct)
+
+                is_locked = ex.get("locked", True) if ex else True
+                lock_icon = "🔒" if is_locked else "🔓"
+                media_lbl = media or "—"
+                label = (f"{lock_icon} **{disp}** │ CID:{cid} │ "
+                         f"{media_lbl} {cr_pct:.1f}% │ 광고비:{w(ad_s)}")
+
+                with st.expander(label, expanded=(ex.get("freelancer","미분류")=="미분류")):
+                    # ── 계정 요약 정보 ──────────────────────────────────────
+                    st.markdown(
+                        f"**{media_lbl}** &nbsp; `{cr_pct:.1f}%`  \n"
+                        f"광고비 공급가: **{w(ad_s)}** &nbsp;│&nbsp; 수수료 공급가: **{w(cm_s)}**",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("")
+
+                    lc, rc = st.columns([2, 3])
+
+                    with lc:
+                        fl_idx = FREELANCERS.index(ex["freelancer"]) if ex.get("freelancer") in FREELANCERS else 0
+                        fl     = st.selectbox("담당 프리랜서", FREELANCERS, index=fl_idx, key=f"fl_{wk}")
+                        is_own = st.checkbox("대표 직접 운영", ex.get("is_owner_managed", False), key=f"own_{wk}")
+                        locked = st.checkbox("🔒 담당자 고정 (다음 업로드 시 유지)",
+                                             ex.get("locked", True), key=f"lk_{wk}")
+                        fr = st.number_input("프리랜서 기본 정산율(%)", 0.0, 100.0,
+                                             float(ex.get("freelancer_rate", 0)), step=0.5, key=f"fr_{wk}")
+                        rr = st.number_input("리베이트율(%)", 0.0, 100.0,
+                                             float(ex.get("rebate_rate", 0)), step=0.5, key=f"rr_{wk}")
+                        st.markdown("---")
+                        direct_mode = st.checkbox("💡 광고주 직접 수수료 구조 (구글 등)",
+                                                  ex.get("direct_commission_mode", False),
+                                                  key=f"dm_{wk}")
+                        direct_rate = 0.0
+                        if direct_mode:
+                            direct_rate = st.number_input("광고주 직접 수수료율(%)", 0.0, 100.0,
+                                                          float(ex.get("direct_commission_rate", 0)),
+                                                          step=0.5, key=f"dr_{wk}")
+
+                    with rc:
+                        r = calc(ad_s, ad_t, cm_s, fr, rr, is_own, direct_mode, direct_rate)
+
+                        data_rows = [("광고비 공급가", w(ad_s)),
+                                     ("광고비 VAT",   w(ad_v)),
+                                     ("광고비 합계",  w(ad_t))]
+
+                        if direct_mode:
+                            data_rows += [
+                                ("───","───"),
+                                ("광고주 직접 수수료율",    pct(direct_rate)),
+                                ("광고주 직접 수수료 금액", w(r["direct_comm"])),
+                            ]
+                        else:
+                            data_rows += [
+                                ("상위 수수료율",  pct(cr_pct)),
+                                ("수수료 공급가",  w(cm_s)),
+                                ("수수료 VAT",     w(cm_v)),
+                                ("수수료 합계",    w(cm_t)),
+                            ]
+
+                        data_rows += [
+                            ("───","───"),
+                            ("프리랜서 정산율",           pct(fr)),
+                            ("리베이트율",                pct(rr)),
+                            ("실지급률",                  pct(r["eff_pct"])),
+                            ("───","───"),
+                            ("리베이트 지급액",           w(r["rebate"])),
+                            ("프리랜서 공제전 지급액",    w(r["fl_gross"])),
+                            ("프리랜서 3.3% 공제액",      w(r["fl_tax"])),
+                            ("프리랜서 공제후 실수령액",  w(r["fl_net"])),
+                            ("───","───"),
+                            ("대표 수익",                 w(r["owner"])),
+                            ("대표 세후 추정 (×0.8)",     w(round(r["owner"] * 0.8))),
+                        ]
+
+                        tbl = "| 항목 | 금액 |\n|---|---:|\n"
+                        for k, v in data_rows:
+                            tbl += f"| {k} | {v} |\n"
+                        st.markdown(tbl)
+                        if r["warn"]: st.error("⚠️ 실지급률이 음수입니다!")
+
+                    if st.button("💾 저장", key=f"sv_{wk}", type="primary"):
+                        upsert_mapping(cid, ano, aid, name, disp, media, cr_pct,
+                                       fl, fr, rr, is_own, direct_mode, direct_rate, locked)
+                        st.success(f"✅ {disp} ({media_lbl} {cr_pct:.1f}%) 저장 완료")
+                        st.rerun()
+
+            st.divider()
+            if st.button("💾 전체 일괄 저장", type="primary", use_container_width=True):
+                for _, row in df.iterrows():
+                    cid    = str(row.get("customer_id","")).strip()
+                    ano    = str(row.get("ad_account_no","")).strip()
+                    aid    = str(row.get("account_id","")).strip()
+                    name   = str(row.get("계정명","")).strip()
+                    disp   = str(row.get("display_name","")).strip()
+                    media  = _norm_media(row.get("매체사",""))
+                    cr     = float(row.get("comm_rate", 0))
+                    cr_pct = cr * 100 if cr < 1 else cr
+                    wk     = _wk(cid, ano, media, cr_pct)
+                    upsert_mapping(
+                        cid, ano, aid, name, disp, media, cr_pct,
+                        st.session_state.get(f"fl_{wk}","미분류"),
+                        float(st.session_state.get(f"fr_{wk}",0)),
+                        float(st.session_state.get(f"rr_{wk}",0)),
+                        bool(st.session_state.get(f"own_{wk}",False)),
+                        bool(st.session_state.get(f"dm_{wk}",False)),
+                        float(st.session_state.get(f"dr_{wk}",0)),
+                        bool(st.session_state.get(f"lk_{wk}",True)),
+                    )
+                st.success("✅ 전체 저장 완료"); st.rerun()
+
+        else:  # ── 프리랜서별 보기 ───────────────────────────────────────────
+            # 데이터 집계: 프리랜서별 업체 리스트 구성
+            _cl_groups = {}
+            _cl_total_ad  = 0.0
+            _cl_total_pay = 0.0
+
+            for _, row in df.iterrows():
+                cid   = str(row.get("customer_id","")).strip()
+                ano   = str(row.get("ad_account_no","")).strip()
+                name  = str(row.get("계정명","")).strip()
+                disp  = str(row.get("display_name", name)).strip()
+                media = _norm_media(row.get("매체사",""))
+                cr    = float(row.get("comm_rate", 0))
+                cr_pct= cr * 100 if cr < 1 else cr
+                ad_s  = float(row.get("ad_supply",  0))
+                ad_t  = float(row.get("ad_total",   0))
+                cm_s  = float(row.get("comm_supply", 0))
+                ex    = get_mapping(cid, ano, media, cr_pct) or {}
+                fl_k  = ex.get("freelancer", "미분류") or "미분류"
+                fr    = float(ex.get("freelancer_rate", 0))
+                rr    = float(ex.get("rebate_rate", 0))
+                is_o  = ex.get("is_owner_managed", False)
+                dm    = ex.get("direct_commission_mode", False)
+                dr    = float(ex.get("direct_commission_rate", 0))
+
+                # 권혁우(대표)는 매체별 기본 정산율로 예상 정산액 계산
+                if fl_k == OWNER_FL:
+                    _fr_disp = _owner_share_rate(media, disp)
+                    r = calc(ad_s, ad_t, cm_s, _fr_disp, rr, False, False, 0.0)
+                else:
+                    _fr_disp = fr
+                    r = calc(ad_s, ad_t, cm_s, fr, rr, is_o, dm, dr)
+
+                _cl_groups.setdefault(fl_k, []).append({
+                    "disp": disp, "cid": cid, "media": media, "cr_pct": cr_pct,
+                    "ad_s": ad_s, "fr": _fr_disp, "rr": rr,
+                    "rebate": r["rebate"], "fl_net": r["fl_net"],
+                })
+                _cl_total_ad  += ad_s
+                _cl_total_pay += r["fl_net"]
+
+            # ── 전체 요약 KPI ────────────────────────────────────────────────
+            _cl_fl_names = [k for k in _cl_groups if k not in ("미분류", "", "대표 직접")]
+            _cl_uncls    = len(_cl_groups.get("미분류", [])) + len(_cl_groups.get("", []))
+            _cl_total_cl = sum(len(v) for v in _cl_groups.values())
+
+            km1, km2, km3, km4, km5 = st.columns(5)
+            km1.metric("프리랜서 수",    f"{len(_cl_fl_names)}명")
+            km2.metric("전체 업체 수",   f"{_cl_total_cl}개")
+            km3.metric("미분류",         f"{_cl_uncls}개")
+            km4.metric("총 광고비",      w(_cl_total_ad))
+            km5.metric("총 예상 정산액", w(_cl_total_pay))
+            st.divider()
+
+            # ── 프리랜서 필터 + 검색 ─────────────────────────────────────────
+            _cl_opts = [k for k in FREELANCERS[1:] if k in _cl_groups and k != "대표 직접"]
+            _cl_opts += [k for k in _cl_groups if k not in FREELANCERS and k not in ("", "미분류")]
+            if "미분류" in _cl_groups:
+                _cl_opts.append("미분류")
+
+            fc1, fc2 = st.columns([2, 3])
+            with fc1:
+                _cl_sel = st.multiselect(
+                    "프리랜서 필터",
+                    options=_cl_opts,
+                    default=[],
+                    placeholder="전체 (비워두면 전체 표시)",
+                    key="cl_fl_filter",
                 )
-            st.success("✅ 전체 저장 완료"); st.rerun()
+            with fc2:
+                _cl_q = st.text_input(
+                    "🔍 업체명 · CID · 매체명 검색", key="cl_search"
+                ).strip().lower()
+
+            _cl_show = _cl_sel if _cl_sel else _cl_opts
+
+            # ── 프리랜서별 expander ──────────────────────────────────────────
+            for _fl_name in _cl_show:
+                _items = list(_cl_groups.get(_fl_name, []))
+                if _cl_q:
+                    _items = [it for it in _items if (
+                        _cl_q in it["disp"].lower()
+                        or _cl_q in it["cid"].lower()
+                        or _cl_q in it["media"].lower()
+                        or _cl_q in _fl_name.lower()
+                    )]
+                if not _items:
+                    continue
+
+                _fl_ad  = sum(it["ad_s"]   for it in _items)
+                _fl_pay = sum(it["fl_net"] for it in _items)
+                _icon   = "🔴" if _fl_name == "미분류" else "👤"
+                _exp_lbl = (
+                    f"{_icon} **{_fl_name}** │ 업체 {len(_items)}개 │ "
+                    f"광고비 {_fl_ad:,.0f}원 │ 정산액 {_fl_pay:,.0f}원"
+                )
+
+                with st.expander(_exp_lbl, expanded=(_fl_name == "미분류")):
+                    _tbl = []
+                    for it in _items:
+                        _tbl.append({
+                            "업체명":         it["disp"],
+                            "CID":            it["cid"],
+                            "매체/상품":      it["media"] or "—",
+                            "광고비(원)":     f"{it['ad_s']:,.0f}",
+                            "정산율(%)":      f"{it['fr']:.1f}",
+                            "예상 정산액(원)": f"{it['fl_net']:,.0f}",
+                            "리베이트":       "O" if it["rebate"] > 0 else "",
+                        })
+                    st.dataframe(pd.DataFrame(_tbl), use_container_width=True, hide_index=True)
 
 # ─── 미분류 탭 ────────────────────────────────────────────────────────────────
 with t_un:
