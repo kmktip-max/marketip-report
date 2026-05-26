@@ -439,6 +439,15 @@ def parse_excel(f):
     return df_g, None, df, debug
 
 # ── 대표 정산공유용 매체별 기본 정산율 ───────────────────────────────────────
+def _owner_calc(ad_supply, ad_total, fr_pct, rr_pct):
+    """권혁우(대표) 전용: 3.3% 공제 없이 공급가×정산율 - 리베이트."""
+    rebate   = round(ad_total * rr_pct / 100)
+    fl_gross = round(ad_supply * fr_pct / 100)
+    fl_net   = fl_gross - rebate
+    return {"eff_pct": fr_pct - rr_pct, "fl_gross": fl_gross, "fl_tax": 0,
+            "fl_net": fl_net, "rebate": rebate, "owner": 0,
+            "direct_comm": 0, "warn": fl_net < 0, "direct": False}
+
 def _owner_share_rate(media: str, display_name: str = "") -> float:
     """권혁우(대표) 정산공유 카드 전용: 매체명 기준 기본 정산율(%) 반환."""
     t = f"{media} {display_name}".lower()
@@ -1165,10 +1174,10 @@ with t_cl:
                 dm    = ex.get("direct_commission_mode", False)
                 dr    = float(ex.get("direct_commission_rate", 0))
 
-                # 권혁우(대표)는 매체별 기본 정산율로 예상 정산액 계산
+                # 권혁우(대표): 매체별 기본율, 3.3% 공제 없음
                 if fl_k == OWNER_FL:
                     _fr_disp = _owner_share_rate(media, disp)
-                    r = calc(ad_s, ad_t, cm_s, _fr_disp, rr, False, False, 0.0)
+                    r = _owner_calc(ad_s, ad_t, _fr_disp, rr)
                 else:
                     _fr_disp = fr
                     r = calc(ad_s, ad_t, cm_s, fr, rr, is_o, dm, dr)
@@ -1442,12 +1451,12 @@ with t_share:
                 _ad_s  = float(_row.get("ad_supply", 0))
                 _ad_t  = float(_row.get("ad_total", 0))
                 _cm_s  = float(_row.get("comm_supply", 0))
-                # 대표(권혁우) 정산공유: is_own/freelancer_rate=0 → 매체별 기본율 적용
+                # 대표(권혁우): 매체별 기본율 적용, 3.3% 공제 없음
                 if _sel_fl == OWNER_FL:
-                    _fr   = _owner_share_rate(_media, str(_row.get("display_name", "")))
-                    _is_o = False   # calc()의 is_own=True 분기(fl_gross=0) 우회
-                    _dm   = False
-                _r     = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
+                    _fr = _owner_share_rate(_media, str(_row.get("display_name", "")))
+                    _r  = _owner_calc(_ad_s, _ad_t, _fr, _rr)
+                else:
+                    _r  = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
                 _fl_rows.append({
                     "업체명":       str(_row.get("display_name","")).strip(),
                     "매체사":       _media or "—",
@@ -1565,6 +1574,15 @@ with t_share:
                         '<hr style="border:none;border-top:1px solid #FECACA;margin:16px 0;">'
                         + _rb_section_html
                     ) if _rb_section_html else ""
+                    # 3.3% 공제 행: 권혁우(대표)는 표시 안 함
+                    _tax_html = "" if _t_tax == 0 else (
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                        f'margin-bottom:12px;line-height:1.7;">'
+                        f'<span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>'
+                        f'<span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>'
+                        f'</div>'
+                    )
+                    _net_label = "정산액" if _sel_fl == OWNER_FL else "공제후 실수령액"
                     st.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;
             overflow:hidden;max-width:560px;box-sizing:border-box;">
@@ -1583,15 +1601,11 @@ with t_share:
       <span style="font-size:13px;color:#374151;">공제전 정산액</span>
       <span style="font-size:13px;color:#374151;">{_t_gross:,}원</span>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;
-                margin-bottom:12px;line-height:1.7;">
-      <span style="font-size:13px;color:#DC2626;">3.3% 공제액</span>
-      <span style="font-size:13px;color:#DC2626;">-{_t_tax:,}원</span>
-    </div>
+    {_tax_html}
     <div style="background:#EFF6FF;border:1.5px solid #93C5FD;border-radius:10px;
                 padding:14px 18px;display:flex;justify-content:space-between;
                 align-items:center;gap:8px;margin-bottom:4px;">
-      <span style="font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;">공제후 실수령액</span>
+      <span style="font-size:14px;font-weight:700;color:#1D4ED8;line-height:1.4;">{_net_label}</span>
       <span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>
     </div>
     {_rb_insert}
@@ -1621,9 +1635,8 @@ with t_share:
                         "━━━━━━━━━━━━━━━━",
                         "",
                         f"공제전 정산액: {_t_gross:,}원",
-
-                        f"3.3% 공제액: -{_t_tax:,}원",
-                        f"공제후 실수령액: {_t_net:,}원",
+                        *([] if _t_tax == 0 else [f"3.3% 공제액: -{_t_tax:,}원"]),
+                        f"{_net_label}: {_t_net:,}원",
                         "",
                         "입금 예정입니다 🙏",
                     ]
