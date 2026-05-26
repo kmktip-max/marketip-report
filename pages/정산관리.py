@@ -1445,12 +1445,13 @@ with t_share:
       <span style="font-size:22px;font-weight:900;color:#1D4ED8;white-space:nowrap;">{_t_net:,}원</span>
     </div>
     {f'<hr style="border:none;border-top:1px solid #FECACA;margin:16px 0;">{_rb_section_html}' if _rb_section_html else ''}
-    <div style="text-align:center;margin-top:14px;font-size:13px;color:#9CA3AF;line-height:1.7;">
-      입금 예정입니다 🙏
-    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
+                    st.markdown(
+                        '<div style="text-align:center;margin-top:14px;font-size:13px;color:#6B7280;">입금 예정입니다 🙏</div>',
+                        unsafe_allow_html=True,
+                    )
 
                     st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
 
