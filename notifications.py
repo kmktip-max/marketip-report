@@ -67,11 +67,12 @@ def _build_email_body(record: dict) -> str:
 
 
 def send_admin_email(record: dict) -> dict:
-    to_email  = _secret("ADMIN_ALERT_EMAIL")
-    smtp_host = _secret("SMTP_HOST")
-    smtp_port = int(_secret("SMTP_PORT", "587"))
-    smtp_user = _secret("SMTP_USER")
-    smtp_pw   = _secret("SMTP_PASSWORD")
+    from bizmoney_alert import _secret as _bz
+    to_email  = _bz("ADMIN_ALERT_EMAIL")
+    smtp_host = _bz("SMTP_HOST")
+    smtp_port = int(_bz("SMTP_PORT") or "587")
+    smtp_user = _bz("SMTP_USER")
+    smtp_pw   = _bz("SMTP_PASSWORD")
 
     if not to_email:
         return {"status": "skipped", "reason": "ADMIN_ALERT_EMAIL 미설정"}
@@ -106,12 +107,10 @@ def send_admin_email(record: dict) -> dict:
 
 # ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
 def send_admin_sms(record: dict) -> dict:
-    phone = _secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")
+    from bizmoney_alert import send_sms_notification, _secret as _bz
+    phone = _bz("ADMIN_ALERT_PHONE") or _bz("ADMIN_NOTIFY_PHONE")
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
-
-    if not _secret("SOLAPI_API_KEY"):
-        return {"status": "skipped", "reason": "SOLAPI 미설정"}
 
     plat = record.get("platform_label", record.get("platform", "-"))
     text = "\n".join([
@@ -122,8 +121,6 @@ def send_admin_sms(record: dict) -> dict:
         f"담당자: {record.get('manager_name', '-')}",
         f"월예산: {record.get('monthly_budget', '-')}",
     ])
-
-    from bizmoney_alert import send_sms_notification
     return send_sms_notification(phone, text)
 
 
