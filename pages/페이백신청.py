@@ -427,7 +427,7 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        _phone = get_secret("ADMIN_NOTIFY_PHONE") or get_secret("ADMIN_ALERT_PHONE")
+        _phone = st.session_state.get("_admin_notify_phone", "")
         _alert_result = send_admin_application_alert(record, admin_phone=_phone)
         save_alert_history(record, _alert_result)
     except Exception as _e:
@@ -483,6 +483,12 @@ if "_pb_submit_result" in st.session_state:
             + (f"오류: `{_err}`" if _err else "")
         )
 
+
+# ── 페이지 로드 시 시크릿 미리 캐시 (dialog 내부에서 st.secrets 접근 불가 문제 우회) ──
+if "_admin_notify_phone" not in st.session_state:
+    st.session_state["_admin_notify_phone"] = (
+        get_secret("ADMIN_NOTIFY_PHONE") or get_secret("ADMIN_ALERT_PHONE")
+    )
 
 # ── Modal: 계정 추가 ──────────────────────────────────────────────────────────
 def _plat_header(plat_name: str) -> None:
