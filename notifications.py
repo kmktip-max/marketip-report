@@ -1,4 +1,4 @@
-"""관리자 알림 발송 유틸리티 (이메일 + SMS)"""
+"""관리자 알림 발송 유틸리티 (이메일 + SMS) v2"""
 import os
 import json
 import uuid
@@ -164,13 +164,21 @@ def send_admin_email(record: dict) -> dict:
         return {"status": "failed", "error": str(e)[:300]}
 
 
-# ── SOLAPI 직접 발송 (_secret 사용 — dialog 안에서도 작동) ──────────────────
+# ── SOLAPI 직접 발송 ──────────────────────────────────────────────────────────
 def _solapi_send(to_phone: str, text: str) -> dict:
     if _requests is None:
         return {"status": "failed", "error": "requests 패키지 없음"}
-    api_key    = _secret("SOLAPI_API_KEY")
-    api_secret = _secret("SOLAPI_API_SECRET")
-    sender_id  = _secret("SOLAPI_SENDER_ID")
+    # bizmoney_alert._secret 우선 (st.secrets 직접 접근, 검증됨)
+    # notifications._secret 폴백 (toml 파일 파싱)
+    try:
+        from bizmoney_alert import _secret as _bz
+        api_key    = _bz("SOLAPI_API_KEY")    or _secret("SOLAPI_API_KEY")
+        api_secret = _bz("SOLAPI_API_SECRET") or _secret("SOLAPI_API_SECRET")
+        sender_id  = _bz("SOLAPI_SENDER_ID")  or _secret("SOLAPI_SENDER_ID")
+    except Exception:
+        api_key    = _secret("SOLAPI_API_KEY")
+        api_secret = _secret("SOLAPI_API_SECRET")
+        sender_id  = _secret("SOLAPI_SENDER_ID")
     if not api_key or not api_secret or not sender_id:
         return {"status": "skipped", "reason": f"SOLAPI 미설정 (key={bool(api_key)},secret={bool(api_secret)},sender={bool(sender_id)})"}
     if not to_phone:
