@@ -83,13 +83,12 @@ def save_notify_config(data: dict) -> bool:
 # ── 설정 상태 ────────────────────────────────────────────────────────────────
 def get_notification_config_status() -> dict:
     _cfg = get_notify_config()
-    _json_phone = _cfg.get("admin_phone", "")
     return {
-        "ADMIN_ALERT_EMAIL": bool(_secret("ADMIN_ALERT_EMAIL")),
-        "SMTP_HOST":         bool(_secret("SMTP_HOST")),
-        "SMTP_USER":         bool(_secret("SMTP_USER")),
-        "SMTP_PASSWORD":     bool(_secret("SMTP_PASSWORD")),
-        "ADMIN_ALERT_PHONE": bool(_json_phone or _secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")),
+        "ADMIN_ALERT_EMAIL": bool(_cfg.get("smtp_to") or _secret("ADMIN_ALERT_EMAIL")),
+        "SMTP_HOST":         bool(_cfg.get("smtp_host") or _secret("SMTP_HOST")),
+        "SMTP_USER":         bool(_cfg.get("smtp_user") or _secret("SMTP_USER")),
+        "SMTP_PASSWORD":     bool(_cfg.get("smtp_password") or _secret("SMTP_PASSWORD")),
+        "ADMIN_ALERT_PHONE": bool(_cfg.get("admin_phone") or _secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")),
         "SOLAPI_API_KEY":    bool(_secret("SOLAPI_API_KEY")),
         "SOLAPI_API_SECRET": bool(_secret("SOLAPI_API_SECRET")),
         "SOLAPI_SENDER_ID":  bool(_secret("SOLAPI_SENDER_ID")),
@@ -119,11 +118,13 @@ def _build_email_body(record: dict) -> str:
 
 def send_admin_email(record: dict) -> dict:
     from bizmoney_alert import _secret as _bz
-    to_email  = _bz("ADMIN_ALERT_EMAIL")
-    smtp_host = _bz("SMTP_HOST")
-    smtp_port = int(_bz("SMTP_PORT") or "587")
-    smtp_user = _bz("SMTP_USER")
-    smtp_pw   = _bz("SMTP_PASSWORD")
+    _cfg = get_notify_config()
+
+    to_email  = _cfg.get("smtp_to")  or _bz("ADMIN_ALERT_EMAIL")
+    smtp_host = _cfg.get("smtp_host") or _bz("SMTP_HOST")
+    smtp_port = int(_cfg.get("smtp_port") or _bz("SMTP_PORT") or "465")
+    smtp_user = _cfg.get("smtp_user") or _bz("SMTP_USER")
+    smtp_pw   = _cfg.get("smtp_password") or _bz("SMTP_PASSWORD")
 
     if not to_email:
         return {"status": "skipped", "reason": "ADMIN_ALERT_EMAIL 미설정"}

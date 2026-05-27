@@ -938,33 +938,59 @@ with st.expander("🔐 관리자 — 상태 관리"):
 
         st.divider()
 
-        # ── SMS 수신 전화번호 설정 ──────────────────────────────────────────
-        st.markdown("**SMS 수신 전화번호**")
+        # ── 알림 수신 설정 ─────────────────────────────────────────────────
+        st.markdown("**알림 수신 설정**")
         try:
             from notifications import get_notify_config as _gnc, save_notify_config as _snc
             _nc = _gnc()
-            _cur_ph = _nc.get("admin_phone", "")
-            _ph_c1, _ph_c2 = st.columns([4, 1])
-            with _ph_c1:
-                _new_ph = st.text_input(
-                    "SMS 수신번호",
-                    value=_cur_ph,
-                    placeholder="010-xxxx-xxxx",
-                    key="pb_notify_phone_input",
-                    label_visibility="collapsed",
-                )
-            with _ph_c2:
-                if st.button("저장", key="pb_save_phone", use_container_width=True):
-                    _p = _new_ph.strip()
-                    if _p:
-                        _nc["admin_phone"] = _p
-                        if _snc(_nc):
-                            st.toast(f"✅ {_p} 저장됨")
-                            st.rerun()
+
+            _s_c1, _s_c2 = st.columns(2)
+            with _s_c1:
+                st.caption("📱 SMS 수신번호")
+                _ph_c1, _ph_c2 = st.columns([3, 1])
+                with _ph_c1:
+                    _new_ph = st.text_input(
+                        "SMS 수신번호",
+                        value=_nc.get("admin_phone", ""),
+                        placeholder="010-xxxx-xxxx",
+                        key="pb_notify_phone_input",
+                        label_visibility="collapsed",
+                    )
+                with _ph_c2:
+                    if st.button("저장", key="pb_save_phone", use_container_width=True):
+                        _p = _new_ph.strip()
+                        if _p:
+                            _nc["admin_phone"] = _p
+                            if _snc(_nc):
+                                st.toast(f"✅ {_p} 저장됨")
+                                st.rerun()
+                            else:
+                                st.error("저장 실패")
                         else:
-                            st.error("저장 실패")
-                    else:
-                        st.warning("번호를 입력해주세요")
+                            st.warning("번호를 입력해주세요")
+
+            with _s_c2:
+                st.caption("📧 이메일 알림 설정 (네이버 메일)")
+                with st.form("pb_smtp_form"):
+                    _smtp_to   = st.text_input("수신 이메일",   value=_nc.get("smtp_to", ""),       placeholder="받을 이메일 주소")
+                    _smtp_user = st.text_input("발신 네이버ID", value=_nc.get("smtp_user", ""),      placeholder="xxx@naver.com")
+                    _smtp_pw   = st.text_input("네이버 비밀번호", value=_nc.get("smtp_password", ""), type="password", placeholder="네이버 계정 비밀번호")
+                    if st.form_submit_button("이메일 설정 저장", use_container_width=True):
+                        if _smtp_to.strip() and _smtp_user.strip() and _smtp_pw.strip():
+                            _nc.update({
+                                "smtp_to":       _smtp_to.strip(),
+                                "smtp_host":     "smtp.naver.com",
+                                "smtp_port":     "465",
+                                "smtp_user":     _smtp_user.strip(),
+                                "smtp_password": _smtp_pw.strip(),
+                            })
+                            if _snc(_nc):
+                                st.toast("✅ 이메일 설정 저장됨")
+                                st.rerun()
+                            else:
+                                st.error("저장 실패")
+                        else:
+                            st.warning("모든 항목을 입력해주세요")
         except Exception as _pe:
             st.caption(f"오류: {_pe}")
 
