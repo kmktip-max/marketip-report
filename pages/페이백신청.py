@@ -408,7 +408,7 @@ def _render_kakao_form() -> dict:
     }
 
 
-def _handle_submit(plat_key: str, fd: dict):
+def _handle_submit(plat_key: str, fd: dict, admin_phone: str = ""):
     plat_label = next(k for k, v in _PLAT_CFG.items() if v["key"] == plat_key)
     name = fd.get("account_name", "").strip()
     if not name:
@@ -444,15 +444,7 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        from bizmoney_alert import _secret as _bz_secret
-        _phone = (
-            _bz_secret("ADMIN_NOTIFY_PHONE")
-            or _bz_secret("ADMIN_ALERT_PHONE")
-            or st.session_state.get("_admin_notify_phone", "")
-            or os.getenv("ADMIN_NOTIFY_PHONE", "")
-            or os.getenv("ADMIN_ALERT_PHONE", "")
-        )
-        _alert_result = send_admin_application_alert(record, admin_phone=_phone)
+        _alert_result = send_admin_application_alert(record, admin_phone=admin_phone)
         save_alert_history(record, _alert_result)
     except Exception as _e:
         _alert_err = str(_e)
@@ -527,7 +519,7 @@ def _plat_header(plat_name: str) -> None:
 </div>""", unsafe_allow_html=True)
 
 
-def _tab_buttons(plat_key: str, fd: dict) -> None:
+def _tab_buttons(plat_key: str, fd: dict, admin_phone: str = "") -> None:
     c1, c2 = st.columns(2)
     with c1:
         if st.button("취소", use_container_width=True, key=f"dlg_cancel_{plat_key}"):
@@ -539,11 +531,11 @@ def _tab_buttons(plat_key: str, fd: dict) -> None:
             use_container_width=True,
             key=f"dlg_submit_{plat_key}",
         ):
-            _handle_submit(plat_key, fd)
+            _handle_submit(plat_key, fd, admin_phone=admin_phone)
 
 
 @st.dialog("광고 계정 추가", width="large")
-def add_account_dialog():
+def add_account_dialog(admin_phone=""):
     st.markdown(_DIALOG_CSS, unsafe_allow_html=True)
 
     tab_n, tab_d, tab_k = st.tabs(["🟢 네이버", "🟠 당근", "🟡 카카오"])
@@ -552,19 +544,19 @@ def add_account_dialog():
         _plat_header("네이버")
         fd = _render_naver_form()
         st.markdown("<br>", unsafe_allow_html=True)
-        _tab_buttons("naver", fd)
+        _tab_buttons("naver", fd, admin_phone)
 
     with tab_d:
         _plat_header("당근")
         fd = _render_daangn_form()
         st.markdown("<br>", unsafe_allow_html=True)
-        _tab_buttons("daangn", fd)
+        _tab_buttons("daangn", fd, admin_phone)
 
     with tab_k:
         _plat_header("카카오")
         fd = _render_kakao_form()
         st.markdown("<br>", unsafe_allow_html=True)
-        _tab_buttons("kakao", fd)
+        _tab_buttons("kakao", fd, admin_phone)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -837,7 +829,12 @@ else:
 
 # ── 모달 트리거 ───────────────────────────────────────────────────────────────
 if add_btn or apply_btn:
-    add_account_dialog()
+    _pre_phone = (
+        get_secret("ADMIN_NOTIFY_PHONE")
+        or get_secret("ADMIN_ALERT_PHONE")
+        or st.session_state.get("_admin_notify_phone", "")
+    )
+    add_account_dialog(admin_phone=_pre_phone)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
