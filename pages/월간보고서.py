@@ -172,7 +172,7 @@ with tab1:
     else:
         for i, cl in enumerate(clients):
             with st.expander(f"**{cl['name']}** | {cl['email']} | ID: {cl['customer_id']}"):
-                ec1, ec2, ec3 = st.columns([4, 1, 1])
+                ec1, ec2, ec3, ec4 = st.columns([4, 1, 1, 1])
                 with ec1:
                     st.caption(
                         f"등록일: {cl.get('created_at','-')} | "
@@ -190,10 +190,48 @@ with tab1:
                             except Exception as e:
                                 st.error(str(e))
                 with ec3:
+                    if st.button("✏️ 편집", key=f"edit_btn_{i}"):
+                        st.session_state[f"editing_{i}"] = True
+                with ec4:
                     if st.button("🗑️ 삭제", key=f"del_{i}"):
                         clients.pop(i)
                         save_clients(clients)
                         st.rerun()
+
+                if st.session_state.get(f"editing_{i}"):
+                    st.divider()
+                    with st.form(key=f"edit_form_{i}"):
+                        ef1, ef2 = st.columns(2)
+                        with ef1:
+                            e_name   = st.text_input("광고주명",   value=cl.get("name", ""),        key=f"e_name_{i}")
+                            e_email  = st.text_input("수신 이메일", value=cl.get("email", ""),       key=f"e_email_{i}")
+                            e_phone  = st.text_input("카카오 알림 전화번호", value=cl.get("phone", ""),
+                                                     placeholder="010-0000-0000", key=f"e_phone_{i}")
+                        with ef2:
+                            e_apikey = st.text_input("API Access License", value=cl.get("api_key", ""),    key=f"e_api_{i}")
+                            e_secret = st.text_input("Secret Key", value=cl.get("secret_key", ""),
+                                                     type="password", key=f"e_secret_{i}")
+                            e_memo   = st.text_input("메모", value=cl.get("memo", ""),               key=f"e_memo_{i}")
+
+                        esub1, esub2 = st.columns(2)
+                        _save = esub1.form_submit_button("💾 저장", type="primary", use_container_width=True)
+                        _cancel = esub2.form_submit_button("취소", use_container_width=True)
+
+                        if _save:
+                            clients[i].update({
+                                "name":       e_name.strip(),
+                                "email":      e_email.strip(),
+                                "phone":      e_phone.strip(),
+                                "api_key":    e_apikey.strip(),
+                                "secret_key": e_secret.strip(),
+                                "memo":       e_memo,
+                            })
+                            save_clients(clients)
+                            st.session_state.pop(f"editing_{i}", None)
+                            st.rerun()
+                        if _cancel:
+                            st.session_state.pop(f"editing_{i}", None)
+                            st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════════
