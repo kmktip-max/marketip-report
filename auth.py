@@ -31,6 +31,7 @@ PERM_CATALOG = {
     "keyword_tool":     ("pages/키워드도구.py",     "키워드 추출",          "🔍"),
     "creative_tool":    ("pages/광고소재.py",       "광고소재 추출",        "✍️"),
     "landing_analysis": ("pages/상세페이지.py",     "랜딩페이지 기획/분석", "📐"),
+    "bizmoney_alert":   ("pages/비즈머니알림.py",   "비즈머니 알림",        "💰"),
 }
 
 # 구권한키 → 신권한키 호환 테이블
