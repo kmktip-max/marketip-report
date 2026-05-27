@@ -1,33 +1,44 @@
 """
 비즈머니 잔액 감시 & 카카오 알림톡 발송 코어 모듈
-- get_bizmoney_balance()  : 네이버 검색광고 API 잔액 조회
-- send_kakao_alerttalk()  : 알림톡 발송 (solapi provider 기본)
-- run_check()             : 전체 광고주 순회 → 조건 판단 → 발송 → 이력 저장
+
+광고주 정보(customer_id, api_key, secret_key, name)는
+기존 report_engine/storage.py (clients.json) 에서 읽습니다.
+
+비즈머니 알림 전용 설정(기준금액, 연락처, 발송 플래그 등)만
+data/bizmoney_settings.json 에 별도 저장합니다.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
-import base64
 import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 import requests
 
-# ── 상수 ─────────────────────────────────────────────────────────────────────
-KST       = timezone(timedelta(hours=9))
+# ── 상수 ──────────────────────────────────────────────────────────────────────
+KST        = timezone(timedelta(hours=9))
 NAVER_BASE = "https://api.searchad.naver.com"
 
-ROOT      = os.path.dirname(os.path.abspath(__file__))
+ROOT       = os.path.dirname(os.path.abspath(__file__))
 F_SETTINGS = os.path.join(ROOT, "data", "bizmoney_settings.json")
 F_HISTORY  = os.path.join(ROOT, "data", "bizmoney_alert_history.json")
 
 os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
+
+# 알림 설정에서 저장할 필드 목록 (API 키·광고주명 제외)
+_ALERT_FIELDS = (
+    "customer_id", "alert_enabled",
+    "first_alert_amount", "second_alert_amount",
+    "first_alert_sent", "second_alert_sent",
+    "advertiser_phone", "manager_name", "manager_phone",
+    "last_bizmoney_balance", "last_checked_at", "memo",
+)
 
 
 # ── 시크릿 로더 ───────────────────────────────────────────────────────────────
@@ -83,15 +94,112 @@ def _sb_save(key: str, data, path: str):
     _json_save(path, data)
 
 
-# ── 설정 로드/저장 ─────────────────────────────────────────────────────────────
-def load_settings() -> list[dict]:
-    return _sb_load("bizmoney_settings", F_SETTINGS) or []
+# ── 광고주 목록 로드 (기존 저장소 재사용) ─────────────────────────────────────
+def load_clients() -> list[dict]:
+    """
+    월간보고서에서 등록한 광고주 목록을 반환합니다.
+    report_engine/storage.py → 실패 시 clients.json 직접 읽기
+    """
+    try:
+        from report_engine.storage import load_clients as _load
+        result = _load()
+        if result:
+            return result
+    except Exception:
+        pass
+    return _json_load(os.path.join(ROOT, "clients.json"), [])
 
 
-def save_settings(data: list[dict]):
-    _sb_save("bizmoney_settings", data, F_SETTINGS)
+# ── 알림 설정 로드/저장 ────────────────────────────────────────────────────────
+def _load_alert_map() -> dict[str, dict]:
+    """customer_id → 알림 설정 딕셔너리."""
+    items = _sb_load("bizmoney_settings", F_SETTINGS) or []
+    return {s["customer_id"]: s for s in items if "customer_id" in s}
 
 
+def _save_alert_map(alert_map: dict[str, dict]):
+    items = list(alert_map.values())
+    _sb_save("bizmoney_settings", items, F_SETTINGS)
+
+
+def _default_alert(customer_id: str = "") -> dict:
+    return {
+        "customer_id":           customer_id,
+        "alert_enabled":         True,
+        "first_alert_amount":    50000,
+        "second_alert_amount":   0,
+        "first_alert_sent":      False,
+        "second_alert_sent":     False,
+        "advertiser_phone":      "",
+        "manager_name":          "",
+        "manager_phone":         "",
+        "last_bizmoney_balance": None,
+        "last_checked_at":       None,
+        "memo":                  "",
+    }
+
+
+# ── 병합 뷰 (UI/run_check 공통 사용) ──────────────────────────────────────────
+def get_merged_settings() -> list[dict]:
+    """
+    기존 광고주 목록 + 비즈머니 알림 설정 병합.
+    API 키/Customer ID 는 clients.json 에서,
+    알림 설정은 bizmoney_settings.json 에서 읽습니다.
+    """
+    clients   = load_clients()
+    alert_map = _load_alert_map()
+
+    merged = []
+    for c in clients:
+        cid = str(c.get("customer_id", "")).strip()
+        if not cid:
+            continue
+        alert = alert_map.get(cid, _default_alert(cid))
+        merged.append({
+            # 광고주 정보 (읽기 전용, clients.json)
+            "advertiser_name":     c.get("name", ""),
+            "customer_id":         cid,
+            "api_access_license":  c.get("api_key", ""),
+            "secret_key":          c.get("secret_key", ""),
+            "client_email":        c.get("email", ""),
+            # 알림 설정 (편집 가능, bizmoney_settings.json)
+            "alert_enabled":          alert.get("alert_enabled",         True),
+            "first_alert_amount":     alert.get("first_alert_amount",    50000),
+            "second_alert_amount":    alert.get("second_alert_amount",   0),
+            "first_alert_sent":       alert.get("first_alert_sent",      False),
+            "second_alert_sent":      alert.get("second_alert_sent",     False),
+            "advertiser_phone":       alert.get("advertiser_phone",      ""),
+            "manager_name":           alert.get("manager_name",          ""),
+            "manager_phone":          alert.get("manager_phone",         ""),
+            "last_bizmoney_balance":  alert.get("last_bizmoney_balance", None),
+            "last_checked_at":        alert.get("last_checked_at",       None),
+            "memo":                   alert.get("memo",                  ""),
+        })
+    return merged
+
+
+def save_from_merged(merged_list: list[dict]):
+    """병합된 설정 리스트에서 알림 설정만 추출해 저장합니다."""
+    alert_map = {}
+    for s in merged_list:
+        cid = s.get("customer_id", "")
+        if not cid:
+            continue
+        alert_map[cid] = {f: s.get(f) for f in _ALERT_FIELDS}
+    _save_alert_map(alert_map)
+
+
+def save_one_alert(s: dict):
+    """단일 광고주 알림 설정만 저장합니다 (병합 뷰의 일부)."""
+    cid = s.get("customer_id", "")
+    if not cid:
+        return
+    alert_map = _load_alert_map()
+    alert_map[cid] = {f: s.get(f) for f in _ALERT_FIELDS}
+    _save_alert_map(alert_map)
+
+
+# ── 발송 이력 ─────────────────────────────────────────────────────────────────
 def load_history() -> list[dict]:
     return _sb_load("bizmoney_alert_history", F_HISTORY) or []
 
@@ -100,28 +208,7 @@ def save_history(data: list[dict]):
     _sb_save("bizmoney_alert_history", data, F_HISTORY)
 
 
-def default_setting(advertiser_name: str = "", customer_id: str = "") -> dict:
-    return {
-        "id":                  str(uuid.uuid4())[:8],
-        "advertiser_name":     advertiser_name,
-        "customer_id":         customer_id,
-        "api_access_license":  "",
-        "secret_key":          "",
-        "manager_name":        "",
-        "manager_phone":       "",
-        "advertiser_phone":    "",
-        "alert_enabled":       True,
-        "first_alert_amount":  50000,
-        "second_alert_amount": 0,
-        "first_alert_sent":    False,
-        "second_alert_sent":   False,
-        "last_bizmoney_balance": None,
-        "last_checked_at":     None,
-        "memo":                "",
-    }
-
-
-# ── 네이버 API 인증 헬퍼 ──────────────────────────────────────────────────────
+# ── 네이버 API 인증 ───────────────────────────────────────────────────────────
 def _naver_sign(timestamp: str, method: str, path: str, secret_key: str) -> str:
     msg = f"{timestamp}.{method}.{path}"
     return base64.b64encode(
@@ -147,9 +234,9 @@ def get_bizmoney_balance(customer_id: str,
                          secret_key: str) -> dict:
     """
     네이버 검색광고 API로 비즈머니 잔액을 조회합니다.
-    반환: {"customer_id", "balance", "checked_at", "status"} 또는 에러 포함
+    반환: {"customer_id", "balance", "checked_at", "status"}
     """
-    path = "/billing/account/balance/bizmoney"
+    path       = "/billing/account/balance/bizmoney"
     checked_at = datetime.now(KST).isoformat()
 
     if not api_access_license or not secret_key or not customer_id:
@@ -165,65 +252,40 @@ def get_bizmoney_balance(customer_id: str,
         headers = _naver_headers(
             "GET", path, api_access_license, secret_key, customer_id
         )
-        resp = requests.get(
-            NAVER_BASE + path, headers=headers, timeout=15
-        )
+        resp = requests.get(NAVER_BASE + path, headers=headers, timeout=15)
 
         if resp.status_code == 401:
-            return {
-                "customer_id": customer_id,
-                "balance":     None,
-                "checked_at":  checked_at,
-                "status":      "failed",
-                "error":       "인증 실패 (401) — API 키 또는 서명 오류",
-            }
+            return {"customer_id": customer_id, "balance": None,
+                    "checked_at": checked_at, "status": "failed",
+                    "error": "인증 실패 (401) — API 키 또는 서명 오류"}
         if resp.status_code == 403:
-            return {
-                "customer_id": customer_id,
-                "balance":     None,
-                "checked_at":  checked_at,
-                "status":      "failed",
-                "error":       "권한 없음 (403) — Customer ID 확인 필요",
-            }
+            return {"customer_id": customer_id, "balance": None,
+                    "checked_at": checked_at, "status": "failed",
+                    "error": "권한 없음 (403) — Customer ID 확인 필요"}
 
         resp.raise_for_status()
-        data = resp.json()
-
-        # 응답 구조: {"bizmoney": {"availBudgetAmt": 123456, ...}}
+        data     = resp.json()
         bizmoney = data.get("bizmoney") or data
-        balance = (
+        balance  = (
             bizmoney.get("availBudgetAmt")
             or bizmoney.get("balance")
             or bizmoney.get("cashBalance")
             or 0
         )
-
-        return {
-            "customer_id": customer_id,
-            "balance":     int(balance),
-            "checked_at":  checked_at,
-            "status":      "success",
-        }
+        return {"customer_id": customer_id, "balance": int(balance),
+                "checked_at": checked_at, "status": "success"}
 
     except requests.HTTPError as e:
-        return {
-            "customer_id": customer_id,
-            "balance":     None,
-            "checked_at":  checked_at,
-            "status":      "failed",
-            "error":       f"HTTP {e.response.status_code}: {e.response.text[:200]}",
-        }
+        return {"customer_id": customer_id, "balance": None,
+                "checked_at": checked_at, "status": "failed",
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
     except Exception as e:
-        return {
-            "customer_id": customer_id,
-            "balance":     None,
-            "checked_at":  checked_at,
-            "status":      "failed",
-            "error":       str(e)[:300],
-        }
+        return {"customer_id": customer_id, "balance": None,
+                "checked_at": checked_at, "status": "failed",
+                "error": str(e)[:300]}
 
 
-# ── 카카오 알림톡 발송 (provider 추상화) ─────────────────────────────────────
+# ── 카카오 알림톡 ─────────────────────────────────────────────────────────────
 def send_kakao_alerttalk(
     phone: str,
     template_code: str,
@@ -231,36 +293,18 @@ def send_kakao_alerttalk(
     provider: str = "solapi",
     dry_run: bool = False,
 ) -> dict:
-    """
-    카카오 알림톡 발송.
-    dry_run=True 이면 실제 발송 없이 결과만 반환.
-
-    필요한 환경변수/secrets:
-      SOLAPI_API_KEY, SOLAPI_API_SECRET, SOLAPI_SENDER_ID  (provider=solapi)
-    """
     if dry_run:
-        return {
-            "status":   "dry_run",
-            "phone":    phone,
-            "template": template_code,
-            "vars":     variables,
-            "provider": provider,
-        }
-
+        return {"status": "dry_run", "phone": phone,
+                "template": template_code, "vars": variables}
     if provider == "solapi":
         return _send_solapi(phone, template_code, variables)
-    else:
-        return {
-            "status": "failed",
-            "error":  f"지원하지 않는 provider: {provider}",
-        }
+    return {"status": "failed", "error": f"지원하지 않는 provider: {provider}"}
 
 
 def _send_solapi(phone: str, template_code: str, variables: dict) -> dict:
-    """Solapi(구 메시지허브) 알림톡 발송."""
     api_key    = _secret("SOLAPI_API_KEY")
     api_secret = _secret("SOLAPI_API_SECRET")
-    sender_id  = _secret("SOLAPI_SENDER_ID")   # 카카오채널 발신자ID
+    sender_id  = _secret("SOLAPI_SENDER_ID")
 
     if not api_key or not api_secret or not sender_id:
         missing = [k for k, v in {
@@ -268,18 +312,13 @@ def _send_solapi(phone: str, template_code: str, variables: dict) -> dict:
             "SOLAPI_API_SECRET": api_secret,
             "SOLAPI_SENDER_ID":  sender_id,
         }.items() if not v]
-        return {
-            "status": "skipped",
-            "error":  f"알림톡 설정 없음 — 미설정 키: {', '.join(missing)}",
-        }
+        return {"status": "skipped",
+                "error": f"알림톡 설정 없음 — 미설정 키: {', '.join(missing)}"}
 
-    # Solapi HMAC 인증
     date_str  = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
     salt      = str(uuid.uuid4()).replace("-", "")
     signature = hmac.new(
-        api_secret.encode(),
-        f"{date_str}{salt}".encode(),
-        hashlib.sha256,
+        api_secret.encode(), f"{date_str}{salt}".encode(), hashlib.sha256
     ).hexdigest()
 
     headers = {
@@ -289,38 +328,27 @@ def _send_solapi(phone: str, template_code: str, variables: dict) -> dict:
         ),
         "Content-Type": "application/json; charset=UTF-8",
     }
-
-    # 변수 → 알림톡 치환자 형식 변환
-    content = template_code
-    for k, v in variables.items():
-        content = content.replace(f"#{{{k}}}", str(v))
-
     payload = {
         "message": {
-            "to":          phone.replace("-", ""),
-            "from":        sender_id,
+            "to":   phone.replace("-", ""),
+            "from": sender_id,
             "kakaoOptions": {
-                "pfId":        sender_id,
-                "templateId":  template_code,
-                "variables":   {f"#{{{k}}}": str(v) for k, v in variables.items()},
+                "pfId":       sender_id,
+                "templateId": template_code,
+                "variables":  {f"#{{{k}}}": str(v) for k, v in variables.items()},
             },
         }
     }
-
     try:
         resp = requests.post(
             "https://api.solapi.com/messages/v4/send",
-            headers=headers,
-            json=payload,
-            timeout=15,
+            headers=headers, json=payload, timeout=15,
         )
         resp.raise_for_status()
         return {"status": "success", "response": resp.json()}
     except requests.HTTPError as e:
-        return {
-            "status": "failed",
-            "error":  f"HTTP {e.response.status_code}: {e.response.text[:300]}",
-        }
+        return {"status": "failed",
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:300]}"}
     except Exception as e:
         return {"status": "failed", "error": str(e)[:300]}
 
@@ -333,7 +361,6 @@ TEMPLATE_FIRST = (
     "기준금액: #{기준금액}원\n"
     "담당자: #{담당자명} (#{문의연락처})"
 )
-
 TEMPLATE_DEPLETED = (
     "[마케팁 광고비 소진 안내]\n"
     "#{광고주명}님의 광고 계정 비즈머니가 소진되었습니다.\n"
@@ -341,7 +368,6 @@ TEMPLATE_DEPLETED = (
     "현재 잔액: #{현재잔액}원\n"
     "담당자: #{담당자명} (#{문의연락처})"
 )
-
 TEMPLATE_CODE_FIRST    = "BM_ALERT_FIRST"
 TEMPLATE_CODE_DEPLETED = "BM_ALERT_DEPLETED"
 
@@ -357,11 +383,8 @@ def _build_vars(s: dict, balance: int, threshold: int) -> dict:
 
 
 # ── 발송 이력 기록 ─────────────────────────────────────────────────────────────
-def _record_history(
-    s: dict, phone: str, alert_type: str,
-    balance: int, threshold: int,
-    result: dict,
-):
+def _record_history(s: dict, phone: str, alert_type: str,
+                    balance: int, threshold: int, result: dict):
     history = load_history()
     history.append({
         "id":               str(uuid.uuid4())[:12],
@@ -376,13 +399,11 @@ def _record_history(
         "provider":         result.get("provider", "solapi"),
         "error_message":    result.get("error", ""),
     })
-    # 최근 500건만 유지
     if len(history) > 500:
         history = history[-500:]
     save_history(history)
 
 
-# ── 중복 발송 체크 ─────────────────────────────────────────────────────────────
 def _already_sent_today(history: list[dict],
                          customer_id: str, alert_type: str) -> bool:
     today = datetime.now(KST).strftime("%Y-%m-%d")
@@ -395,22 +416,15 @@ def _already_sent_today(history: list[dict],
     return False
 
 
-# ── 단일 광고주 알림 처리 ──────────────────────────────────────────────────────
+# ── 단일 광고주 처리 ──────────────────────────────────────────────────────────
 def process_one(s: dict, dry_run: bool = False) -> dict:
-    """
-    한 광고주의 잔액을 조회하고 조건에 따라 알림을 발송합니다.
-    반환: {"customer_id", "balance", "actions": [...]}
-    """
+    """잔액 조회 → 알림 조건 판단 → 발송. s 는 get_merged_settings() 의 항목."""
     cid     = s.get("customer_id", "")
     actions = []
 
-    # 잔액 조회
-    result = get_bizmoney_balance(
-        cid,
-        s.get("api_access_license", ""),
-        s.get("secret_key", ""),
+    result  = get_bizmoney_balance(
+        cid, s.get("api_access_license", ""), s.get("secret_key", "")
     )
-
     balance = result.get("balance")
     actions.append({
         "type":   "balance_check",
@@ -421,74 +435,58 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
     if result["status"] != "success" or balance is None:
         return {"customer_id": cid, "balance": None, "actions": actions}
 
-    history = load_history()
-
-    # 잔액 충전 → 알림 플래그 리셋
+    history    = load_history()
     first_amt  = int(s.get("first_alert_amount",  50000))
     second_amt = int(s.get("second_alert_amount", 0))
 
+    # 잔액 충전 감지 → 플래그 리셋
     if balance > first_amt:
         if s.get("first_alert_sent") or s.get("second_alert_sent"):
             s["first_alert_sent"]  = False
             s["second_alert_sent"] = False
             actions.append({"type": "reset", "detail": "잔액 충전 감지 → 알림 플래그 리셋"})
 
-    phones = []
-    if s.get("advertiser_phone"): phones.append(s["advertiser_phone"])
-    if s.get("manager_phone"):    phones.append(s["manager_phone"])
-    # 중복 번호 제거
-    phones = list(dict.fromkeys(phones))
+    phones = list(dict.fromkeys(filter(None, [
+        s.get("advertiser_phone"), s.get("manager_phone")
+    ])))
 
     def _send(alert_type: str, template_code: str, threshold: int):
         for phone in phones:
             if _already_sent_today(history, cid, alert_type):
-                actions.append({
-                    "type": alert_type, "status": "skipped",
-                    "detail": f"{phone} — 오늘 이미 발송됨",
-                })
+                actions.append({"type": alert_type, "status": "skipped",
+                                 "detail": f"{phone} — 오늘 이미 발송됨"})
                 continue
-            vars_ = _build_vars(s, balance, threshold)
-            r = send_kakao_alerttalk(phone, template_code, vars_, dry_run=dry_run)
-            actions.append({
-                "type": alert_type, "status": r.get("status"),
-                "detail": r.get("error", f"{phone} 발송"),
-            })
+            r = send_kakao_alerttalk(
+                phone, template_code, _build_vars(s, balance, threshold),
+                dry_run=dry_run
+            )
+            actions.append({"type": alert_type, "status": r.get("status"),
+                             "detail": r.get("error", f"{phone} 발송")})
             _record_history(s, phone, alert_type, balance, threshold, r)
 
-    # 2차 알림 (소진)
     if balance <= second_amt and not s.get("second_alert_sent"):
         _send("depleted", TEMPLATE_CODE_DEPLETED, second_amt)
         s["second_alert_sent"] = True
-        s["first_alert_sent"]  = True  # 1차도 함께 처리된 것으로 표시
-
-    # 1차 알림 (경고)
+        s["first_alert_sent"]  = True
     elif balance <= first_amt and not s.get("first_alert_sent"):
         _send("first", TEMPLATE_CODE_FIRST, first_amt)
         s["first_alert_sent"] = True
 
-    # 잔액·시간 업데이트
     s["last_bizmoney_balance"] = balance
     s["last_checked_at"]       = result["checked_at"]
-
     return {"customer_id": cid, "balance": balance, "actions": actions}
 
 
 # ── 전체 실행 ──────────────────────────────────────────────────────────────────
 def run_check(dry_run: bool = False) -> list[dict]:
-    """
-    등록된 모든 광고주를 순회해 잔액 조회 및 알림 발송.
-    settings를 업데이트 후 저장합니다.
-    """
-    settings = load_settings()
-    results  = []
-
-    for s in settings:
+    """등록된 모든 광고주 순회 → 잔액 조회 → 알림 발송 → 설정 저장."""
+    merged  = get_merged_settings()
+    results = []
+    for s in merged:
         if not s.get("alert_enabled", True):
             continue
         if not s.get("api_access_license") or not s.get("secret_key"):
             continue
-        res = process_one(s, dry_run=dry_run)
-        results.append(res)
-
-    save_settings(settings)
+        results.append(process_one(s, dry_run=dry_run))
+    save_from_merged(merged)
     return results
