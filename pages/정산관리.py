@@ -1949,7 +1949,7 @@ with t_pnl:
 
         c2 = st.columns(4)
         c2[0].markdown(_kpi_card("총 수익",            w(gross_total_profit)),            unsafe_allow_html=True)
-        c2[1].markdown(_kpi_card("총 수익 세후 추정",  w(gross_total_profit_after_tax)),  unsafe_allow_html=True)
+        c2[1].markdown(_kpi_card("총 수익 세후 추정 (종소세80%)",  w(gross_total_profit_after_tax)),  unsafe_allow_html=True)
         c2[2].markdown(_kpi_card("기타비용 합계",       exp_val, "negative"),              unsafe_allow_html=True)
         c2[3].markdown(_kpi_card("기타비용 제외 금액",  w(final_net_profit_after_tax),
                                  "primary", badge="세후 추정"),                            unsafe_allow_html=True)
