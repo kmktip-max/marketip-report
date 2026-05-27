@@ -1369,7 +1369,13 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
 
     # ── matplotlib 한국어 폰트 ──
     try:
-        matplotlib.rc("font", family="Malgun Gothic")
+        import matplotlib.font_manager as _fm
+        _mpl_font = r"C:\Windows\Fonts\malgun.ttf"
+        if os.path.exists(_mpl_font):
+            _fm.fontManager.addfont(_mpl_font)
+            matplotlib.rc("font", family="Malgun Gothic")
+        else:
+            matplotlib.rc("font", family="Malgun Gothic")
         matplotlib.rc("axes", unicode_minus=False)
     except Exception:
         pass
@@ -1437,24 +1443,35 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
         plt.tight_layout(pad=0.8)
         return _chart_tmp(fig)
 
-    # ── 한국어 FPDF 폰트 다운로드 (Regular + Bold) ──
-    font_path = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
-    if not os.path.exists(font_path):
-        try:
-            urllib.request.urlretrieve(
-                "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
-                font_path)
-        except Exception:
-            font_path = None
+    # ── 한국어 FPDF 폰트 로드 (로컬 우선, 없으면 다운로드) ──
+    _WIN_FONT   = r"C:\Windows\Fonts\malgun.ttf"
+    _WIN_BOLD   = r"C:\Windows\Fonts\malgunbd.ttf"
+    _NANUM_REG  = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
+    _NANUM_BOLD = os.path.join(tempfile.gettempdir(), "NanumGothicBold.ttf")
 
-    font_bold_path = os.path.join(tempfile.gettempdir(), "NanumGothicBold.ttf")
-    if not os.path.exists(font_bold_path):
-        try:
-            urllib.request.urlretrieve(
-                "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf",
-                font_bold_path)
-        except Exception:
-            font_bold_path = None
+    if os.path.exists(_WIN_FONT):
+        font_path = _WIN_FONT
+    else:
+        if not os.path.exists(_NANUM_REG):
+            try:
+                urllib.request.urlretrieve(
+                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
+                    _NANUM_REG)
+            except Exception:
+                _NANUM_REG = None
+        font_path = _NANUM_REG if _NANUM_REG and os.path.exists(_NANUM_REG) else None
+
+    if os.path.exists(_WIN_BOLD):
+        font_bold_path = _WIN_BOLD
+    else:
+        if not os.path.exists(_NANUM_BOLD):
+            try:
+                urllib.request.urlretrieve(
+                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf",
+                    _NANUM_BOLD)
+            except Exception:
+                _NANUM_BOLD = None
+        font_bold_path = _NANUM_BOLD if _NANUM_BOLD and os.path.exists(_NANUM_BOLD) else None
 
     # ════════════════════════════════════════════════
     # 데이터 검증 & 정제

@@ -1,5 +1,4 @@
 import streamlit as st
-import json
 import os
 import sys
 import uuid
@@ -10,23 +9,18 @@ sys.path.insert(0, ROOT)
 
 from components.style import PAYBACK_CSS, badge, STATUS_LIST
 
-DATA_PATH = os.path.join(ROOT, "rebate_accounts.json")
+# ── Storage (Supabase) ────────────────────────────────────────────────────────
+def _get_sb():
+    from supabase import create_client
+    return create_client(get_secret("SUPABASE_URL"), get_secret("SUPABASE_KEY"))
 
 
-# ── Storage ───────────────────────────────────────────────────────────────────
 def load_accounts():
     try:
-        if os.path.exists(DATA_PATH):
-            with open(DATA_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+        res = _get_sb().table("rebate_accounts").select("*").order("created_at", desc=True).execute()
+        return res.data or []
     except Exception:
-        pass
-    return []
-
-
-def save_accounts(accounts):
-    with open(DATA_PATH, "w", encoding="utf-8") as f:
-        json.dump(accounts, f, ensure_ascii=False, indent=2)
+        return []
 
 
 # ── Secret helper ─────────────────────────────────────────────────────────────
@@ -426,10 +420,41 @@ def _handle_submit(plat_key: str, fd: dict):
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     record.update({k: (v.strip() if isinstance(v, str) else v) for k, v in fd.items()})
-    accs = load_accounts()
-    accs.append(record)
-    save_accounts(accs)
+    _get_sb().table("rebate_accounts").insert(record).execute()
+
+    # ── 관리자 SMS 알림 (실패해도 신청은 정상 처리) ──────────────────────────
+    _sms_result = None
+    try:
+        from bizmoney_alert import send_sms_notification, _secret
+        admin_phone = _secret("ADMIN_NOTIFY_PHONE")
+        if admin_phone:
+            cid     = str(fd.get("customer_id", "")).strip()
+            manager = str(fd.get("manager_name", "")).strip()
+            budget  = str(fd.get("monthly_budget", "")).strip()
+            lines = [
+                f"[마케팁] 페이백 연동 신청",
+                f"광고주: {name}",
+                f"매체: {plat_label}",
+            ]
+            if manager: lines.append(f"담당자: {manager}")
+            if cid:     lines.append(f"CID: {cid}")
+            if budget:  lines.append(f"월예산: {budget}")
+            lines.append(record["created_at"])
+            _sms_result = send_sms_notification(admin_phone, "\n".join(lines))
+        else:
+            _sms_result = {"status": "skipped", "error": "ADMIN_NOTIFY_PHONE 미설정"}
+    except Exception as e:
+        _sms_result = {"status": "failed", "error": str(e)}
+
     st.success("✅ 연동 신청이 완료되었습니다. 확인 후 연락드리겠습니다!")
+
+    # 관리자에게만 SMS 발송 결과 표시
+    if st.session_state.get("auth_type") == "admin" and _sms_result:
+        _st = _sms_result.get("status", "")
+        if _st == "success":
+            st.caption(f"📱 관리자 SMS 발송 완료")
+        else:
+            st.caption(f"📱 SMS: {_sms_result.get('error', _st)}")
     st.rerun()
 
 
@@ -752,8 +777,7 @@ with st.expander("🔐 관리자 — 상태 관리"):
                         )
                     with c3:
                         if st.button("저장", key=f"pb_save_{acc['id']}", use_container_width=True):
-                            all_accs[i]["status"] = new_status
-                            save_accounts(all_accs)
+                            _get_sb().table("rebate_accounts").update({"status": new_status}).eq("id", acc["id"]).execute()
                             st.toast(f"✅ {acc['account_name']} 상태 변경 완료")
                             st.rerun()
 

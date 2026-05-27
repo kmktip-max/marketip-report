@@ -46,13 +46,46 @@ SIDEBAR_CSS = """
     overflow: hidden !important;
 }
 
-/* ══ 이미지 확대/풀스크린 버튼 제거 ════════════════════════════════════ */
+/* ══ 이미지 확대/풀스크린 완전 제거 ════════════════════════════════════ */
 button[title="View fullscreen"],
+button[aria-label="View fullscreen"],
 [data-testid="stImageContainer"] button,
 [data-testid="stImage"] button,
 [data-testid="StyledFullScreenButton"],
+[data-testid="stFullScreenButton"],
+button[data-testid="StyledFullScreenButton"],
+button[data-testid="stFullScreenButton"],
 [data-testid="stBaseButton-headerNoPadding"],
-button[aria-label="View fullscreen"] { display: none !important; }
+.stImage button {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* 사이드바 이미지 fullscreen 버튼 — sidebar 범위 한정 */
+section[data-testid="stSidebar"] [data-testid="stImage"] button,
+section[data-testid="stSidebar"] [data-testid="StyledFullScreenButton"],
+section[data-testid="stSidebar"] [data-testid="stFullScreenButton"],
+section[data-testid="stSidebar"] button[title="View fullscreen"],
+section[data-testid="stSidebar"] button[aria-label="View fullscreen"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* zoom cursor / click 이벤트 차단 */
+[data-testid="stImage"] img,
+[data-testid="stImageContainer"] img {
+    pointer-events: none !important;
+    cursor: default !important;
+}
+[data-testid="stImage"]:hover img,
+[data-testid="stImageContainer"]:hover img {
+    transform: none !important;
+    opacity: 1 !important;
+}
 
 /* ══ 앱 전체 배경 ══════════════════════════════════════════════════════ */
 [data-testid="stAppViewContainer"] > section.main,
@@ -88,7 +121,12 @@ button[aria-label="View fullscreen"] { display: none !important; }
     border-bottom: 1px solid #E5E8ED;
     margin: 0;
 }
-.sb-logo-wrap img { display: block; }
+.sb-logo-wrap img {
+    display: block;
+    pointer-events: none !important;
+    cursor: default !important;
+    user-select: none !important;
+}
 .sb-logo-wrap button,
 .sb-logo-wrap [data-testid="stImageContainer"] > div > button { display: none !important; }
 

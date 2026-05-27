@@ -228,15 +228,22 @@ def _naver_headers(method: str, path: str,
     }
 
 
+# ── SOLAPI 설정 상태 조회 (값 미노출) ─────────────────────────────────────────
+def get_solapi_config_status() -> dict[str, bool]:
+    """SOLAPI 환경변수 설정 여부를 반환합니다. 값은 노출하지 않습니다."""
+    keys = ("SOLAPI_API_KEY", "SOLAPI_API_SECRET", "SOLAPI_SENDER_ID", "SOLAPI_KAKAO_PF_ID")
+    return {k: bool(_secret(k)) for k in keys}
+
+
 # ── 비즈머니 잔액 조회 ─────────────────────────────────────────────────────────
 def get_bizmoney_balance(customer_id: str,
                          api_access_license: str,
                          secret_key: str) -> dict:
     """
     네이버 검색광고 API로 비즈머니 잔액을 조회합니다.
-    반환: {"customer_id", "balance", "checked_at", "status"}
+    반환: {"customer_id", "balance", "checked_at", "status", "endpoint", "status_code"}
     """
-    path       = "/billing/account/balance/bizmoney"
+    path       = "/billing/bizmoney"
     checked_at = datetime.now(KST).isoformat()
 
     if not api_access_license or not secret_key or not customer_id:
@@ -246,6 +253,7 @@ def get_bizmoney_balance(customer_id: str,
             "checked_at":  checked_at,
             "status":      "failed",
             "error":       "API 키 또는 Customer ID 누락",
+            "endpoint":    path,
         }
 
     try:
@@ -253,36 +261,96 @@ def get_bizmoney_balance(customer_id: str,
             "GET", path, api_access_license, secret_key, customer_id
         )
         resp = requests.get(NAVER_BASE + path, headers=headers, timeout=15)
+        sc   = resp.status_code
+        body = resp.text[:400] if resp.text else "(empty)"
 
-        if resp.status_code == 401:
+        if sc == 401:
             return {"customer_id": customer_id, "balance": None,
                     "checked_at": checked_at, "status": "failed",
-                    "error": "인증 실패 (401) — API 키 또는 서명 오류"}
-        if resp.status_code == 403:
+                    "status_code": 401, "endpoint": path,
+                    "error": f"인증 실패 (401) — API 키 또는 서명 오류\n응답: {body}"}
+        if sc == 403:
             return {"customer_id": customer_id, "balance": None,
                     "checked_at": checked_at, "status": "failed",
-                    "error": "권한 없음 (403) — Customer ID 확인 필요"}
+                    "status_code": 403, "endpoint": path,
+                    "error": f"권한 없음 (403) — Customer ID 확인 필요\n응답: {body}"}
+        if sc == 404:
+            return {"customer_id": customer_id, "balance": None,
+                    "checked_at": checked_at, "status": "failed",
+                    "status_code": 404, "endpoint": path,
+                    "error": (
+                        f"경로 없음 (404) — 해당 계정에서 잔액 조회 API를 지원하지 않거나 "
+                        f"경로가 잘못되었을 수 있습니다.\n"
+                        f"호출 경로: GET {NAVER_BASE}{path}\n"
+                        f"응답: {body}"
+                    )}
 
         resp.raise_for_status()
-        data     = resp.json()
-        bizmoney = data.get("bizmoney") or data
-        balance  = (
-            bizmoney.get("availBudgetAmt")
-            or bizmoney.get("balance")
-            or bizmoney.get("cashBalance")
-            or 0
-        )
+        data    = resp.json()
+        # 응답: {"customerId":..., "bizmoney":752.87, "budgetLock":..., ...}
+        balance = data.get("bizmoney") or 0
         return {"customer_id": customer_id, "balance": int(balance),
-                "checked_at": checked_at, "status": "success"}
+                "checked_at": checked_at, "status": "success",
+                "status_code": 200, "endpoint": path}
 
     except requests.HTTPError as e:
+        sc   = e.response.status_code
+        body = e.response.text[:400] if e.response.text else "(empty)"
         return {"customer_id": customer_id, "balance": None,
                 "checked_at": checked_at, "status": "failed",
-                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+                "status_code": sc, "endpoint": path,
+                "error": f"HTTP {sc}: {body}"}
     except Exception as e:
         return {"customer_id": customer_id, "balance": None,
                 "checked_at": checked_at, "status": "failed",
+                "endpoint": path,
                 "error": str(e)[:300]}
+
+
+# ── 단순 SMS 발송 (템플릿 불필요) ────────────────────────────────────────────
+def send_sms_notification(to_phone: str, text: str) -> dict:
+    """관리자 SMS 알림. 알림톡 템플릿 없이 즉시 사용 가능."""
+    api_key    = _secret("SOLAPI_API_KEY")
+    api_secret = _secret("SOLAPI_API_SECRET")
+    sender_id  = _secret("SOLAPI_SENDER_ID")
+
+    if not api_key or not api_secret or not sender_id:
+        return {"status": "skipped", "error": "SOLAPI 미설정"}
+    if not to_phone:
+        return {"status": "skipped", "error": "수신번호 없음"}
+
+    date_str  = datetime.now(KST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
+    salt      = str(uuid.uuid4()).replace("-", "")
+    signature = hmac.new(
+        api_secret.encode(), f"{date_str}{salt}".encode(), hashlib.sha256
+    ).hexdigest()
+
+    headers = {
+        "Authorization": (
+            f'HMAC-SHA256 apiKey={api_key}, date={date_str}, '
+            f'salt={salt}, signature={signature}'
+        ),
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "message": {
+            "to":   to_phone.replace("-", ""),
+            "from": sender_id.replace("-", ""),
+            "text": text,
+        }
+    }
+    try:
+        resp = requests.post(
+            "https://api.solapi.com/messages/v4/send",
+            headers=headers, json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+        return {"status": "success", "response": resp.json()}
+    except requests.HTTPError as e:
+        return {"status": "failed",
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)[:200]}
 
 
 # ── 카카오 알림톡 ─────────────────────────────────────────────────────────────
@@ -305,13 +373,12 @@ def _send_solapi(phone: str, template_code: str, variables: dict) -> dict:
     api_key    = _secret("SOLAPI_API_KEY")
     api_secret = _secret("SOLAPI_API_SECRET")
     sender_id  = _secret("SOLAPI_SENDER_ID")
+    pf_id      = _secret("SOLAPI_KAKAO_PF_ID")   # 카카오채널 프로필 ID
 
-    if not api_key or not api_secret or not sender_id:
-        missing = [k for k, v in {
-            "SOLAPI_API_KEY":    api_key,
-            "SOLAPI_API_SECRET": api_secret,
-            "SOLAPI_SENDER_ID":  sender_id,
-        }.items() if not v]
+    required = {"SOLAPI_API_KEY": api_key, "SOLAPI_API_SECRET": api_secret,
+                "SOLAPI_SENDER_ID": sender_id}
+    missing  = [k for k, v in required.items() if not v]
+    if missing:
         return {"status": "skipped",
                 "error": f"알림톡 설정 없음 — 미설정 키: {', '.join(missing)}"}
 
@@ -328,17 +395,30 @@ def _send_solapi(phone: str, template_code: str, variables: dict) -> dict:
         ),
         "Content-Type": "application/json; charset=UTF-8",
     }
-    payload = {
-        "message": {
+
+    # pfId 없으면 SMS로 fallback
+    if pf_id:
+        msg = {
             "to":   phone.replace("-", ""),
             "from": sender_id,
             "kakaoOptions": {
-                "pfId":       sender_id,
+                "pfId":       pf_id,
                 "templateId": template_code,
                 "variables":  {f"#{{{k}}}": str(v) for k, v in variables.items()},
             },
         }
-    }
+    else:
+        # 알림톡 채널 미설정 → SMS 발송
+        text = template_code  # 호출 측에서 실제 메시지 본문을 넘겨야 함
+        for k, v in variables.items():
+            text = text.replace(f"#{{{k}}}", str(v))
+        msg = {
+            "to":   phone.replace("-", ""),
+            "from": sender_id,
+            "text": text,
+        }
+
+    payload = {"message": msg}
     try:
         resp = requests.post(
             "https://api.solapi.com/messages/v4/send",

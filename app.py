@@ -288,8 +288,9 @@ with st.sidebar:
 <div style="padding:12px 20px 8px;margin-top:8px;">
   <hr style="border:none;border-top:1px solid #E5E8ED;margin:0 0 10px;">
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/정산관리.py", label="⚙️  정산관리", use_container_width=True)
-        st.page_link("pages/계정관리.py", label="👤  계정관리", use_container_width=True)
+        st.page_link("pages/정산관리.py",     label="⚙️  정산관리",      use_container_width=True)
+        st.page_link("pages/비즈머니알림.py", label="💰  비즈머니 알림", use_container_width=True)
+        st.page_link("pages/계정관리.py",     label="👤  계정관리",      use_container_width=True)
 
     elif auth_type == "client":
         client_info = st.session_state.get("auth_client", {})

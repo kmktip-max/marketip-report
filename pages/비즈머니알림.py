@@ -15,9 +15,11 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bizmoney_alert import (
+    NAVER_BASE,
     get_merged_settings, save_from_merged, save_one_alert,
     load_history, save_history,
     get_bizmoney_balance,
+    get_solapi_config_status,
     send_kakao_alerttalk,
     TEMPLATE_CODE_FIRST, TEMPLATE_CODE_DEPLETED,
     TEMPLATE_FIRST, TEMPLATE_DEPLETED,
@@ -59,7 +61,7 @@ t_status, t_alert_cfg, t_history, t_test = st.tabs([
     "📊 잔액 현황",
     "⚙️ 알림 설정",
     "📋 발송 이력",
-    "🧪 테스트 발송",
+    "🧪 테스트 도구",
 ])
 
 
@@ -86,14 +88,14 @@ with t_status:
             _reload()
 
     # 요약 메트릭
-    total  = len(settings)
+    total   = len(settings)
     has_bal = [s for s in settings if s.get("last_bizmoney_balance") is not None]
-    normal = sum(1 for s in has_bal
-                 if s["last_bizmoney_balance"] > int(s.get("first_alert_amount", 50000)))
-    warn   = sum(1 for s in has_bal
-                 if 0 < s["last_bizmoney_balance"] <= int(s.get("first_alert_amount", 50000)))
-    empty  = sum(1 for s in has_bal
-                 if s["last_bizmoney_balance"] <= int(s.get("second_alert_amount", 0)))
+    normal  = sum(1 for s in has_bal
+                  if s["last_bizmoney_balance"] > int(s.get("first_alert_amount", 50000)))
+    warn    = sum(1 for s in has_bal
+                  if 0 < s["last_bizmoney_balance"] <= int(s.get("first_alert_amount", 50000)))
+    empty   = sum(1 for s in has_bal
+                  if s["last_bizmoney_balance"] <= int(s.get("second_alert_amount", 0)))
 
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("전체 광고주",  f"{total}개")
@@ -138,15 +140,15 @@ with t_status:
     # 개별 즉시 조회
     st.divider()
     st.markdown("**개별 즉시 조회**")
-    api_ok = [s for s in settings if s.get("api_access_license") and s.get("secret_key")]
-    if api_ok:
+    api_ok_tab1 = [s for s in settings if s.get("api_access_license") and s.get("secret_key")]
+    if api_ok_tab1:
         sel = st.selectbox(
             "광고주 선택",
-            [s["advertiser_name"] for s in api_ok],
+            [s["advertiser_name"] for s in api_ok_tab1],
             key="indiv_sel",
         )
         if st.button("조회", key="btn_indiv"):
-            s = next(x for x in api_ok if x["advertiser_name"] == sel)
+            s = next(x for x in api_ok_tab1 if x["advertiser_name"] == sel)
             with st.spinner(f"{sel} 잔액 조회 중..."):
                 res = get_bizmoney_balance(
                     s["customer_id"], s["api_access_license"], s["secret_key"]
@@ -158,7 +160,13 @@ with t_status:
                 save_one_alert(s)
                 _reload()
             else:
-                st.error(f"조회 실패: {res.get('error', '')}")
+                sc  = res.get("status_code", "")
+                ep  = res.get("endpoint", "")
+                err = res.get("error", "")
+                st.error(f"조회 실패 (HTTP {sc})")
+                st.code(err, language=None)
+                if ep:
+                    st.caption(f"호출: `GET {NAVER_BASE}{ep}`")
     else:
         st.info("API 키가 설정된 광고주가 없습니다. 월간보고서에서 광고주를 등록해주세요.")
 
@@ -170,12 +178,11 @@ with t_alert_cfg:
         "이 화면에서는 **알림 기준금액·연락처·활성 여부**만 설정합니다."
     )
 
-    # 설정이 반영될 mutable 복사본
     editable = [dict(s) for s in settings]
 
     for idx, s in enumerate(editable):
-        name = s.get("advertiser_name") or f"(광고주 #{idx+1})"
-        cid  = s.get("customer_id", "—")
+        name    = s.get("advertiser_name") or f"(광고주 #{idx+1})"
+        cid     = s.get("customer_id", "—")
         has_api = bool(s.get("api_access_license") and s.get("secret_key"))
         api_icon = "🔑" if has_api else "⚠️"
 
@@ -183,7 +190,6 @@ with t_alert_cfg:
             f"{api_icon} **{name}**  |  CID: {cid}",
             expanded=False,
         ):
-            # 읽기 전용: 광고주 정보
             st.markdown(
                 f"**광고주명:** {name}  \n"
                 f"**Customer ID:** `{cid}`  \n"
@@ -191,7 +197,6 @@ with t_alert_cfg:
             )
             st.divider()
 
-            # 편집 가능: 알림 설정
             c1, c2 = st.columns(2)
             with c1:
                 s["alert_enabled"] = st.checkbox(
@@ -236,7 +241,6 @@ with t_alert_cfg:
                     key=f"bm_memo_{idx}",
                 )
 
-            # 발송 플래그 리셋
             fa = s.get("first_alert_sent",  False)
             sa = s.get("second_alert_sent", False)
             if fa or sa:
@@ -291,19 +295,60 @@ with t_history:
             st.rerun()
 
 
-# ─── [탭4] 테스트 발송 ────────────────────────────────────────────────────────
+# ─── [탭4] 테스트 도구 ───────────────────────────────────────────────────────
 with t_test:
-    st.markdown("### 테스트 알림톡 발송")
-    st.caption("Dry-run으로 내용을 확인하거나, 지정 번호로 실제 테스트 발송합니다.")
+    st.markdown("### 🧪 테스트 도구")
 
-    api_ok = [s for s in settings if s.get("api_access_license") and s.get("secret_key")]
+    # ── B. SOLAPI 설정 상태 ──────────────────────────────────────────────────
+    st.markdown("#### B. 알림톡 설정 상태 (SOLAPI)")
+    solapi_status = get_solapi_config_status()
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    sc1.metric("SOLAPI_API_KEY",    "✅ 설정됨" if solapi_status["SOLAPI_API_KEY"]    else "❌ 없음")
+    sc2.metric("SOLAPI_API_SECRET", "✅ 설정됨" if solapi_status["SOLAPI_API_SECRET"] else "❌ 없음")
+    sc3.metric("SOLAPI_SENDER_ID",  "✅ 설정됨" if solapi_status["SOLAPI_SENDER_ID"]  else "❌ 없음")
+    sc4.metric("SOLAPI_KAKAO_PF_ID","✅ 설정됨" if solapi_status["SOLAPI_KAKAO_PF_ID"] else "⚠️ 미설정(SMS 발송)")
+
+    # 알림톡은 KEY+SECRET+SENDER 3개 필수 / PF_ID 없으면 SMS fallback
+    solapi_ready = (solapi_status["SOLAPI_API_KEY"]
+                    and solapi_status["SOLAPI_API_SECRET"]
+                    and solapi_status["SOLAPI_SENDER_ID"])
+    kakao_ready  = solapi_ready and solapi_status["SOLAPI_KAKAO_PF_ID"]
+
+    if not solapi_ready:
+        st.warning("SOLAPI 키가 미설정 상태입니다. 알림톡 실제 발송은 skipped 처리됩니다.")
+        with st.expander("⚙️ secrets.toml 설정 방법"):
+            st.code(
+                'SOLAPI_API_KEY    = "솔라피_API_KEY"\n'
+                'SOLAPI_API_SECRET = "솔라피_API_SECRET"\n'
+                'SOLAPI_SENDER_ID  = "010-XXXX-XXXX"   # 솔라피 인증 발신번호\n'
+                'SOLAPI_KAKAO_PF_ID = "_카카오채널ID"   # 알림톡용 (선택)',
+                language="toml",
+            )
+    elif kakao_ready:
+        st.success("✅ SOLAPI + 카카오채널 설정 완료 — 알림톡 발송 가능")
+    else:
+        st.info("ℹ️ SOLAPI 설정됨 / 카카오채널(SOLAPI_KAKAO_PF_ID) 미설정 → SMS로 발송됩니다.")
+
+    st.divider()
+
+    # ── A. 잔액 조회 테스트 ──────────────────────────────────────────────────
+    st.markdown("#### A. 잔액 조회 테스트")
+
+    api_ok  = [s for s in settings if s.get("api_access_license") and s.get("secret_key")]
     all_names = [s["advertiser_name"] for s in settings]
 
-    if not all_names:
-        st.info("월간보고서에서 광고주를 먼저 등록해주세요.")
-    else:
-        # ── 잔액 조회 테스트 ─────────────────────────────────────────────────
-        st.markdown("**잔액 조회 테스트**")
+    bal_mode = st.radio(
+        "잔액 입력 방식",
+        ["실제 API 조회", "테스트 잔액 직접 입력 (mock)"],
+        horizontal=True,
+        key="bal_mode",
+    )
+
+    # 세션 상태로 잔액 값을 유지 (API fetch → 하단 발송 섹션에서 재사용)
+    if "bm_test_bal" not in st.session_state:
+        st.session_state["bm_test_bal"] = 30000
+
+    if bal_mode == "실제 API 조회":
         if api_ok:
             sel_bal = st.selectbox(
                 "광고주 선택",
@@ -311,41 +356,103 @@ with t_test:
                 key="test_bal_sel",
             )
             if st.button("잔액 조회", key="btn_bal_test"):
-                s = next(x for x in api_ok if x["advertiser_name"] == sel_bal)
+                s_bal = next(x for x in api_ok if x["advertiser_name"] == sel_bal)
                 with st.spinner("조회 중..."):
                     res = get_bizmoney_balance(
-                        s["customer_id"], s["api_access_license"], s["secret_key"]
+                        s_bal["customer_id"],
+                        s_bal["api_access_license"],
+                        s_bal["secret_key"],
                     )
                 if res["status"] == "success":
-                    st.success(f"비즈머니 잔액: **{res['balance']:,}원**")
+                    st.session_state["bm_test_bal"] = res["balance"]
+                    st.success(f"비즈머니 잔액: **{res['balance']:,}원** (하단 발송 테스트에 자동 반영)")
                 else:
-                    st.error(f"실패: {res.get('error', '')}")
+                    sc  = res.get("status_code", "")
+                    ep  = res.get("endpoint", "")
+                    err = res.get("error", "알 수 없는 오류")
+                    st.error(f"조회 실패 — HTTP {sc}")
+                    st.code(err, language=None)
+                    if ep:
+                        st.caption(f"호출 경로: `GET {NAVER_BASE}{ep}`")
+                    st.info(
+                        "API 잔액 조회 실패 시 아래 '테스트 잔액 직접 입력' 방식으로 "
+                        "알림 조건 판단 및 Dry-run 테스트가 가능합니다."
+                    )
         else:
-            st.info("API 키가 설정된 광고주가 없습니다.")
+            st.info("API 키가 설정된 광고주가 없습니다. 월간보고서에서 광고주를 등록해주세요.")
 
-        st.divider()
+    else:  # mock
+        mock_val = st.number_input(
+            "테스트 잔액 입력(원)",
+            min_value=0, step=1000,
+            value=st.session_state["bm_test_bal"],
+            key="mock_bal_input",
+        )
+        st.session_state["bm_test_bal"] = int(mock_val)
+        st.info(f"Mock 잔액 **{int(mock_val):,}원** — 실제 API 호출 없이 알림 조건 테스트합니다.")
 
-        # ── 알림톡 테스트 발송 ────────────────────────────────────────────────
-        st.markdown("**알림톡 테스트 발송**")
-        sel_name    = st.selectbox("광고주 선택", all_names, key="test_adv")
-        s_test      = next((x for x in settings if x["advertiser_name"] == sel_name), {})
-        test_phone  = st.text_input(
+    st.divider()
+
+    # ── C. 알림톡 테스트 발송 ────────────────────────────────────────────────
+    st.markdown("#### C. 알림톡 테스트 발송")
+
+    if not all_names:
+        st.info("월간보고서에서 광고주를 먼저 등록해주세요.")
+    else:
+        sel_name = st.selectbox("광고주 선택", all_names, key="test_adv")
+        s_test   = next((x for x in settings if x["advertiser_name"] == sel_name), {})
+
+        test_phone = st.text_input(
             "테스트 발송 번호",
             value=s_test.get("manager_phone", ""),
             placeholder="010-0000-0000",
             key="test_phone",
         )
-        alert_type  = st.radio(
+        alert_type = st.radio(
             "알림 단계", ["1차 경고", "2차 소진"], horizontal=True, key="test_type"
         )
-        test_bal    = st.number_input(
-            "테스트 잔액(원)", value=30000, step=1000, key="test_bal_val"
-        )
-        dry_run_on  = st.checkbox("Dry-run (실제 발송 안 함)", value=True, key="test_dry")
 
+        # 현재 테스트 잔액 표시
+        test_bal  = st.session_state["bm_test_bal"]
+        st.caption(f"사용할 테스트 잔액: **{test_bal:,}원** (A 섹션에서 변경)")
+
+        # 알림 조건 판단 표시
+        first_amt  = int(s_test.get("first_alert_amount",  50000))
+        second_amt = int(s_test.get("second_alert_amount", 0))
+        if test_bal <= second_amt:
+            st.warning(f"🔴 잔액 {test_bal:,}원 ≤ 소진 기준 {second_amt:,}원 → **2차 알림 대상**")
+        elif test_bal <= first_amt:
+            st.warning(f"🟠 잔액 {test_bal:,}원 ≤ 1차 기준 {first_amt:,}원 → **1차 알림 대상**")
+        else:
+            st.success(f"🟢 잔액 {test_bal:,}원 > 1차 기준 {first_amt:,}원 → 정상 (알림 불필요)")
+
+        # 템플릿 ID 입력 (카카오채널 설정된 경우만 의미 있음)
         is_first  = alert_type == "1차 경고"
-        threshold = int(s_test.get("first_alert_amount", 50000) if is_first
-                        else s_test.get("second_alert_amount", 0))
+        if kakao_ready:
+            default_tcode = TEMPLATE_CODE_FIRST if is_first else TEMPLATE_CODE_DEPLETED
+            tcode = st.text_input(
+                "Solapi 템플릿 ID",
+                value=default_tcode,
+                placeholder="Solapi에 등록된 실제 템플릿 ID 입력",
+                key="test_tcode",
+                help="Solapi 콘솔 → 카카오 알림톡 → 템플릿 관리에서 확인",
+            )
+        else:
+            tcode = TEMPLATE_FIRST if is_first else TEMPLATE_DEPLETED  # SMS용 본문
+            st.caption("카카오채널 미설정 → SMS 본문으로 발송됩니다.")
+
+        # dry-run 옵션 (SOLAPI 미설정 시 강제 dry-run)
+        dry_run_on = st.checkbox(
+            "Dry-run (실제 발송 안 함)",
+            value=(not solapi_ready),
+            key="test_dry",
+            disabled=(not solapi_ready),
+        )
+        if not solapi_ready:
+            st.caption("SOLAPI 미설정 → 자동으로 Dry-run 처리됩니다.")
+
+        # 메시지 미리보기
+        threshold = first_amt if is_first else second_amt
         vars_     = _build_vars(s_test, test_bal, threshold)
         tmpl      = TEMPLATE_FIRST if is_first else TEMPLATE_DEPLETED
         preview   = tmpl
@@ -356,53 +463,54 @@ with t_test:
         st.code(preview, language=None)
 
         if st.button("📤 테스트 발송", type="primary", key="btn_test_send"):
+            effective_dry = dry_run_on or not solapi_ready
             if not test_phone.strip():
                 st.error("발송 번호를 입력해주세요.")
+            elif kakao_ready and not tcode.strip():
+                st.error("템플릿 ID를 입력해주세요.")
             else:
-                tcode = TEMPLATE_CODE_FIRST if is_first else TEMPLATE_CODE_DEPLETED
                 with st.spinner("실행 중..."):
                     result = send_kakao_alerttalk(
-                        test_phone.strip(), tcode, vars_, dry_run=dry_run_on
+                        test_phone.strip(), tcode.strip(), vars_, dry_run=effective_dry
                     )
                 status = result.get("status")
-                if status in ("success", "dry_run"):
-                    st.success(
-                        "✅ Dry-run 완료 (실제 발송 안 됨)" if dry_run_on
-                        else "✅ 알림톡 발송 성공"
-                    )
+                if status == "dry_run":
+                    st.success("✅ Dry-run 완료 — 실제 발송 안 됨")
+                elif status == "success":
+                    st.success("✅ 발송 성공")
                 elif status == "skipped":
                     st.warning(f"발송 건너뜀: {result.get('error', '')}")
                 else:
                     st.error(f"발송 실패: {result.get('error', '')}")
                 st.json(result)
 
-        st.divider()
+    st.divider()
 
-        # ── 전체 알림 체크 ────────────────────────────────────────────────────
-        st.markdown("**전체 알림 체크 실행**")
-        dry2 = st.checkbox("Dry-run", value=True, key="full_dry")
-        if st.button("전체 알림 체크 실행", key="btn_full_check"):
-            with st.spinner("실행 중..."):
-                results = run_check(dry_run=dry2)
-            if not results:
-                st.info("처리된 광고주가 없습니다. (API 키 미설정 또는 알림 비활성)")
-            for r in results:
-                cid = r["customer_id"]
-                bal = r.get("balance")
-                name = next(
-                    (s["advertiser_name"] for s in settings if s["customer_id"] == cid),
-                    cid,
+    # ── 전체 알림 체크 ────────────────────────────────────────────────────────
+    st.markdown("#### 전체 알림 체크 실행")
+    dry2 = st.checkbox("Dry-run", value=True, key="full_dry")
+    if st.button("전체 알림 체크 실행", key="btn_full_check"):
+        with st.spinner("실행 중..."):
+            results = run_check(dry_run=dry2)
+        if not results:
+            st.info("처리된 광고주가 없습니다. (API 키 미설정 또는 알림 비활성)")
+        for r in results:
+            cid  = r["customer_id"]
+            bal  = r.get("balance")
+            name = next(
+                (s["advertiser_name"] for s in settings if s["customer_id"] == cid),
+                cid,
+            )
+            st.markdown(
+                f"**{name}** — 잔액: {f'{bal:,}원' if bal is not None else '조회 실패'}"
+            )
+            for a in r.get("actions", []):
+                if a.get("type") == "balance_check":
+                    continue
+                icon = (
+                    "✅" if a.get("status") in ("success", "dry_run")
+                    else "⏭️" if a.get("status") == "skipped"
+                    else "❌"
                 )
-                st.markdown(
-                    f"**{name}** — 잔액: {f'{bal:,}원' if bal is not None else '조회 실패'}"
-                )
-                for a in r.get("actions", []):
-                    if a.get("type") == "balance_check":
-                        continue
-                    icon = (
-                        "✅" if a.get("status") in ("success", "dry_run")
-                        else "⏭️" if a.get("status") == "skipped"
-                        else "❌"
-                    )
-                    st.caption(f"  {icon} [{a.get('type')}] {a.get('detail', '')}")
-            _reload()
+                st.caption(f"  {icon} [{a.get('type')}] {a.get('detail', '')}")
+        _reload()
