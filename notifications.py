@@ -138,10 +138,7 @@ def send_admin_application_alert(record: dict) -> dict:
         email_result = {"status": "failed", "error": str(e)[:200]}
 
     try:
-        if _secret("SOLAPI_API_KEY"):
-            sms_result = send_admin_sms(record)
-        else:
-            sms_result = {"status": "skipped", "reason": "SOLAPI 미설정"}
+        sms_result = send_admin_sms(record)
     except Exception as e:
         sms_result = {"status": "failed", "error": str(e)[:200]}
 
