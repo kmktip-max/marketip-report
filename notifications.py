@@ -128,9 +128,15 @@ def send_admin_email(record: dict) -> dict:
 
 # ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
 def send_admin_sms(record: dict, phone: str = "") -> dict:
-    from bizmoney_alert import send_sms_notification
+    from bizmoney_alert import _secret as _bz, send_sms_notification
     if not phone:
-        phone = _secret("ADMIN_NOTIFY_PHONE") or _secret("ADMIN_ALERT_PHONE")
+        phone = (
+            _bz("ADMIN_NOTIFY_PHONE")
+            or _bz("ADMIN_ALERT_PHONE")
+            or _secret("ADMIN_NOTIFY_PHONE")
+            or _secret("ADMIN_ALERT_PHONE")
+            or _bz("SOLAPI_SENDER_ID")   # 마지막 폴백: 발신번호 = 관리자 번호
+        )
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
 
