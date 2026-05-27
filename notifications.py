@@ -52,14 +52,44 @@ def _secret(key, default=""):
     return os.getenv(key, default)
 
 
+# ── JSON 설정 파일 (admin_phone 등) ─────────────────────────────────────────
+def _notify_config_path() -> str:
+    ROOT = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(ROOT, "data", "notification_config.json")
+
+
+def get_notify_config() -> dict:
+    try:
+        p = _notify_config_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def save_notify_config(data: dict) -> bool:
+    try:
+        p = _notify_config_path()
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:
+        return False
+
+
 # ── 설정 상태 ────────────────────────────────────────────────────────────────
 def get_notification_config_status() -> dict:
+    _cfg = get_notify_config()
+    _json_phone = _cfg.get("admin_phone", "")
     return {
         "ADMIN_ALERT_EMAIL": bool(_secret("ADMIN_ALERT_EMAIL")),
         "SMTP_HOST":         bool(_secret("SMTP_HOST")),
         "SMTP_USER":         bool(_secret("SMTP_USER")),
         "SMTP_PASSWORD":     bool(_secret("SMTP_PASSWORD")),
-        "ADMIN_ALERT_PHONE": bool(_secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")),
+        "ADMIN_ALERT_PHONE": bool(_json_phone or _secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")),
         "SOLAPI_API_KEY":    bool(_secret("SOLAPI_API_KEY")),
         "SOLAPI_API_SECRET": bool(_secret("SOLAPI_API_SECRET")),
         "SOLAPI_SENDER_ID":  bool(_secret("SOLAPI_SENDER_ID")),
@@ -130,12 +160,14 @@ def send_admin_email(record: dict) -> dict:
 def send_admin_sms(record: dict, phone: str = "") -> dict:
     from bizmoney_alert import _secret as _bz, send_sms_notification
     if not phone:
+        _cfg = get_notify_config()
         phone = (
-            _bz("ADMIN_NOTIFY_PHONE")
+            _cfg.get("admin_phone", "")      # UI에서 저장한 번호 (최우선)
+            or _bz("ADMIN_NOTIFY_PHONE")
             or _bz("ADMIN_ALERT_PHONE")
             or _secret("ADMIN_NOTIFY_PHONE")
             or _secret("ADMIN_ALERT_PHONE")
-            or _bz("SOLAPI_SENDER_ID")   # 마지막 폴백: 발신번호 = 관리자 번호
+            or _bz("SOLAPI_SENDER_ID")
         )
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}

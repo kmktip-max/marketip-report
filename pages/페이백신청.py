@@ -829,11 +829,15 @@ else:
 
 # ── 모달 트리거 ───────────────────────────────────────────────────────────────
 if add_btn or apply_btn:
-    _pre_phone = (
-        get_secret("ADMIN_NOTIFY_PHONE")
-        or get_secret("ADMIN_ALERT_PHONE")
-        or st.session_state.get("_admin_notify_phone", "")
-    )
+    try:
+        from notifications import get_notify_config as _gnc
+        _pre_phone = (
+            _gnc().get("admin_phone", "")
+            or get_secret("ADMIN_NOTIFY_PHONE")
+            or get_secret("ADMIN_ALERT_PHONE")
+        )
+    except Exception:
+        _pre_phone = get_secret("ADMIN_NOTIFY_PHONE") or get_secret("ADMIN_ALERT_PHONE")
     add_account_dialog(admin_phone=_pre_phone)
 
 
@@ -931,6 +935,38 @@ with st.expander("🔐 관리자 — 상태 관리"):
                                          use_container_width=True):
                                 st.session_state[_adm_del_key] = True
                                 st.rerun()
+
+        st.divider()
+
+        # ── SMS 수신 전화번호 설정 ──────────────────────────────────────────
+        st.markdown("**SMS 수신 전화번호**")
+        try:
+            from notifications import get_notify_config as _gnc, save_notify_config as _snc
+            _nc = _gnc()
+            _cur_ph = _nc.get("admin_phone", "")
+            _ph_c1, _ph_c2 = st.columns([4, 1])
+            with _ph_c1:
+                _new_ph = st.text_input(
+                    "SMS 수신번호",
+                    value=_cur_ph,
+                    placeholder="010-xxxx-xxxx",
+                    key="pb_notify_phone_input",
+                    label_visibility="collapsed",
+                )
+            with _ph_c2:
+                if st.button("저장", key="pb_save_phone", use_container_width=True):
+                    _p = _new_ph.strip()
+                    if _p:
+                        _nc["admin_phone"] = _p
+                        if _snc(_nc):
+                            st.toast(f"✅ {_p} 저장됨")
+                            st.rerun()
+                        else:
+                            st.error("저장 실패")
+                    else:
+                        st.warning("번호를 입력해주세요")
+        except Exception as _pe:
+            st.caption(f"오류: {_pe}")
 
         st.divider()
 
