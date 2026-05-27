@@ -2,10 +2,17 @@
 import os
 import json
 import uuid
+import hmac
+import hashlib
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+try:
+    import requests as _requests
+except ImportError:
+    _requests = None
 
 try:
     import pytz
@@ -157,18 +164,56 @@ def send_admin_email(record: dict) -> dict:
         return {"status": "failed", "error": str(e)[:300]}
 
 
-# ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
+# ── SOLAPI 직접 발송 (_secret 사용 — dialog 안에서도 작동) ──────────────────
+def _solapi_send(to_phone: str, text: str) -> dict:
+    if _requests is None:
+        return {"status": "failed", "error": "requests 패키지 없음"}
+    api_key    = _secret("SOLAPI_API_KEY")
+    api_secret = _secret("SOLAPI_API_SECRET")
+    sender_id  = _secret("SOLAPI_SENDER_ID")
+    if not api_key or not api_secret or not sender_id:
+        return {"status": "skipped", "reason": f"SOLAPI 미설정 (key={bool(api_key)},secret={bool(api_secret)},sender={bool(sender_id)})"}
+    if not to_phone:
+        return {"status": "skipped", "reason": "수신번호 없음"}
+
+    now_str   = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+09:00")
+    salt      = str(uuid.uuid4()).replace("-", "")
+    signature = hmac.new(
+        api_secret.encode(), f"{now_str}{salt}".encode(), hashlib.sha256
+    ).hexdigest()
+    headers = {
+        "Authorization": f"HMAC-SHA256 apiKey={api_key}, date={now_str}, salt={salt}, signature={signature}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "message": {
+            "to":   to_phone.replace("-", ""),
+            "from": sender_id.replace("-", ""),
+            "text": text,
+        }
+    }
+    try:
+        resp = _requests.post(
+            "https://api.solapi.com/messages/v4/send",
+            headers=headers, json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+        return {"status": "success", "response": resp.json()}
+    except _requests.HTTPError as e:
+        return {"status": "failed", "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)[:200]}
+
+
+# ── SMS 발송 ─────────────────────────────────────────────────────────────────
 def send_admin_sms(record: dict, phone: str = "") -> dict:
-    from bizmoney_alert import _secret as _bz, send_sms_notification
     if not phone:
         _cfg = get_notify_config()
         phone = (
-            _cfg.get("admin_phone", "")      # UI에서 저장한 번호 (최우선)
-            or _bz("ADMIN_NOTIFY_PHONE")
-            or _bz("ADMIN_ALERT_PHONE")
+            _cfg.get("admin_phone", "")
             or _secret("ADMIN_NOTIFY_PHONE")
             or _secret("ADMIN_ALERT_PHONE")
-            or _bz("SOLAPI_SENDER_ID")
+            or _secret("SOLAPI_SENDER_ID")
         )
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
@@ -182,7 +227,7 @@ def send_admin_sms(record: dict, phone: str = "") -> dict:
         f"담당자: {record.get('manager_name', '-')}",
         f"월예산: {record.get('monthly_budget', '-')}",
     ])
-    return send_sms_notification(phone, text)
+    return _solapi_send(phone, text)
 
 
 # ── 통합 알림 ─────────────────────────────────────────────────────────────────
