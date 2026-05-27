@@ -215,6 +215,7 @@ if auth_type == "admin":
         st.Page("pages/광고소재.py",      title="광고소재 추출"),
         st.Page("pages/상세페이지.py",    title="랜딩페이지 기획/분석"),
         st.Page("pages/정산관리.py",      title="정산관리"),
+        st.Page("pages/비즈머니알림.py",  title="비즈머니 알림"),
         st.Page("pages/계정관리.py",      title="계정관리"),
     ])
 else:
