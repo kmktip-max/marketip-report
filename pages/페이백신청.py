@@ -1046,6 +1046,12 @@ with st.expander("🔐 관리자 — 상태 관리"):
                     _dbg_cfg  = _gnc()
                     _dbg_ph   = _dbg_cfg.get("admin_phone", "")
                     st.caption(f"설정파일: `{_dbg_path}`  존재: {_os.path.exists(_dbg_path)}  번호: `{_dbg_ph or '없음'}`")
+                    # st.secrets 직접 접근 테스트
+                    try:
+                        _raw_key = st.secrets["SOLAPI_API_KEY"]
+                        st.caption(f"st.secrets 직접: key={bool(_raw_key)}")
+                    except Exception as _se:
+                        st.caption(f"st.secrets 오류: {type(_se).__name__}: {str(_se)[:120]}")
                     _r = send_admin_sms({
                         "account_name": "테스트",
                         "platform_label": "테스트",
