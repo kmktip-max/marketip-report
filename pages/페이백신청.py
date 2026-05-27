@@ -879,14 +879,45 @@ with st.expander("🔐 관리자 — 상태 관리"):
         else:
             for i, acc in enumerate(all_accs):
                 with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns([4, 2, 1, 1])
+                    c1, c2, c3, c4 = st.columns([5, 2, 1, 1])
                     with c1:
                         plat_info  = acc.get("platform_label", "네이버")
-                        detail     = acc.get("customer_id") or acc.get("account_id") or ""
-                        owner_disp = acc.get("owner_name") or acc.get("owner_id") or "⚠️ 소유자 미지정"
+                        plat_key   = acc.get("platform", "naver")
+                        owner_disp = acc.get("owner_name") or acc.get("owner_id") or "⚠️ 미지정"
+
+                        # 플랫폼별 ID 라인
+                        if plat_key == "naver":
+                            id_line = (
+                                f"영문ID: `{acc.get('naver_login_id','-')}` &nbsp;|&nbsp; "
+                                f"숫자ID: `{acc.get('customer_id','-')}`"
+                            )
+                        else:
+                            id_line = f"계정ID: `{acc.get('account_id','-')}`"
+
+                        budget   = acc.get("monthly_budget") or "-"
+                        ad_type  = acc.get("ad_type") or "-"
+                        biz_cat  = acc.get("business_category") or ""
+                        biz_line = f" &nbsp;|&nbsp; 업종: {biz_cat}" if biz_cat else ""
+
                         st.markdown(
-                            f"**{acc['account_name']}** &nbsp; `{detail}`  \n"
-                            f"{plat_info} · 신청자: `{owner_disp}` · 신청일: {acc['created_at'][:10]}"
+                            f"**{acc.get('account_name','-')}** &nbsp; "
+                            f"<span style='font-size:12px;color:#6B7280;'>{plat_info} · {ad_type}</span>",
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(
+                            f"<span style='font-size:12px;color:#374151;'>"
+                            f"👤 담당자: **{acc.get('manager_name','-')}** &nbsp;|&nbsp; "
+                            f"신청자 계정: `{owner_disp}`"
+                            f"</span>",
+                            unsafe_allow_html=True
+                        )
+                        st.markdown(
+                            f"<span style='font-size:12px;color:#6B7280;'>"
+                            f"{id_line}{biz_line} &nbsp;|&nbsp; "
+                            f"월예산: {budget} &nbsp;|&nbsp; "
+                            f"신청일: {acc.get('created_at','-')[:10]}"
+                            f"</span>",
+                            unsafe_allow_html=True
                         )
                         st.markdown(badge(acc["status"]), unsafe_allow_html=True)
                     with c2:
