@@ -1040,7 +1040,12 @@ with st.expander("🔐 관리자 — 상태 관리"):
         with _tc2:
             if st.button("문자 테스트 발송", use_container_width=True, key="pb_test_sms"):
                 try:
-                    from notifications import send_admin_sms
+                    import os as _os
+                    from notifications import send_admin_sms, get_notify_config as _gnc, notify_config_path
+                    _dbg_path = notify_config_path()
+                    _dbg_cfg  = _gnc()
+                    _dbg_ph   = _dbg_cfg.get("admin_phone", "")
+                    st.caption(f"설정파일: `{_dbg_path}`  존재: {_os.path.exists(_dbg_path)}  번호: `{_dbg_ph or '없음'}`")
                     _r = send_admin_sms({
                         "account_name": "테스트",
                         "platform_label": "테스트",
@@ -1051,9 +1056,9 @@ with st.expander("🔐 관리자 — 상태 관리"):
                     if _r.get("status") == "success":
                         st.toast("✅ 문자 테스트 발송 완료")
                     else:
-                        st.warning(_r.get("reason") or _r.get("error", "발송 실패"))
+                        st.warning(f"결과: {_r}")
                 except Exception as e:
-                    st.error(str(e)[:200])
+                    st.error(str(e)[:300])
 
         st.divider()
         if st.button("로그아웃", key="pb_admin_logout"):

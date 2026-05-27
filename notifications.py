@@ -53,14 +53,14 @@ def _secret(key, default=""):
 
 
 # ── JSON 설정 파일 (admin_phone 등) ─────────────────────────────────────────
-def _notify_config_path() -> str:
+def notify_config_path() -> str:
     ROOT = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(ROOT, "data", "notification_config.json")
 
 
 def get_notify_config() -> dict:
     try:
-        p = _notify_config_path()
+        p = notify_config_path()
         if os.path.exists(p):
             with open(p, "r", encoding="utf-8") as f:
                 return json.load(f)
@@ -71,7 +71,7 @@ def get_notify_config() -> dict:
 
 def save_notify_config(data: dict) -> bool:
     try:
-        p = _notify_config_path()
+        p = notify_config_path()
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
