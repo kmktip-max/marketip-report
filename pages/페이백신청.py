@@ -444,28 +444,14 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        # 전화번호: secrets.toml 직접 파싱 → session_state → 환경변수 순 fallback
-        _phone = ""
-        try:
-            import tomllib as _tl
-        except ImportError:
-            try:
-                import tomli as _tl  # type: ignore
-            except ImportError:
-                _tl = None
-        if _tl is not None:
-            try:
-                _tp = os.path.join(ROOT, ".streamlit", "secrets.toml")
-                if os.path.exists(_tp):
-                    with open(_tp, "rb") as _tf:
-                        _td = _tl.load(_tf)
-                    _phone = _td.get("ADMIN_NOTIFY_PHONE", "") or _td.get("ADMIN_ALERT_PHONE", "")
-            except Exception:
-                pass
-        if not _phone:
-            _phone = st.session_state.get("_admin_notify_phone", "")
-        if not _phone:
-            _phone = os.getenv("ADMIN_NOTIFY_PHONE", "") or os.getenv("ADMIN_ALERT_PHONE", "")
+        # st.secrets → session_state → 로컬 toml → 환경변수 순 fallback
+        _phone = (
+            get_secret("ADMIN_NOTIFY_PHONE")
+            or get_secret("ADMIN_ALERT_PHONE")
+            or st.session_state.get("_admin_notify_phone", "")
+            or os.getenv("ADMIN_NOTIFY_PHONE", "")
+            or os.getenv("ADMIN_ALERT_PHONE", "")
+        )
         _alert_result = send_admin_application_alert(record, admin_phone=_phone)
         save_alert_history(record, _alert_result)
     except Exception as _e:
@@ -523,7 +509,7 @@ if "_pb_submit_result" in st.session_state:
 
 
 # ── 페이지 로드 시 시크릿 미리 캐시 (dialog 내부에서 st.secrets 접근 불가 문제 우회) ──
-if "_admin_notify_phone" not in st.session_state:
+if not st.session_state.get("_admin_notify_phone"):
     st.session_state["_admin_notify_phone"] = (
         get_secret("ADMIN_NOTIFY_PHONE") or get_secret("ADMIN_ALERT_PHONE")
     )
