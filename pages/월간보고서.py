@@ -419,8 +419,7 @@ with tab2:
                         _send_email_kakao = _btn_col2.button(
                             "✉️📱 이메일 + 카톡 발송", type="primary", use_container_width=True,
                             key="btn_send_email_kakao",
-                            disabled=not _any_phone,
-                            help="전화번호가 등록된 광고주에게만 카톡 알림 발송",
+                            help="전화번호 미등록 광고주는 이메일만 발송됩니다",
                         )
 
                         _do_send  = _send_email_only or _send_email_kakao
