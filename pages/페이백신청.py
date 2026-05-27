@@ -759,10 +759,13 @@ else:
     with _tb_l:
         _all_checked = st.checkbox("전체 선택", key=_chk_all_key)
     with _tb_r:
-        _selected_ids = [
-            acc["id"] for acc in filtered
-            if st.session_state.get(f"chk_{acc['id']}", False)
-        ]
+        if _all_checked:
+            _selected_ids = [acc["id"] for acc in filtered]
+        else:
+            _selected_ids = [
+                acc["id"] for acc in filtered
+                if st.session_state.get(f"chk_{acc['id']}", False)
+            ]
         _n_sel = len(_selected_ids)
         _del_btn_label = f"🗑️ 선택 삭제 ({_n_sel}개)" if _n_sel else "🗑️ 선택 삭제"
         if st.button(_del_btn_label, disabled=(_n_sel == 0),
