@@ -176,8 +176,9 @@ section[data-testid="stSidebar"] button[aria-label="View fullscreen"] {
 
 /* ══ 페이백신청 강조 ══════════════════════════════════════════════════ */
 [data-testid="stPageLink"] a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"],
-[data-testid="stPageLink"] a[href*="페이백"] {
-    color: #0D47A1 !important;
+[data-testid="stPageLink"] a[href*="payback"],
+[data-testid="stPageLink"] a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1%EC%8B%A0%EC%B2%AD"] {
+    color: #1565C0 !important;
     font-weight: 700 !important;
 }
 

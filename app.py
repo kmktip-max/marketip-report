@@ -277,6 +277,14 @@ with st.sidebar:
 
         st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
+        st.markdown("""
+<style>
+div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]) a,
+div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1%EC%8B%A0%EC%B2%AD"]) a {
+    color: #1565C0 !important;
+    font-weight: 700 !important;
+}
+</style>""", unsafe_allow_html=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
         st.page_link("pages/자동입찰.py",   label="📊  목표순위 자동입찰",    use_container_width=True)

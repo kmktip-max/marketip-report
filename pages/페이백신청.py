@@ -444,10 +444,10 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        # st.secrets → session_state → 로컬 toml → 환경변수 순 fallback
+        from bizmoney_alert import _secret as _bz_secret
         _phone = (
-            get_secret("ADMIN_NOTIFY_PHONE")
-            or get_secret("ADMIN_ALERT_PHONE")
+            _bz_secret("ADMIN_NOTIFY_PHONE")
+            or _bz_secret("ADMIN_ALERT_PHONE")
             or st.session_state.get("_admin_notify_phone", "")
             or os.getenv("ADMIN_NOTIFY_PHONE", "")
             or os.getenv("ADMIN_ALERT_PHONE", "")
