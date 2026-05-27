@@ -892,9 +892,9 @@ with st.expander("🔐 관리자 — 상태 관리"):
                     with c2:
                         new_status = st.selectbox(
                             "상태 변경",
-                            STATUS_LIST + ["반려"],
-                            index=(STATUS_LIST + ["반려"]).index(acc["status"])
-                            if acc["status"] in STATUS_LIST + ["반려"] else 0,
+                            STATUS_LIST,
+                            index=STATUS_LIST.index(acc["status"])
+                            if acc["status"] in STATUS_LIST else 0,
                             key=f"pb_status_{acc['id']}",
                             label_visibility="collapsed",
                         )
