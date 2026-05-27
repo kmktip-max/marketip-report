@@ -65,15 +65,20 @@ if "_migrated" not in st.session_state:
         save_mapping(_mdata)
     st.session_state["_migrated"] = True
 
-def upsert_pnl(ym, search_owner, search_fl, place, blog,
+def upsert_pnl(ym, search_owner, search_fl,
+               place_revenue, place_cost, blog_revenue, blog_cost,
                expenses, gross, after_tax, net, net_after_tax):
     data = load_pnl()
     entry = {
         "year_month": ym,
         "search_owner_profit":      int(round(search_owner)),
         "search_freelancer_profit": int(round(search_fl)),
-        "place_revenue":            int(place),
-        "blog_revenue":             int(blog),
+        "place_revenue":            int(place_revenue),
+        "place_cost":               int(place_cost),
+        "place_profit":             int(place_revenue - place_cost),
+        "blog_revenue":             int(blog_revenue),
+        "blog_cost":                int(blog_cost),
+        "blog_profit":              int(blog_revenue - blog_cost),
         "other_expenses":           int(expenses),
         "gross_total_profit":       int(round(gross)),
         "gross_after_tax":          int(round(after_tax)),
@@ -164,15 +169,19 @@ def get_expenses_for_month(ym): return [e for e in load_expenses() if e["year_mo
 def get_extra(ym):
     for r in load_extra():
         if r["year_month"] == ym: return r
-    return {"year_month": ym, "place_revenue": 0, "blog_revenue": 0, "memo": ""}
+    return {"year_month": ym,
+            "place_revenue": 0, "place_cost": 0,
+            "blog_revenue": 0,  "blog_cost": 0,
+            "memo": ""}
 
-def set_extra(ym, place, blog, memo=""):
+def set_extra(ym, place_revenue, place_cost, blog_revenue, blog_cost, memo=""):
     data = load_extra()
+    upd  = {"place_revenue": place_revenue, "place_cost": place_cost,
+            "blog_revenue":  blog_revenue,  "blog_cost":  blog_cost, "memo": memo}
     for r in data:
         if r["year_month"] == ym:
-            r.update({"place_revenue": place, "blog_revenue": blog, "memo": memo})
-            save_extra(data); return
-    data.append({"year_month": ym, "place_revenue": place, "blog_revenue": blog, "memo": memo})
+            r.update(upd); save_extra(data); return
+    data.append({"year_month": ym, **upd})
     save_extra(data)
 
 # ── 숫자 포맷 ─────────────────────────────────────────────────────────────────
@@ -1794,6 +1803,7 @@ with t_ex:
 # ─── 월 손익 탭 ───────────────────────────────────────────────────────────────
 with t_pnl:
     st.subheader("월별 손익")
+    st.warning("🔄 월 손익 v2 적용됨: 플레이스/블로그 매출·매입·순수익 구조")
     if not sel_ym:
         st.info("상단에서 정산 월을 선택해주세요.")
     else:
@@ -1827,32 +1837,100 @@ with t_pnl:
                 else:
                     search_freelancer_profit += r["owner"]
 
-        with st.form("extra_rev"):
-            xc1, xc2, xc3 = st.columns(3)
-            with xc1:
-                place = st.number_input(
-                    "플레이스 수익(원)",
-                    value=int(extra.get("place_revenue") or 0),
-                    min_value=0, step=1000, format="%d",
+        # ── 플레이스 / 블로그 입력 (실시간 순수익 자동 계산) ────────────────────
+        def _profit_display(label, profit):
+            color = "#059669" if profit >= 0 else "#DC2626"
+            return (
+                f'<div style="background:#F9FAFB;border:1.5px solid #E5E7EB;border-radius:10px;'
+                f'padding:10px 14px;height:100%;">'
+                f'<div style="font-size:12px;color:#6B7280;font-weight:600;margin-bottom:6px;">'
+                f'{label}</div>'
+                f'<div style="font-size:20px;font-weight:800;color:{color};line-height:1.2;">'
+                f'{profit:,} 원</div>'
+                f'<div style="font-size:10px;color:#9CA3AF;margin-top:4px;">매출 − 매입비용</div>'
+                f'</div>'
+            )
+
+        _inp_col, _memo_col = st.columns([3, 1])
+        with _inp_col:
+            # ── 플레이스 ──────────────────────────────────────────────────────
+            st.markdown('<div style="font-size:14px;font-weight:700;color:#374151;'
+                        'margin-bottom:6px;">🏪 플레이스</div>', unsafe_allow_html=True)
+            pc1, pc2, pc3 = st.columns(3)
+            with pc1:
+                place_rev = st.number_input(
+                    "플레이스 매출(원)", value=int(extra.get("place_revenue") or 0),
+                    min_value=0, step=1000, format="%d", key=f"pnl_pr_{sel_ym}",
                 )
-            with xc2:
-                blog = st.number_input(
-                    "블로그 수익(원)",
-                    value=int(extra.get("blog_revenue") or 0),
-                    min_value=0, step=1000, format="%d",
+            with pc2:
+                place_cost = st.number_input(
+                    "플레이스 매입비용(원)", value=int(extra.get("place_cost") or 0),
+                    min_value=0, step=1000, format="%d", key=f"pnl_pc_{sel_ym}",
                 )
-            with xc3:
-                xm = st.text_input("메모", extra.get("memo", ""))
-            if st.form_submit_button("💾 저장"):
-                # 0 포함 어떤 값이든 그대로 overwrite
-                set_extra(sel_ym, int(place), int(blog), xm)
+            with pc3:
+                place_profit = place_rev - place_cost
+                st.markdown(_profit_display("플레이스 순수익 (자동)", place_profit),
+                            unsafe_allow_html=True)
+
+            st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
+
+            # ── 블로그 ────────────────────────────────────────────────────────
+            st.markdown('<div style="font-size:14px;font-weight:700;color:#374151;'
+                        'margin-bottom:6px;">📝 블로그</div>', unsafe_allow_html=True)
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                blog_rev = st.number_input(
+                    "블로그 매출(원)", value=int(extra.get("blog_revenue") or 0),
+                    min_value=0, step=1000, format="%d", key=f"pnl_br_{sel_ym}",
+                )
+            with bc2:
+                blog_cost = st.number_input(
+                    "블로그 매입비용(원)", value=int(extra.get("blog_cost") or 0),
+                    min_value=0, step=1000, format="%d", key=f"pnl_bc_{sel_ym}",
+                )
+            with bc3:
+                blog_profit = blog_rev - blog_cost
+                st.markdown(_profit_display("블로그 순수익 (자동)", blog_profit),
+                            unsafe_allow_html=True)
+
+            st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
+
+            # ── 합계 카드 ─────────────────────────────────────────────────────
+            combined_rev       = place_rev  + blog_rev
+            combined_cost      = place_cost + blog_cost
+            combined_profit    = place_profit + blog_profit
+            combined_after_tax = round(combined_profit * 0.8)
+
+            st.markdown('<div style="font-size:13px;font-weight:700;color:#6B7280;'
+                        'margin-bottom:6px;">합계</div>', unsafe_allow_html=True)
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.markdown(_kpi_card("합산 매출",            w(combined_rev)),
+                         unsafe_allow_html=True)
+            sc2.markdown(_kpi_card("합산 매입비용",        w(combined_cost), "negative"),
+                         unsafe_allow_html=True)
+            _sv = "green" if combined_profit >= 0 else "negative"
+            sc3.markdown(_kpi_card("합산 순수익",          w(combined_profit), _sv),
+                         unsafe_allow_html=True)
+            sc4.markdown(_kpi_card("세후 추정 순수익", w(combined_after_tax),
+                                   "secondary", badge="×0.8"),
+                         unsafe_allow_html=True)
+            st.caption("※ 세후 추정(×0.8)은 종소세·건보료·국민연금 등을 감안한 보수적 추정치입니다.")
+
+        with _memo_col:
+            st.markdown('<div style="font-size:14px;font-weight:700;color:#374151;'
+                        'margin-bottom:6px;">📋 메모</div>', unsafe_allow_html=True)
+            xm = st.text_area("메모", extra.get("memo", ""), height=200,
+                              key=f"pnl_memo_{sel_ym}", label_visibility="collapsed")
+            if st.button("💾 저장", key=f"pnl_save_{sel_ym}", type="primary",
+                         use_container_width=True):
+                set_extra(sel_ym,
+                          int(place_rev), int(place_cost),
+                          int(blog_rev),  int(blog_cost), xm)
                 st.rerun()
 
-        place_rev  = int(extra["place_revenue"])
-        blog_rev   = int(extra["blog_revenue"])
-
+        # ── 월 손익 계산 (플레이스/블로그는 순수익 기준) ────────────────────
         search_total_profit          = search_owner_profit + search_freelancer_profit
-        gross_total_profit           = search_total_profit + place_rev + blog_rev
+        gross_total_profit           = search_total_profit + combined_profit   # 순수익 기준
         gross_total_profit_after_tax = round(gross_total_profit * 0.8)
         final_net_profit             = gross_total_profit - tot_exp
         final_net_profit_after_tax   = gross_total_profit_after_tax - tot_exp
@@ -1865,8 +1943,8 @@ with t_pnl:
         c1[0].markdown(_kpi_card("검색광고 대표 직접수익",    w(search_owner_profit)),     unsafe_allow_html=True)
         c1[1].markdown(_kpi_card("검색광고 프리랜서 계정수익", w(search_freelancer_profit)), unsafe_allow_html=True)
         c1[2].markdown(_kpi_card("검색광고 총수익",            w(search_total_profit)),     unsafe_allow_html=True)
-        c1[3].markdown(_kpi_card("플레이스",                   w(place_rev)),               unsafe_allow_html=True)
-        c1[4].markdown(_kpi_card("블로그",                     w(blog_rev)),                unsafe_allow_html=True)
+        c1[3].markdown(_kpi_card("플레이스 순수익",            w(place_profit)),            unsafe_allow_html=True)
+        c1[4].markdown(_kpi_card("블로그 순수익",              w(blog_profit)),             unsafe_allow_html=True)
 
         st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
 
@@ -1887,7 +1965,9 @@ with t_pnl:
                      type="primary", use_container_width=True, disabled=btn_disabled):
             upsert_pnl(sel_ym,
                        search_owner_profit, search_freelancer_profit,
-                       place_rev, blog_rev, tot_exp,
+                       int(place_rev), int(place_cost),
+                       int(blog_rev),  int(blog_cost),
+                       tot_exp,
                        gross_total_profit, gross_total_profit_after_tax,
                        final_net_profit, final_net_profit_after_tax)
             st.success(f"✅ {sel_ym} 손익 저장 완료 — 월/연간 손익 탭에서 확인하세요.")

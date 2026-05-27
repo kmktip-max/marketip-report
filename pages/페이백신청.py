@@ -15,12 +15,23 @@ def _get_sb():
     return create_client(get_secret("SUPABASE_URL"), get_secret("SUPABASE_KEY"))
 
 
-def load_accounts():
+def load_accounts(owner_id=None):
     try:
-        res = _get_sb().table("rebate_accounts").select("*").order("created_at", desc=True).execute()
+        q = _get_sb().table("rebate_accounts").select("*").order("created_at", desc=True)
+        if owner_id is not None:
+            q = q.eq("owner_id", owner_id)
+        res = q.execute()
         return res.data or []
     except Exception:
         return []
+
+
+def delete_account(account_id: str) -> bool:
+    try:
+        _get_sb().table("rebate_accounts").delete().eq("id", account_id).execute()
+        return True
+    except Exception:
+        return False
 
 
 # ── Secret helper ─────────────────────────────────────────────────────────────
@@ -412,12 +423,18 @@ def _handle_submit(plat_key: str, fd: dict):
     if any(not str(fd.get(f, "")).strip() for f in required):
         st.error("* 표시된 필수 항목을 모두 입력해 주세요.")
         return
+    _client_info = st.session_state.get("auth_client", {})
     record = {
         "id": str(uuid.uuid4()),
         "platform": plat_key,
         "platform_label": plat_label,
         "status": "연동신청",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "owner_id": st.session_state.get("auth_username", ""),
+        "owner_name": (
+            _client_info.get("contact_name", "")
+            or st.session_state.get("auth_username", "")
+        ),
     }
     record.update({k: (v.strip() if isinstance(v, str) else v) for k, v in fd.items()})
     _get_sb().table("rebate_accounts").insert(record).execute()
@@ -427,7 +444,28 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        _phone = st.session_state.get("_admin_notify_phone", "")
+        # 전화번호: secrets.toml 직접 파싱 → session_state → 환경변수 순 fallback
+        _phone = ""
+        try:
+            import tomllib as _tl
+        except ImportError:
+            try:
+                import tomli as _tl  # type: ignore
+            except ImportError:
+                _tl = None
+        if _tl is not None:
+            try:
+                _tp = os.path.join(ROOT, ".streamlit", "secrets.toml")
+                if os.path.exists(_tp):
+                    with open(_tp, "rb") as _tf:
+                        _td = _tl.load(_tf)
+                    _phone = _td.get("ADMIN_NOTIFY_PHONE", "") or _td.get("ADMIN_ALERT_PHONE", "")
+            except Exception:
+                pass
+        if not _phone:
+            _phone = st.session_state.get("_admin_notify_phone", "")
+        if not _phone:
+            _phone = os.getenv("ADMIN_NOTIFY_PHONE", "") or os.getenv("ADMIN_ALERT_PHONE", "")
         _alert_result = send_admin_application_alert(record, admin_phone=_phone)
         save_alert_history(record, _alert_result)
     except Exception as _e:
@@ -671,8 +709,10 @@ with right:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── 계정 리스트 ───────────────────────────────────────────────────────────────
-accounts = load_accounts()
+# ── 계정 리스트 (로그인 사용자 기준 필터링) ───────────────────────────────────
+_is_admin = st.session_state.get("auth_type") == "admin"
+_owner_id  = None if _is_admin else st.session_state.get("auth_username", "")
+accounts = load_accounts(owner_id=_owner_id)
 
 col_title, col_btn = st.columns([4, 1])
 with col_title:
@@ -741,7 +781,9 @@ else:
             f'font-size:11px;padding:1px 7px;border-radius:6px;">{acc["alias"]}</span>'
             if acc.get("alias") else ""
         )
-        st.markdown(f"""
+        col_card, col_del = st.columns([5, 1])
+        with col_card:
+            st.markdown(f"""
 <div class="acc-card">
   <div>
     <div class="acc-name">
@@ -754,6 +796,25 @@ else:
   <div style="margin-top:2px;">{badge(acc.get("status","연동신청"))}</div>
 </div>
 """, unsafe_allow_html=True)
+        with col_del:
+            _del_key = f"confirm_del_{acc['id']}"
+            st.markdown("<div style='padding-top:14px;'></div>", unsafe_allow_html=True)
+            if st.session_state.get(_del_key):
+                if st.button("삭제 확인", key=f"del_ok_{acc['id']}", type="primary",
+                             use_container_width=True):
+                    if delete_account(acc["id"]):
+                        st.session_state.pop(_del_key, None)
+                        st.toast(f"🗑️ '{acc.get('account_name','')}' 삭제 완료")
+                        st.rerun()
+                if st.button("취소", key=f"del_cancel_{acc['id']}",
+                             use_container_width=True):
+                    st.session_state.pop(_del_key, None)
+                    st.rerun()
+            else:
+                if st.button("🗑️ 삭제", key=f"del_{acc['id']}",
+                             use_container_width=True):
+                    st.session_state[_del_key] = True
+                    st.rerun()
 
 # ── 모달 트리거 ───────────────────────────────────────────────────────────────
 if add_btn or apply_btn:
@@ -779,19 +840,20 @@ with st.expander("🔐 관리자 — 상태 관리"):
                     st.error("비밀번호가 틀렸습니다.")
     else:
         st.success("관리자 모드 활성화")
-        all_accs = load_accounts()
+        all_accs = load_accounts()  # 관리자는 owner_id 필터 없이 전체 조회
         if not all_accs:
             st.info("등록된 계정이 없습니다.")
         else:
             for i, acc in enumerate(all_accs):
                 with st.container(border=True):
-                    c1, c2, c3 = st.columns([4, 2, 1])
+                    c1, c2, c3, c4 = st.columns([4, 2, 1, 1])
                     with c1:
-                        plat_info = acc.get("platform_label", "네이버")
-                        detail = acc.get("customer_id") or acc.get("account_id") or ""
+                        plat_info  = acc.get("platform_label", "네이버")
+                        detail     = acc.get("customer_id") or acc.get("account_id") or ""
+                        owner_disp = acc.get("owner_name") or acc.get("owner_id") or "⚠️ 소유자 미지정"
                         st.markdown(
                             f"**{acc['account_name']}** &nbsp; `{detail}`  \n"
-                            f"{plat_info} · 신청일: {acc['created_at'][:10]}"
+                            f"{plat_info} · 신청자: `{owner_disp}` · 신청일: {acc['created_at'][:10]}"
                         )
                         st.markdown(badge(acc["status"]), unsafe_allow_html=True)
                     with c2:
@@ -808,6 +870,20 @@ with st.expander("🔐 관리자 — 상태 관리"):
                             _get_sb().table("rebate_accounts").update({"status": new_status}).eq("id", acc["id"]).execute()
                             st.toast(f"✅ {acc['account_name']} 상태 변경 완료")
                             st.rerun()
+                    with c4:
+                        _adm_del_key = f"adm_confirm_del_{acc['id']}"
+                        if st.session_state.get(_adm_del_key):
+                            if st.button("삭제 확인", key=f"adm_del_ok_{acc['id']}",
+                                         type="primary", use_container_width=True):
+                                if delete_account(acc["id"]):
+                                    st.session_state.pop(_adm_del_key, None)
+                                    st.toast(f"🗑️ '{acc['account_name']}' 삭제 완료")
+                                    st.rerun()
+                        else:
+                            if st.button("🗑️ 삭제", key=f"adm_del_{acc['id']}",
+                                         use_container_width=True):
+                                st.session_state[_adm_del_key] = True
+                                st.rerun()
 
         st.divider()
 

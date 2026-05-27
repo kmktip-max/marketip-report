@@ -22,6 +22,27 @@ def _now_kst():
 
 
 def _secret(key, default=""):
+    # 1. .streamlit/secrets.toml 직접 파싱 (@st.dialog 등 모든 컨텍스트에서 안전)
+    try:
+        _root = os.path.dirname(os.path.abspath(__file__))
+        _toml = os.path.join(_root, ".streamlit", "secrets.toml")
+        if os.path.exists(_toml):
+            try:
+                import tomllib
+            except ImportError:
+                try:
+                    import tomli as tomllib  # type: ignore[no-redef]
+                except ImportError:
+                    tomllib = None
+            if tomllib is not None:
+                with open(_toml, "rb") as _f:
+                    _d = tomllib.load(_f)
+                val = _d.get(key)
+                if val is not None:
+                    return str(val)
+    except Exception:
+        pass
+    # 2. st.secrets (Streamlit Cloud)
     try:
         import streamlit as st
         if hasattr(st, "secrets") and key in st.secrets:
@@ -108,6 +129,8 @@ def send_admin_email(record: dict) -> dict:
 # ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
 def send_admin_sms(record: dict, phone: str = "") -> dict:
     from bizmoney_alert import send_sms_notification
+    if not phone:
+        phone = _secret("ADMIN_NOTIFY_PHONE") or _secret("ADMIN_ALERT_PHONE")
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
 
