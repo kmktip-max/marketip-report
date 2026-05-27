@@ -228,78 +228,100 @@ with tab2:
 
             st.subheader("② 보고서 미리보기")
             if st.button("🔍 보고서 데이터 수집 및 미리보기 생성", type="secondary", use_container_width=True):
+                import pandas as pd
                 results = []
-                with st.spinner("데이터 수집 중..."):
-                    for client in selected_clients:
+                for client in selected_clients:
+                    with st.status(
+                        f"📡 {client['name']} 데이터 수집 중...",
+                        expanded=True,
+                    ) as _col_status:
+                        _step_msg = st.empty()
+
+                        def _on_step(msg, _el=_step_msg):
+                            _el.write(msg)
+
                         try:
                             api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
-                            data = api.fetch_report(period_key)
-                            kws  = data["keywords"]
-
-                            import pandas as pd
-                            sm   = data.get("summary", {})
-                            kwsm = data.get("kw_summary", {})
-                            dbg  = data.get("debug_params", {})
-
-                            with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=True):
-                                st.markdown("**① API 요청 정보**")
-                                dc1, dc2, dc3 = st.columns(3)
-                                dc1.text(f"Customer ID : {dbg.get('customer_id','')}")
-                                dc2.text(f"조회 시작일  : {dbg.get('since','')}")
-                                dc3.text(f"조회 종료일  : {dbg.get('until','')}")
-                                st.caption(
-                                    f"Endpoint: {dbg.get('endpoint','')}  |  "
-                                    f"Fields: {dbg.get('fields','')}  |  "
-                                    f"캠페인 통계 row: {dbg.get('camp_stat_rows',0)}  |  "
-                                    f"키워드 통계 row: {dbg.get('kw_stat_rows',0)}  |  "
-                                    f"캠페인: {dbg.get('total_campaigns',0)}개  "
-                                    f"광고그룹: {dbg.get('total_adgroups',0)}개  "
-                                    f"키워드: {dbg.get('total_keywords',0)}개"
-                                )
-                                st.divider()
-                                st.markdown("**② 캠페인 레벨 집계 (KPI 카드 기준)**")
-                                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
-                                mc1.metric("클릭수",   f"{sm.get('clicks',0):,}")
-                                mc2.metric("노출수",   f"{sm.get('impressions',0):,}")
-                                mc3.metric("전환수",   f"{sm.get('conversions',0):,}")
-                                mc4.metric("전환매출", f"{sm.get('revenue',0):,}")
-                                mc5.metric("추정비용", f"{sm.get('cost',0):,}")
-                                st.markdown("**③ 키워드 레벨 합산**")
-                                kc1, kc2, kc3, kc4, kc5 = st.columns(5)
-                                kc1.metric("클릭수", f"{kwsm.get('clicks',0):,}",
-                                           delta=f"{kwsm.get('clicks',0)-sm.get('clicks',0):+,}")
-                                kc2.metric("노출수", f"{kwsm.get('impressions',0):,}",
-                                           delta=f"{kwsm.get('impressions',0)-sm.get('impressions',0):+,}")
-                                kc3.metric("전환수",   f"{kwsm.get('conversions',0):,}")
-                                kc4.metric("전환매출", f"{kwsm.get('revenue',0):,}")
-                                kc5.metric("추정비용", f"{kwsm.get('cost',0):,}")
-                                st.divider()
-                                camp_table = data.get("camp_table", [])
-                                if camp_table:
-                                    st.markdown("**④ 캠페인별 성과**")
-                                    st.dataframe(pd.DataFrame(camp_table), use_container_width=True, hide_index=True)
-                                if kws:
-                                    st.markdown("**⑤ 키워드 성과 상위 10행**")
-                                    _cols = ["keyword", "clicks", "impressions", "conversions",
-                                             "revenue", "cost", "ctr", "cpc", "roas", "avg_rnk"]
-                                    st.dataframe(
-                                        pd.DataFrame(kws[:10])[[col for col in _cols if col in kws[0]]],
-                                        use_container_width=True, hide_index=True,
-                                    )
-                                with st.expander("디버그 로그"):
-                                    for line in data.get("debug", []):
-                                        st.caption(line)
-
+                            data = api.fetch_report(period_key, on_step=_on_step)
                             html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
                             results.append({"client": client, "data": data, "html": html, "status": "ok"})
-                            st.success(
-                                f"✅ {client['name']} 완료 — "
-                                f"캠페인 {data['total_campaigns']}개 | 키워드 {data['total_keywords']}개 | "
-                                f"클릭 {sm.get('clicks',0):,}회 | 노출 {sm.get('impressions',0):,}회"
+                            sm = data.get("summary", {})
+                            _col_status.update(
+                                label=(
+                                    f"✅ {client['name']} 완료 — "
+                                    f"캠페인 {data['total_campaigns']}개 | "
+                                    f"키워드 {data['total_keywords']}개 | "
+                                    f"클릭 {sm.get('clicks', 0):,}회"
+                                ),
+                                state="complete",
+                                expanded=False,
                             )
                         except Exception as e:
                             results.append({"client": client, "error": str(e), "status": "error"})
+                            _col_status.update(
+                                label=f"❌ {client['name']} 오류",
+                                state="error",
+                            )
                             st.error(f"❌ {client['name']} 오류: {e}")
+
+                for r in results:
+                    if r["status"] != "ok":
+                        continue
+                    client = r["client"]
+                    data   = r["data"]
+                    sm     = data.get("summary", {})
+                    kwsm   = data.get("kw_summary", {})
+                    dbg    = data.get("debug_params", {})
+                    kws    = data["keywords"]
+
+                    with st.expander(f"🔎 {client['name']} 데이터 검증", expanded=True):
+                        st.markdown("**① API 요청 정보**")
+                        dc1, dc2, dc3 = st.columns(3)
+                        dc1.text(f"Customer ID : {dbg.get('customer_id','')}")
+                        dc2.text(f"조회 시작일  : {dbg.get('since','')}")
+                        dc3.text(f"조회 종료일  : {dbg.get('until','')}")
+                        st.caption(
+                            f"Endpoint: {dbg.get('endpoint','')}  |  "
+                            f"Fields: {dbg.get('fields','')}  |  "
+                            f"캠페인 통계 row: {dbg.get('camp_stat_rows',0)}  |  "
+                            f"키워드 통계 row: {dbg.get('kw_stat_rows',0)}  |  "
+                            f"캠페인: {dbg.get('total_campaigns',0)}개  "
+                            f"광고그룹: {dbg.get('total_adgroups',0)}개  "
+                            f"키워드: {dbg.get('total_keywords',0)}개"
+                        )
+                        st.divider()
+                        st.markdown("**② 캠페인 레벨 집계 (KPI 카드 기준)**")
+                        mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                        mc1.metric("클릭수",   f"{sm.get('clicks',0):,}")
+                        mc2.metric("노출수",   f"{sm.get('impressions',0):,}")
+                        mc3.metric("전환수",   f"{sm.get('conversions',0):,}")
+                        mc4.metric("전환매출", f"{sm.get('revenue',0):,}")
+                        mc5.metric("추정비용", f"{sm.get('cost',0):,}")
+                        st.markdown("**③ 키워드 레벨 합산**")
+                        kc1, kc2, kc3, kc4, kc5 = st.columns(5)
+                        kc1.metric("클릭수", f"{kwsm.get('clicks',0):,}",
+                                   delta=f"{kwsm.get('clicks',0)-sm.get('clicks',0):+,}")
+                        kc2.metric("노출수", f"{kwsm.get('impressions',0):,}",
+                                   delta=f"{kwsm.get('impressions',0)-sm.get('impressions',0):+,}")
+                        kc3.metric("전환수",   f"{kwsm.get('conversions',0):,}")
+                        kc4.metric("전환매출", f"{kwsm.get('revenue',0):,}")
+                        kc5.metric("추정비용", f"{kwsm.get('cost',0):,}")
+                        st.divider()
+                        camp_table = data.get("camp_table", [])
+                        if camp_table:
+                            st.markdown("**④ 캠페인별 성과**")
+                            st.dataframe(pd.DataFrame(camp_table), use_container_width=True, hide_index=True)
+                        if kws:
+                            st.markdown("**⑤ 키워드 성과 상위 10행**")
+                            _cols = ["keyword", "clicks", "impressions", "conversions",
+                                     "revenue", "cost", "ctr", "cpc", "roas", "avg_rnk"]
+                            st.dataframe(
+                                pd.DataFrame(kws[:10])[[col for col in _cols if col in kws[0]]],
+                                use_container_width=True, hide_index=True,
+                            )
+                        with st.expander("디버그 로그"):
+                            for line in data.get("debug", []):
+                                st.caption(line)
 
                 st.session_state.preview_results = results
                 st.session_state.preview_period  = period_key

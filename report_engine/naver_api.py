@@ -145,17 +145,24 @@ class NaverAdAPI:
             row["keyword"] = keyword
         return row
 
-    def fetch_report(self, period="weekly"):
+    def fetch_report(self, period="weekly", on_step=None):
+        def _step(msg):
+            if callable(on_step):
+                on_step(msg)
+
         since, until = get_date_range(period)
         debug_log = []
 
         # ── 1. 캠페인 목록 ────────────────────────────────────────────
+        _step("캠페인 목록 조회 중...")
         campaigns = self.get_campaigns()
         camp_ids  = [c["nccCampaignId"] for c in campaigns]
         camp_map  = {c["nccCampaignId"]: c.get("name", c["nccCampaignId"]) for c in campaigns}
+        _step(f"✅ 캠페인 {len(campaigns)}개 확인")
         debug_log.append(f"캠페인 수: {len(campaigns)} | IDs: {camp_ids}")
 
         # ── 2. 캠페인 통계 + 광고그룹 목록 병렬 수집 ─────────────────
+        _step(f"캠페인 통계 + 광고그룹 조회 중... (병렬)")
         with ThreadPoolExecutor(max_workers=2) as ex:
             f_cstat = ex.submit(self.get_stats, camp_ids, since, until)
             f_ag    = ex.submit(self.get_adgroups, camp_ids)
@@ -163,14 +170,19 @@ class NaverAdAPI:
             adgroups   = f_ag.result()
 
         ag_ids = [g["nccAdgroupId"] for g in adgroups]
+        _step(f"✅ 광고그룹 {len(adgroups)}개 확인")
         debug_log.append(f"캠페인 통계 row: {len(camp_stats)}")
         debug_log.append(f"광고그룹 수: {len(adgroups)}")
 
         # ── 3. 키워드 목록 + 키워드 통계 병렬 수집 ───────────────────
+        _step(f"키워드 목록 조회 중... (광고그룹 {len(ag_ids)}개)")
         keywords  = self.get_keywords(ag_ids)
         kw_map    = {k["nccKeywordId"]: k.get("keyword", "") for k in keywords}
         kw_ids    = list(kw_map.keys())
+        batches   = max(1, (len(kw_ids) + 19) // 20)
+        _step(f"키워드 통계 수집 중... (키워드 {len(kw_ids)}개 · {batches}배치)")
         kw_stats  = self.get_stats(kw_ids, since, until)
+        _step(f"✅ 키워드 {len(kw_ids)}개 통계 수집 완료")
         debug_log.append(f"키워드 수: {len(kw_ids)} | 키워드 통계 row: {len(kw_stats)}")
 
         # ── 4. 캠페인 레벨 집계 (KPI 카드 + 캠페인 테이블) ──────────
