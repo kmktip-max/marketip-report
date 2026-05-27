@@ -424,26 +424,36 @@ def _handle_submit(plat_key: str, fd: dict):
 
     # ── 관리자 알림 발송 (실패해도 신청은 정상 처리) ──────────────────────────
     _alert_result = {"email": {"status": "skipped"}, "sms": {"status": "skipped"}}
+    _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
         _alert_result = send_admin_application_alert(record)
         save_alert_history(record, _alert_result)
-    except Exception:
-        pass
+    except Exception as _e:
+        _alert_err = str(_e)
 
-    _email_ok = _alert_result.get("email", {}).get("status") == "success"
-    _sms_ok   = _alert_result.get("sms",   {}).get("status") == "success"
-    _any_sent = _email_ok or _sms_ok
+    _email_st = _alert_result.get("email", {}).get("status", "")
+    _sms_st   = _alert_result.get("sms",   {}).get("status", "")
+    _any_sent = _email_st == "success" or _sms_st == "success"
 
     st.success("✅ 연동 신청이 완료되었습니다. 확인 후 연락드리겠습니다!")
 
     if _any_sent:
         st.info("관리자 알림이 발송되었습니다.")
-    else:
-        _email_skipped = _alert_result.get("email", {}).get("status") in ("skipped",)
-        _sms_skipped   = _alert_result.get("sms",   {}).get("status") in ("skipped",)
-        if not (_email_skipped and _sms_skipped):
-            st.warning("신청은 접수되었으나 관리자 알림 발송에 실패했습니다. 관리자 화면에서 확인이 필요합니다.")
+    elif _email_st not in ("skipped",) or _sms_st not in ("skipped",) or _alert_err:
+        st.warning("신청은 접수되었으나 관리자 알림 발송에 실패했습니다.")
+
+    # 관리자에게만 상세 결과 표시
+    if st.session_state.get("auth_type") == "admin":
+        if _alert_err:
+            st.caption(f"알림 오류: {_alert_err[:200]}")
+        else:
+            _e_info = _alert_result.get("email", {})
+            _s_info = _alert_result.get("sms",   {})
+            st.caption(
+                f"이메일: {_e_info.get('status')} {_e_info.get('error','') or _e_info.get('reason','')} | "
+                f"SMS: {_s_info.get('status')} {_s_info.get('error','') or _s_info.get('reason','')}"
+            )
 
     st.rerun()
 

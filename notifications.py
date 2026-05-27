@@ -3,9 +3,6 @@ import os
 import json
 import uuid
 import smtplib
-import hashlib
-import hmac
-import requests
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -102,16 +99,13 @@ def send_admin_email(record: dict) -> dict:
         return {"status": "failed", "error": str(e)[:300]}
 
 
-# ── SMS 발송 (SOLAPI 재사용) ──────────────────────────────────────────────────
+# ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
 def send_admin_sms(record: dict) -> dict:
     phone = _secret("ADMIN_ALERT_PHONE") or _secret("ADMIN_NOTIFY_PHONE")
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
 
-    api_key    = _secret("SOLAPI_API_KEY")
-    api_secret = _secret("SOLAPI_API_SECRET")
-    sender_id  = _secret("SOLAPI_SENDER_ID")
-    if not api_key or not api_secret or not sender_id:
+    if not _secret("SOLAPI_API_KEY"):
         return {"status": "skipped", "reason": "SOLAPI 미설정"}
 
     plat = record.get("platform_label", record.get("platform", "-"))
@@ -124,34 +118,8 @@ def send_admin_sms(record: dict) -> dict:
         f"월예산: {record.get('monthly_budget', '-')}",
     ])
 
-    try:
-        now_str   = _now_kst().strftime("%Y-%m-%dT%H:%M:%S+09:00")
-        salt      = str(uuid.uuid4()).replace("-", "")
-        signature = hmac.new(
-            api_secret.encode(), f"{now_str}{salt}".encode(), hashlib.sha256
-        ).hexdigest()
-        headers = {
-            "Authorization": (
-                f"HMAC-SHA256 apiKey={api_key}, date={now_str}, "
-                f"salt={salt}, signature={signature}"
-            ),
-            "Content-Type": "application/json; charset=UTF-8",
-        }
-        payload = {"message": {
-            "to":   phone.replace("-", ""),
-            "from": sender_id.replace("-", ""),
-            "text": text,
-        }}
-        resp = requests.post(
-            "https://api.solapi.com/messages/v4/send",
-            headers=headers, json=payload, timeout=15,
-        )
-        resp.raise_for_status()
-        return {"status": "success", "response": resp.json()}
-    except requests.HTTPError as e:
-        return {"status": "failed", "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
-    except Exception as e:
-        return {"status": "failed", "error": str(e)[:200]}
+    from bizmoney_alert import send_sms_notification
+    return send_sms_notification(phone, text)
 
 
 # ── 통합 알림 ─────────────────────────────────────────────────────────────────
