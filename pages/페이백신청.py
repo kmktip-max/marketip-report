@@ -752,7 +752,53 @@ if not filtered:
 else:
     _PLAT_COLORS = {"naver": "#03C75A", "daangn": "#FF6F0F", "kakao": "#FAD400"}
     _PLAT_FG     = {"naver": "#fff",    "daangn": "#fff",    "kakao": "#3A1D1D"}
+
+    # ── 전체선택 / 선택삭제 툴바 ─────────────────────────────────────────────
+    _chk_all_key = f"chk_all_{selected_tab}"
+    _tb_l, _tb_m, _tb_r = st.columns([1, 3, 2])
+    with _tb_l:
+        _all_checked = st.checkbox("전체 선택", key=_chk_all_key)
+    with _tb_r:
+        _selected_ids = [
+            acc["id"] for acc in filtered
+            if st.session_state.get(f"chk_{acc['id']}", False)
+        ]
+        _n_sel = len(_selected_ids)
+        _del_btn_label = f"🗑️ 선택 삭제 ({_n_sel}개)" if _n_sel else "🗑️ 선택 삭제"
+        if st.button(_del_btn_label, disabled=(_n_sel == 0),
+                     use_container_width=True, key="bulk_del_btn"):
+            st.session_state["bulk_del_confirm"] = True
+            st.rerun()
+
+    if st.session_state.get("bulk_del_confirm") and _n_sel:
+        _ids_to_del = [
+            acc["id"] for acc in filtered
+            if st.session_state.get(f"chk_{acc['id']}", False)
+        ]
+        st.warning(f"정말 {len(_ids_to_del)}개 계정을 삭제하시겠습니까?")
+        _cf1, _cf2, _ = st.columns([1, 1, 3])
+        with _cf1:
+            if st.button("삭제 확인", type="primary", key="bulk_del_confirm_btn",
+                         use_container_width=True):
+                for _did in _ids_to_del:
+                    delete_account(_did)
+                    st.session_state.pop(f"chk_{_did}", None)
+                st.session_state.pop("bulk_del_confirm", None)
+                st.session_state.pop(_chk_all_key, None)
+                st.toast(f"🗑️ {len(_ids_to_del)}개 계정 삭제 완료")
+                st.rerun()
+        with _cf2:
+            if st.button("취소", key="bulk_del_cancel_btn", use_container_width=True):
+                st.session_state.pop("bulk_del_confirm", None)
+                st.rerun()
+
+    st.markdown("<div style='margin-top:4px;'></div>", unsafe_allow_html=True)
+
     for acc in filtered:
+        # 전체선택 상태에 따라 체크박스 동기화
+        if _all_checked:
+            st.session_state[f"chk_{acc['id']}"] = True
+
         plat     = acc.get("platform", "naver")
         plat_lbl = acc.get("platform_label", "네이버")
         pbg = _PLAT_COLORS.get(plat, "#03C75A")
@@ -781,7 +827,10 @@ else:
             f'font-size:11px;padding:1px 7px;border-radius:6px;">{acc["alias"]}</span>'
             if acc.get("alias") else ""
         )
-        col_card, col_del = st.columns([5, 1])
+        col_chk, col_card = st.columns([0.4, 5.6])
+        with col_chk:
+            st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
+            st.checkbox("", key=f"chk_{acc['id']}", label_visibility="collapsed")
         with col_card:
             st.markdown(f"""
 <div class="acc-card">
@@ -796,25 +845,6 @@ else:
   <div style="margin-top:2px;">{badge(acc.get("status","연동신청"))}</div>
 </div>
 """, unsafe_allow_html=True)
-        with col_del:
-            _del_key = f"confirm_del_{acc['id']}"
-            st.markdown("<div style='padding-top:14px;'></div>", unsafe_allow_html=True)
-            if st.session_state.get(_del_key):
-                if st.button("삭제 확인", key=f"del_ok_{acc['id']}", type="primary",
-                             use_container_width=True):
-                    if delete_account(acc["id"]):
-                        st.session_state.pop(_del_key, None)
-                        st.toast(f"🗑️ '{acc.get('account_name','')}' 삭제 완료")
-                        st.rerun()
-                if st.button("취소", key=f"del_cancel_{acc['id']}",
-                             use_container_width=True):
-                    st.session_state.pop(_del_key, None)
-                    st.rerun()
-            else:
-                if st.button("🗑️ 삭제", key=f"del_{acc['id']}",
-                             use_container_width=True):
-                    st.session_state[_del_key] = True
-                    st.rerun()
 
 # ── 모달 트리거 ───────────────────────────────────────────────────────────────
 if add_btn or apply_btn:
