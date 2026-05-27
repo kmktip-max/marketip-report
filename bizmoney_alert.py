@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -362,8 +363,16 @@ def send_kakao_alerttalk(
     dry_run: bool = False,
 ) -> dict:
     if dry_run:
-        return {"status": "dry_run", "phone": phone,
-                "template": template_code, "vars": variables}
+        preview = template_code
+        for k, v in variables.items():
+            preview = preview.replace(f"#{{{k}}}", str(v))
+        return {
+            "status":       "dry_run",
+            "phone":        phone,
+            "template":     template_code,
+            "vars":         variables,
+            "preview_text": preview,
+        }
     if provider == "solapi":
         return _send_solapi(phone, template_code, variables)
     return {"status": "failed", "error": f"지원하지 않는 provider: {provider}"}
@@ -460,6 +469,12 @@ def _build_vars(s: dict, balance: int, threshold: int) -> dict:
         "담당자명":   s.get("manager_name", ""),
         "문의연락처": s.get("manager_phone", ""),
     }
+
+
+def check_template_vars(template_text: str, variables: dict) -> list:
+    """템플릿 텍스트의 #{변수명} 패턴 중 variables에 없는 누락 키 목록 반환"""
+    required = set(re.findall(r'#\{([^}]+)\}', template_text))
+    return sorted(required - set(variables.keys()))
 
 
 # ── 발송 이력 기록 ─────────────────────────────────────────────────────────────

@@ -1939,22 +1939,20 @@ with t_pnl:
 
         exp_val = f"🔻 -{int(round(tot_exp)):,} 원" if tot_exp else "0 원"
 
-        c1 = st.columns(5)
-        c1[0].markdown(_kpi_card("검색광고 대표 직접수익",    w(search_owner_profit)),     unsafe_allow_html=True)
+        c1 = st.columns(4)
+        c1[0].markdown(_kpi_card("검색광고 대표 직접수익",    w(search_owner_profit)),      unsafe_allow_html=True)
         c1[1].markdown(_kpi_card("검색광고 프리랜서 계정수익", w(search_freelancer_profit)), unsafe_allow_html=True)
-        c1[2].markdown(_kpi_card("검색광고 총수익",            w(search_total_profit)),     unsafe_allow_html=True)
-        c1[3].markdown(_kpi_card("플레이스 순수익",            w(place_profit)),            unsafe_allow_html=True)
-        c1[4].markdown(_kpi_card("블로그 순수익",              w(blog_profit)),             unsafe_allow_html=True)
+        c1[2].markdown(_kpi_card("플레이스 순수익",            w(place_profit)),             unsafe_allow_html=True)
+        c1[3].markdown(_kpi_card("블로그 순수익",              w(blog_profit)),              unsafe_allow_html=True)
 
         st.markdown("<div style='margin-top:12px;'></div>", unsafe_allow_html=True)
 
-        c2 = st.columns(5)
-        c2[0].markdown(_kpi_card("총 수익",             w(gross_total_profit)),             unsafe_allow_html=True)
-        c2[1].markdown(_kpi_card("총 수익 세후 추정",   w(gross_total_profit_after_tax)),   unsafe_allow_html=True)
-        c2[2].markdown(_kpi_card("기타비용 합계",        exp_val, "negative"),               unsafe_allow_html=True)
-        c2[3].markdown(_kpi_card("월 최종 순수익",       w(final_net_profit), "primary"),    unsafe_allow_html=True)
-        c2[4].markdown(_kpi_card("월 최종 세후 추정 순수익", w(final_net_profit_after_tax),
-                                 "secondary", badge="세후 추정"),                            unsafe_allow_html=True)
+        c2 = st.columns(4)
+        c2[0].markdown(_kpi_card("총 수익",            w(gross_total_profit)),            unsafe_allow_html=True)
+        c2[1].markdown(_kpi_card("총 수익 세후 추정",  w(gross_total_profit_after_tax)),  unsafe_allow_html=True)
+        c2[2].markdown(_kpi_card("기타비용 합계",       exp_val, "negative"),              unsafe_allow_html=True)
+        c2[3].markdown(_kpi_card("기타비용 제외 금액",  w(final_net_profit_after_tax),
+                                 "primary", badge="세후 추정"),                            unsafe_allow_html=True)
 
         if df is None:
             st.warning("엑셀 없음 — 검색광고 수익 0원으로 계산됩니다.")

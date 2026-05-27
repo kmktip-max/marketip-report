@@ -21,6 +21,7 @@ from bizmoney_alert import (
     get_bizmoney_balance,
     get_solapi_config_status,
     send_kakao_alerttalk,
+    check_template_vars,
     TEMPLATE_CODE_FIRST, TEMPLATE_CODE_DEPLETED,
     TEMPLATE_FIRST, TEMPLATE_DEPLETED,
     _build_vars, run_check,
@@ -266,6 +267,30 @@ with t_alert_cfg:
         st.success("전체 저장 완료")
         _reload()
 
+    st.divider()
+    st.markdown("#### 알림톡 템플릿 ID 설정")
+    st.caption("Solapi 콘솔 → 카카오 알림톡 → 템플릿 관리에서 확인한 ID를 입력하세요.")
+    try:
+        from notifications import get_notify_config as _gnc, save_notify_config as _snc
+        _nc = _gnc()
+        _tc1 = st.text_input(
+            "1차 알림 (잔액 부족) 템플릿 ID",
+            value=_nc.get("bm_template_first", TEMPLATE_CODE_FIRST),
+            key="cfg_tc1",
+        )
+        _tc2 = st.text_input(
+            "2차 알림 (소진) 템플릿 ID",
+            value=_nc.get("bm_template_depleted", TEMPLATE_CODE_DEPLETED),
+            key="cfg_tc2",
+        )
+        if st.button("💾 템플릿 ID 저장", key="btn_tc_save"):
+            _nc["bm_template_first"]    = _tc1.strip()
+            _nc["bm_template_depleted"] = _tc2.strip()
+            _snc(_nc)
+            st.success("✅ 저장 완료")
+    except Exception as _e:
+        st.warning(f"notifications 모듈 로드 실패: {_e}")
+
 
 # ─── [탭3] 발송 이력 ─────────────────────────────────────────────────────────
 with t_history:
@@ -429,13 +454,21 @@ with t_test:
         # 템플릿 ID 입력 (카카오채널 설정된 경우만 의미 있음)
         is_first  = alert_type == "1차 경고"
         if kakao_ready:
-            default_tcode = TEMPLATE_CODE_FIRST if is_first else TEMPLATE_CODE_DEPLETED
+            try:
+                from notifications import get_notify_config as _gnc_t
+                _nc_t = _gnc_t()
+                default_tcode = (
+                    _nc_t.get("bm_template_first", TEMPLATE_CODE_FIRST) if is_first
+                    else _nc_t.get("bm_template_depleted", TEMPLATE_CODE_DEPLETED)
+                )
+            except Exception:
+                default_tcode = TEMPLATE_CODE_FIRST if is_first else TEMPLATE_CODE_DEPLETED
             tcode = st.text_input(
                 "Solapi 템플릿 ID",
                 value=default_tcode,
                 placeholder="Solapi에 등록된 실제 템플릿 ID 입력",
                 key="test_tcode",
-                help="Solapi 콘솔 → 카카오 알림톡 → 템플릿 관리에서 확인",
+                help="Solapi 콘솔 → 카카오 알림톡 → 템플릿 관리에서 확인 / ⚙️ 알림 설정 탭에서 저장 가능",
             )
         else:
             tcode = TEMPLATE_FIRST if is_first else TEMPLATE_DEPLETED  # SMS용 본문
@@ -462,7 +495,16 @@ with t_test:
         st.markdown("**메시지 미리보기**")
         st.code(preview, language=None)
 
-        if st.button("📤 테스트 발송", type="primary", key="btn_test_send"):
+        # 변수 누락 확인
+        missing_vars = check_template_vars(tmpl, vars_)
+        if missing_vars:
+            st.error(
+                "⚠️ 누락된 변수 — 발송 불가: "
+                + ", ".join(f"#{{{v}}}" for v in missing_vars)
+            )
+
+        if st.button("📤 테스트 발송", type="primary", key="btn_test_send",
+                     disabled=bool(missing_vars)):
             effective_dry = dry_run_on or not solapi_ready
             if not test_phone.strip():
                 st.error("발송 번호를 입력해주세요.")
@@ -476,13 +518,23 @@ with t_test:
                 status = result.get("status")
                 if status == "dry_run":
                     st.success("✅ Dry-run 완료 — 실제 발송 안 됨")
+                    _pt = result.get("preview_text", "")
+                    if _pt and _pt != tcode.strip():
+                        st.markdown("**치환된 메시지:**")
+                        st.code(_pt, language=None)
+                    st.caption(
+                        f"수신번호: `{result.get('phone', '')}`  |  "
+                        f"변수 {len(result.get('vars', {}))}개 적용"
+                    )
                 elif status == "success":
                     st.success("✅ 발송 성공")
+                    st.json(result)
                 elif status == "skipped":
                     st.warning(f"발송 건너뜀: {result.get('error', '')}")
+                    st.json(result)
                 else:
                     st.error(f"발송 실패: {result.get('error', '')}")
-                st.json(result)
+                    st.json(result)
 
     st.divider()
 
