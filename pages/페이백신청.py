@@ -422,39 +422,29 @@ def _handle_submit(plat_key: str, fd: dict):
     record.update({k: (v.strip() if isinstance(v, str) else v) for k, v in fd.items()})
     _get_sb().table("rebate_accounts").insert(record).execute()
 
-    # ── 관리자 SMS 알림 (실패해도 신청은 정상 처리) ──────────────────────────
-    _sms_result = None
+    # ── 관리자 알림 발송 (실패해도 신청은 정상 처리) ──────────────────────────
+    _alert_result = {"email": {"status": "skipped"}, "sms": {"status": "skipped"}}
     try:
-        from bizmoney_alert import send_sms_notification, _secret
-        admin_phone = _secret("ADMIN_NOTIFY_PHONE")
-        if admin_phone:
-            cid     = str(fd.get("customer_id", "")).strip()
-            manager = str(fd.get("manager_name", "")).strip()
-            budget  = str(fd.get("monthly_budget", "")).strip()
-            lines = [
-                f"[마케팁] 페이백 연동 신청",
-                f"광고주: {name}",
-                f"매체: {plat_label}",
-            ]
-            if manager: lines.append(f"담당자: {manager}")
-            if cid:     lines.append(f"CID: {cid}")
-            if budget:  lines.append(f"월예산: {budget}")
-            lines.append(record["created_at"])
-            _sms_result = send_sms_notification(admin_phone, "\n".join(lines))
-        else:
-            _sms_result = {"status": "skipped", "error": "ADMIN_NOTIFY_PHONE 미설정"}
-    except Exception as e:
-        _sms_result = {"status": "failed", "error": str(e)}
+        from notifications import send_admin_application_alert, save_alert_history
+        _alert_result = send_admin_application_alert(record)
+        save_alert_history(record, _alert_result)
+    except Exception:
+        pass
+
+    _email_ok = _alert_result.get("email", {}).get("status") == "success"
+    _sms_ok   = _alert_result.get("sms",   {}).get("status") == "success"
+    _any_sent = _email_ok or _sms_ok
 
     st.success("✅ 연동 신청이 완료되었습니다. 확인 후 연락드리겠습니다!")
 
-    # 관리자에게만 SMS 발송 결과 표시
-    if st.session_state.get("auth_type") == "admin" and _sms_result:
-        _st = _sms_result.get("status", "")
-        if _st == "success":
-            st.caption(f"📱 관리자 SMS 발송 완료")
-        else:
-            st.caption(f"📱 SMS: {_sms_result.get('error', _st)}")
+    if _any_sent:
+        st.info("관리자 알림이 발송되었습니다.")
+    else:
+        _email_skipped = _alert_result.get("email", {}).get("status") in ("skipped",)
+        _sms_skipped   = _alert_result.get("sms",   {}).get("status") in ("skipped",)
+        if not (_email_skipped and _sms_skipped):
+            st.warning("신청은 접수되었으나 관리자 알림 발송에 실패했습니다. 관리자 화면에서 확인이 필요합니다.")
+
     st.rerun()
 
 
@@ -781,6 +771,68 @@ with st.expander("🔐 관리자 — 상태 관리"):
                             st.toast(f"✅ {acc['account_name']} 상태 변경 완료")
                             st.rerun()
 
+        st.divider()
+
+        # ── 알림 설정 상태 ──────────────────────────────────────────────────
+        st.markdown("**알림 설정 상태**")
+        try:
+            from notifications import get_notification_config_status
+            _cfg = get_notification_config_status()
+            _rows = [
+                ("ADMIN_ALERT_EMAIL", "이메일 수신"),
+                ("SMTP_HOST",         "SMTP 호스트"),
+                ("SMTP_USER",         "SMTP 계정"),
+                ("SMTP_PASSWORD",     "SMTP 비밀번호"),
+                ("ADMIN_ALERT_PHONE", "SMS 수신번호"),
+                ("SOLAPI_API_KEY",    "SOLAPI 키"),
+            ]
+            _cols = st.columns(3)
+            for idx, (k, label) in enumerate(_rows):
+                ok = _cfg.get(k, False)
+                _cols[idx % 3].metric(label, "✅ 설정됨" if ok else "❌ 미설정")
+        except Exception as e:
+            st.caption(f"설정 조회 오류: {e}")
+
+        # ── 테스트 발송 ──────────────────────────────────────────────────────
+        st.markdown("**테스트 발송**")
+        _tc1, _tc2 = st.columns(2)
+        with _tc1:
+            if st.button("이메일 테스트 발송", use_container_width=True, key="pb_test_email"):
+                try:
+                    from notifications import send_admin_email
+                    _r = send_admin_email({
+                        "account_name": "테스트 광고주",
+                        "platform_label": "테스트",
+                        "platform": "test",
+                        "ad_type": "-",
+                        "manager_name": "테스트",
+                        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    })
+                    if _r.get("status") == "success":
+                        st.toast("✅ 이메일 테스트 발송 완료")
+                    else:
+                        st.warning(_r.get("reason") or _r.get("error", "발송 실패"))
+                except Exception as e:
+                    st.error(str(e)[:200])
+        with _tc2:
+            if st.button("문자 테스트 발송", use_container_width=True, key="pb_test_sms"):
+                try:
+                    from notifications import send_admin_sms
+                    _r = send_admin_sms({
+                        "account_name": "테스트",
+                        "platform_label": "테스트",
+                        "ad_type": "-",
+                        "manager_name": "테스트",
+                        "monthly_budget": "-",
+                    })
+                    if _r.get("status") == "success":
+                        st.toast("✅ 문자 테스트 발송 완료")
+                    else:
+                        st.warning(_r.get("reason") or _r.get("error", "발송 실패"))
+                except Exception as e:
+                    st.error(str(e)[:200])
+
+        st.divider()
         if st.button("로그아웃", key="pb_admin_logout"):
             st.session_state.payback_admin_auth = False
             st.rerun()
