@@ -455,20 +455,30 @@ if "_pb_submit_result" in st.session_state:
 
     _email_st = _ar.get("email", {}).get("status", "")
     _sms_st   = _ar.get("sms",   {}).get("status", "")
+    _e        = _ar.get("email", {})
+    _s        = _ar.get("sms",   {})
 
-    if _email_st == "success" or _sms_st == "success":
-        st.toast("관리자 알림 발송 완료", icon="📱")
-    elif _err:
-        st.toast(f"알림 오류: {_err[:80]}", icon="⚠️")
+    if _email_st == "success":
+        st.toast("이메일 발송 완료", icon="📧")
+    elif _email_st == "failed":
+        st.toast(f"이메일 실패: {_e.get('error','')[:60]}", icon="⚠️")
+
+    if _sms_st == "success":
+        st.toast("SMS 발송 완료", icon="📱")
+    elif _sms_st == "failed":
+        st.toast(f"SMS 실패: {_s.get('error','')[:60]}", icon="⚠️")
+    elif _sms_st == "skipped":
+        st.toast(f"SMS 건너뜀: {_s.get('reason','')}", icon="ℹ️")
+
+    if _err:
+        st.toast(f"알림 오류: {_err[:80]}", icon="🚨")
 
     # 관리자에게만 상세 디버그 표시
     if st.session_state.get("auth_type") == "admin":
-        _e = _ar.get("email", {})
-        _s = _ar.get("sms",   {})
         st.info(
             f"**알림 결과**  \n"
-            f"이메일: `{_e.get('status')}` {_e.get('error','') or _e.get('reason','')}  \n"
-            f"SMS: `{_s.get('status')}` {_s.get('error','') or _s.get('reason','')}  \n"
+            f"이메일: `{_email_st}` {_e.get('error','') or _e.get('reason','')}  \n"
+            f"SMS: `{_sms_st}` {_s.get('error','') or _s.get('reason','')}  \n"
             + (f"오류: `{_err}`" if _err else "")
         )
 
