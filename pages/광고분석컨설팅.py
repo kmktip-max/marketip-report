@@ -1367,15 +1367,36 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
 
     _tmp_files = []
 
-    # ── matplotlib 한국어 폰트 ──
+    # ── matplotlib 한국어 폰트 (OS별 fallback) ──
     try:
-        import matplotlib.font_manager as _fm
-        _mpl_font = r"C:\Windows\Fonts\malgun.ttf"
-        if os.path.exists(_mpl_font):
-            _fm.fontManager.addfont(_mpl_font)
-            matplotlib.rc("font", family="Malgun Gothic")
-        else:
-            matplotlib.rc("font", family="Malgun Gothic")
+        import platform, matplotlib.font_manager as _fm
+        _sys = platform.system()
+        _mpl_font_name = None
+
+        if _sys == "Windows":
+            _wf = r"C:\Windows\Fonts\malgun.ttf"
+            if os.path.exists(_wf):
+                _fm.fontManager.addfont(_wf)
+            _mpl_font_name = "Malgun Gothic"
+
+        elif _sys == "Darwin":
+            _mpl_font_name = "AppleGothic"
+
+        else:  # Linux / Streamlit Cloud
+            _linux_candidates = [
+                "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf",
+            ]
+            for _lf in _linux_candidates:
+                if os.path.exists(_lf):
+                    _fm.fontManager.addfont(_lf)
+                    _mpl_font_name = _fm.FontProperties(fname=_lf).get_name()
+                    break
+
+        if _mpl_font_name:
+            matplotlib.rc("font", family=_mpl_font_name)
         matplotlib.rc("axes", unicode_minus=False)
     except Exception:
         pass
@@ -1443,35 +1464,37 @@ def build_pdf(adf, tbl, chat_messages, segment_dfs, advertiser_name):  # noqa: C
         plt.tight_layout(pad=0.8)
         return _chart_tmp(fig)
 
-    # ── 한국어 FPDF 폰트 로드 (로컬 우선, 없으면 다운로드) ──
-    _WIN_FONT   = r"C:\Windows\Fonts\malgun.ttf"
-    _WIN_BOLD   = r"C:\Windows\Fonts\malgunbd.ttf"
-    _NANUM_REG  = os.path.join(tempfile.gettempdir(), "NanumGothic.ttf")
-    _NANUM_BOLD = os.path.join(tempfile.gettempdir(), "NanumGothicBold.ttf")
-
-    if os.path.exists(_WIN_FONT):
-        font_path = _WIN_FONT
-    else:
-        if not os.path.exists(_NANUM_REG):
+    # ── FPDF 한국어 폰트 로드 (Windows → Linux 설치 폰트 → 다운로드 순) ──
+    def _find_font(candidates, dl_url, dl_path):
+        for p in candidates:
+            if os.path.exists(p):
+                return p
+        if not os.path.exists(dl_path):
             try:
-                urllib.request.urlretrieve(
-                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
-                    _NANUM_REG)
+                urllib.request.urlretrieve(dl_url, dl_path)
             except Exception:
-                _NANUM_REG = None
-        font_path = _NANUM_REG if _NANUM_REG and os.path.exists(_NANUM_REG) else None
+                return None
+        return dl_path if os.path.exists(dl_path) else None
 
-    if os.path.exists(_WIN_BOLD):
-        font_bold_path = _WIN_BOLD
-    else:
-        if not os.path.exists(_NANUM_BOLD):
-            try:
-                urllib.request.urlretrieve(
-                    "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf",
-                    _NANUM_BOLD)
-            except Exception:
-                _NANUM_BOLD = None
-        font_bold_path = _NANUM_BOLD if _NANUM_BOLD and os.path.exists(_NANUM_BOLD) else None
+    _REG_CANDIDATES = [
+        r"C:\Windows\Fonts\malgun.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ]
+    _BOLD_CANDIDATES = [
+        r"C:\Windows\Fonts\malgunbd.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    ]
+    font_path = _find_font(
+        _REG_CANDIDATES,
+        "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf",
+        os.path.join(tempfile.gettempdir(), "NanumGothic.ttf"),
+    )
+    font_bold_path = _find_font(
+        _BOLD_CANDIDATES,
+        "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Bold.ttf",
+        os.path.join(tempfile.gettempdir(), "NanumGothicBold.ttf"),
+    )
 
     # ════════════════════════════════════════════════
     # 데이터 검증 & 정제
