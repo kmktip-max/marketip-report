@@ -137,6 +137,8 @@ with tab1:
             name       = st.text_input("광고주명 *")
             cust_id    = st.text_input("Customer ID *", help="searchad.naver.com → URL 숫자")
             email      = st.text_input("수신 이메일 *")
+            phone      = st.text_input("카카오 알림 전화번호", placeholder="010-0000-0000",
+                                       help="보고서 발송 시 SMS/카카오 알림 수신 번호")
         with fc2:
             api_key    = st.text_input("API Access License *")
             secret_key = st.text_input("Secret Key *", type="password")
@@ -152,6 +154,7 @@ with tab1:
                     "name": name.strip(),
                     "customer_id": cust_id.strip(),
                     "email": email.strip(),
+                    "phone": phone.strip(),
                     "api_key": api_key.strip(),
                     "secret_key": secret_key.strip(),
                     "memo": memo,
@@ -171,7 +174,11 @@ with tab1:
             with st.expander(f"**{cl['name']}** | {cl['email']} | ID: {cl['customer_id']}"):
                 ec1, ec2, ec3 = st.columns([4, 1, 1])
                 with ec1:
-                    st.caption(f"등록일: {cl.get('created_at','-')} | 메모: {cl.get('memo','-') or '-'}")
+                    st.caption(
+                        f"등록일: {cl.get('created_at','-')} | "
+                        f"전화: {cl.get('phone','-') or '-'} | "
+                        f"메모: {cl.get('memo','-') or '-'}"
+                    )
                     st.caption(f"API Key: {cl['api_key'][:20]}...")
                 with ec2:
                     if st.button("🔌 연결 테스트", key=f"test_{i}"):
@@ -363,7 +370,25 @@ with tab2:
                             )
                         st.warning("⚠️ 위 내용을 확인하셨나요? 아래 버튼을 누르면 실제 이메일이 발송됩니다.")
 
-                        if st.button("✉️ 이메일 발송 확인 및 실행", type="primary", use_container_width=True):
+                        _has_phone = all(r["client"].get("phone") for r in ok_results)
+                        _any_phone = any(r["client"].get("phone") for r in ok_results)
+
+                        _btn_col1, _btn_col2 = st.columns(2)
+                        _send_email_only  = _btn_col1.button(
+                            "✉️ 이메일만 발송", type="secondary", use_container_width=True,
+                            key="btn_send_email_only",
+                        )
+                        _send_email_kakao = _btn_col2.button(
+                            "✉️📱 이메일 + 카톡 발송", type="primary", use_container_width=True,
+                            key="btn_send_email_kakao",
+                            disabled=not _any_phone,
+                            help="전화번호가 등록된 광고주에게만 카톡 알림 발송",
+                        )
+
+                        _do_send  = _send_email_only or _send_email_kakao
+                        _do_kakao = _send_email_kakao
+
+                        if _do_send:
                             smtp_cfg = {
                                 "smtp_user":     smtp_user,
                                 "smtp_password": get_secret("SMTP_PASSWORD", ""),
@@ -375,28 +400,55 @@ with tab2:
 
                             for r in ok_results:
                                 client = r["client"]
+                                _since = r["data"]["since"]
+                                _until = r["data"]["until"]
                                 try:
                                     send_report(
                                         to_email=client["email"],
                                         client_name=client["name"],
                                         period=period_k,
-                                        since=r["data"]["since"],
-                                        until=r["data"]["until"],
+                                        since=_since,
+                                        until=_until,
                                         html_body=r["html"],
                                         **smtp_cfg,
                                     )
-                                    st.success(f"✅ **{client['name']}** → {client['email']} 발송 완료!")
+                                    st.success(f"✅ **{client['name']}** → {client['email']} 이메일 발송 완료!")
                                     history.append({
                                         "client":    client["name"],
                                         "email":     client["email"],
                                         "period":    period_k,
-                                        "since":     r["data"]["since"],
-                                        "until":     r["data"]["until"],
+                                        "since":     _since,
+                                        "until":     _until,
                                         "keywords":  r["data"]["total_keywords"],
                                         "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
                                         "status":    "성공",
                                         "send_mode": "single",
                                     })
+
+                                    if _do_kakao:
+                                        _phone = client.get("phone", "").strip()
+                                        if _phone:
+                                            try:
+                                                from notifications import _solapi_send
+                                                _sms_text = (
+                                                    f"[마케팁] 광고 성과 보고서 발송 완료\n"
+                                                    f"광고주: {client['name']}\n"
+                                                    f"기간: {_since} ~ {_until}\n"
+                                                    f"이메일({client['email']})로 전송되었습니다."
+                                                )
+                                                _sms_r = _solapi_send(_phone, _sms_text)
+                                                if _sms_r.get("status") == "success":
+                                                    st.info(f"📱 **{client['name']}** → {_phone} 카톡/SMS 발송 완료!")
+                                                else:
+                                                    st.warning(
+                                                        f"📱 카톡/SMS 발송 실패: "
+                                                        f"{_sms_r.get('reason') or _sms_r.get('error','')}"
+                                                    )
+                                            except Exception as _sms_e:
+                                                st.warning(f"📱 카톡/SMS 오류: {_sms_e}")
+                                        else:
+                                            st.caption(f"📱 {client['name']} — 전화번호 미등록, SMS 건너뜀")
+
                                 except Exception as e:
                                     st.error(f"❌ **{client['name']}** 발송 실패: {e}")
                                     history.append({
