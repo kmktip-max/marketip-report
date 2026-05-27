@@ -432,34 +432,45 @@ def _handle_submit(plat_key: str, fd: dict):
     except Exception as _e:
         _alert_err = str(_e)
 
-    _email_st = _alert_result.get("email", {}).get("status", "")
-    _sms_st   = _alert_result.get("sms",   {}).get("status", "")
-    _any_sent = _email_st == "success" or _sms_st == "success"
-
-    st.success("✅ 연동 신청이 완료되었습니다. 확인 후 연락드리겠습니다!")
-
-    if _any_sent:
-        st.info("관리자 알림이 발송되었습니다.")
-    elif _email_st not in ("skipped",) or _sms_st not in ("skipped",) or _alert_err:
-        st.warning("신청은 접수되었으나 관리자 알림 발송에 실패했습니다.")
-
-    # 관리자에게만 상세 결과 표시
-    if st.session_state.get("auth_type") == "admin":
-        if _alert_err:
-            st.caption(f"알림 오류: {_alert_err[:200]}")
-        else:
-            _e_info = _alert_result.get("email", {})
-            _s_info = _alert_result.get("sms",   {})
-            st.caption(
-                f"이메일: {_e_info.get('status')} {_e_info.get('error','') or _e_info.get('reason','')} | "
-                f"SMS: {_s_info.get('status')} {_s_info.get('error','') or _s_info.get('reason','')}"
-            )
-
+    # 결과를 session_state에 저장 → 다이얼로그 닫힌 뒤 메인 페이지에서 표시
+    st.session_state["_pb_submit_result"] = {
+        "alert": _alert_result,
+        "err":   _alert_err,
+        "name":  name,
+    }
     st.rerun()
 
 
 # ── Styles ────────────────────────────────────────────────────────────────────
 st.markdown(PAYBACK_CSS, unsafe_allow_html=True)
+
+# ── 신청 완료 결과 표시 (다이얼로그 닫힌 후) ──────────────────────────────────
+if "_pb_submit_result" in st.session_state:
+    _res = st.session_state.pop("_pb_submit_result")
+    _ar  = _res.get("alert", {})
+    _err = _res.get("err", "")
+    _nm  = _res.get("name", "")
+
+    st.toast(f"✅ {_nm} 연동 신청 완료!", icon="✅")
+
+    _email_st = _ar.get("email", {}).get("status", "")
+    _sms_st   = _ar.get("sms",   {}).get("status", "")
+
+    if _email_st == "success" or _sms_st == "success":
+        st.toast("관리자 알림 발송 완료", icon="📱")
+    elif _err:
+        st.toast(f"알림 오류: {_err[:80]}", icon="⚠️")
+
+    # 관리자에게만 상세 디버그 표시
+    if st.session_state.get("auth_type") == "admin":
+        _e = _ar.get("email", {})
+        _s = _ar.get("sms",   {})
+        st.info(
+            f"**알림 결과**  \n"
+            f"이메일: `{_e.get('status')}` {_e.get('error','') or _e.get('reason','')}  \n"
+            f"SMS: `{_s.get('status')}` {_s.get('error','') or _s.get('reason','')}  \n"
+            + (f"오류: `{_err}`" if _err else "")
+        )
 
 
 # ── Modal: 계정 추가 ──────────────────────────────────────────────────────────
