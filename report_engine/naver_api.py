@@ -93,7 +93,7 @@ class NaverAdAPI:
     def get_stats(self, entity_ids, since, until):
         tr     = json.dumps({"since": since, "until": until})
         fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"])
-        batches = [entity_ids[i:i+20] for i in range(0, len(entity_ids), 20)]
+        batches = [entity_ids[i:i+100] for i in range(0, len(entity_ids), 100)]
 
         def _fetch(batch):
             try:
@@ -107,7 +107,7 @@ class NaverAdAPI:
                 return []
 
         all_stats = []
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=20) as ex:
             for f in as_completed([ex.submit(_fetch, b) for b in batches]):
                 all_stats.extend(f.result())
         return _dedup(all_stats, "id")
@@ -179,7 +179,7 @@ class NaverAdAPI:
         keywords  = self.get_keywords(ag_ids)
         kw_map    = {k["nccKeywordId"]: k.get("keyword", "") for k in keywords}
         kw_ids    = list(kw_map.keys())
-        batches   = max(1, (len(kw_ids) + 19) // 20)
+        batches   = max(1, (len(kw_ids) + 99) // 100)
         _step(f"키워드 통계 수집 중... (키워드 {len(kw_ids)}개 · {batches}배치)")
         kw_stats  = self.get_stats(kw_ids, since, until)
         _step(f"✅ 키워드 {len(kw_ids)}개 통계 수집 완료")
