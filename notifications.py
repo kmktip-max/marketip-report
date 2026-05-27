@@ -89,11 +89,16 @@ def send_admin_email(record: dict) -> dict:
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(smtp_user, smtp_pw)
-            s.send_message(msg)
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as s:
+                s.login(smtp_user, smtp_pw)
+                s.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as s:
+                s.ehlo()
+                s.starttls()
+                s.login(smtp_user, smtp_pw)
+                s.send_message(msg)
         return {"status": "success"}
     except Exception as e:
         return {"status": "failed", "error": str(e)[:300]}
