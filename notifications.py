@@ -106,9 +106,8 @@ def send_admin_email(record: dict) -> dict:
 
 
 # ── SMS 발송 (bizmoney_alert 위임) ───────────────────────────────────────────
-def send_admin_sms(record: dict) -> dict:
-    from bizmoney_alert import send_sms_notification, _secret as _bz
-    phone = _bz("ADMIN_ALERT_PHONE") or _bz("ADMIN_NOTIFY_PHONE")
+def send_admin_sms(record: dict, phone: str = "") -> dict:
+    from bizmoney_alert import send_sms_notification
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
 
@@ -125,7 +124,7 @@ def send_admin_sms(record: dict) -> dict:
 
 
 # ── 통합 알림 ─────────────────────────────────────────────────────────────────
-def send_admin_application_alert(record: dict) -> dict:
+def send_admin_application_alert(record: dict, admin_phone: str = "") -> dict:
     email_result = {"status": "skipped"}
     sms_result   = {"status": "skipped"}
 
@@ -135,7 +134,7 @@ def send_admin_application_alert(record: dict) -> dict:
         email_result = {"status": "failed", "error": str(e)[:200]}
 
     try:
-        sms_result = send_admin_sms(record)
+        sms_result = send_admin_sms(record, phone=admin_phone)
     except Exception as e:
         sms_result = {"status": "failed", "error": str(e)[:200]}
 

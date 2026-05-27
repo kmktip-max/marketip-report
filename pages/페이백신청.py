@@ -427,7 +427,8 @@ def _handle_submit(plat_key: str, fd: dict):
     _alert_err    = ""
     try:
         from notifications import send_admin_application_alert, save_alert_history
-        _alert_result = send_admin_application_alert(record)
+        _phone = get_secret("ADMIN_NOTIFY_PHONE") or get_secret("ADMIN_ALERT_PHONE")
+        _alert_result = send_admin_application_alert(record, admin_phone=_phone)
         save_alert_history(record, _alert_result)
     except Exception as _e:
         _alert_err = str(_e)
