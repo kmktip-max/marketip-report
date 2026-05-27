@@ -184,7 +184,9 @@ def _solapi_send(to_phone: str, text: str) -> dict:
     if not to_phone:
         return {"status": "skipped", "reason": "수신번호 없음"}
 
-    now_str   = datetime.now().strftime("%Y-%m-%dT%H:%M:%S+09:00")
+    from datetime import timezone, timedelta
+    _KST = timezone(timedelta(hours=9))
+    now_str   = datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
     salt      = str(uuid.uuid4()).replace("-", "")
     signature = hmac.new(
         api_secret.encode(), f"{now_str}{salt}".encode(), hashlib.sha256
