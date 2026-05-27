@@ -64,13 +64,14 @@ def save_clients(clients):
 
         # 헤더 제외하고 전체 초기화 후 재작성
         ws.clear()
-        ws.append_row(["id", "name", "customer_id", "email", "api_key", "secret_key", "memo", "created_at"])
+        ws.append_row(["id", "name", "customer_id", "email", "phone", "api_key", "secret_key", "memo", "created_at"])
         for c in clients:
             ws.append_row([
                 c.get("id", ""),
                 c.get("name", ""),
                 c.get("customer_id", ""),
                 c.get("email", ""),
+                c.get("phone", ""),
                 c.get("api_key", ""),
                 c.get("secret_key", ""),
                 c.get("memo", ""),
