@@ -228,15 +228,47 @@ def send_admin_sms(record: dict, phone: str = "") -> dict:
     if not phone:
         return {"status": "skipped", "reason": "ADMIN_ALERT_PHONE 미설정"}
 
-    plat = record.get("platform_label", record.get("platform", "-"))
-    text = "\n".join([
-        "[마케팁] 광고계정 연동 신청",
-        f"광고주: {record.get('account_name', '-')}",
-        f"플랫폼: {plat}",
-        f"광고종류: {record.get('ad_type', '-')}",
-        f"담당자: {record.get('manager_name', '-')}",
-        f"월예산: {record.get('monthly_budget', '-')}",
-    ])
+    plat_key = record.get("platform", "")
+    g = lambda k: record.get(k, "-") or "-"
+
+    if plat_key == "naver":
+        lines = [
+            "[마케팁] 광고계정 연동 신청",
+            f"담당자명: {g('manager_name')}",
+            f"플랫폼: 네이버 / {g('ad_type')}",
+            f"광고주명: {g('account_name')}",
+            f"영문아이디: {g('naver_login_id')}",
+            f"숫자아이디: {g('customer_id')}",
+            f"월예산: {g('monthly_budget')}",
+        ]
+    elif plat_key == "daangn":
+        lines = [
+            "[마케팁] 광고계정 연동 신청",
+            f"담당자명: {g('manager_name')}",
+            f"플랫폼: 당근",
+            f"광고주명: {g('account_name')}",
+            f"계정번호: {g('account_id')}",
+            f"월예산: {g('monthly_budget')}",
+        ]
+    elif plat_key == "kakao":
+        lines = [
+            "[마케팁] 광고계정 연동 신청",
+            f"담당자명: {g('manager_name')}",
+            f"플랫폼: 카카오 / {g('ad_type')}",
+            f"브랜드명: {g('account_name')}",
+            f"업종: {g('business_category')}",
+            f"아이디(숫자): {g('account_id')}",
+            f"월예산: {g('monthly_budget')}",
+        ]
+    else:
+        lines = [
+            "[마케팁] 광고계정 연동 신청",
+            f"담당자명: {g('manager_name')}",
+            f"플랫폼: {record.get('platform_label', plat_key)}",
+            f"광고주명: {g('account_name')}",
+            f"월예산: {g('monthly_budget')}",
+        ]
+    text = "\n".join(lines)
     return _solapi_send(phone, text)
 
 
