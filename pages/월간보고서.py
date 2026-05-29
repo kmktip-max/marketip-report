@@ -83,9 +83,34 @@ def _get_period_range(period_key):
 
 # ── 예약발송 스케줄 관리 ──────────────────────────────────────────────
 SCHEDULE_PATH = os.path.join(ROOT, "data", "report_schedule.json")
+_SB_KEY = "report_schedule"
+
+
+def _get_sb():
+    try:
+        url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "")
+               or os.getenv("SUPABASE_URL", ""))
+        key = (getattr(st, "secrets", {}).get("SUPABASE_KEY", "")
+               or os.getenv("SUPABASE_KEY", ""))
+        if not url or not key:
+            return None
+        from supabase import create_client
+        return create_client(url, key)
+    except Exception:
+        return None
 
 
 def load_schedule():
+    # Supabase 우선 (Cloud 환경에서도 영구 저장)
+    try:
+        sb = _get_sb()
+        if sb:
+            res = sb.table("app_data").select("data").eq("key", _SB_KEY).execute()
+            if res.data:
+                return res.data[0]["data"]
+    except Exception:
+        pass
+    # 로컬 파일 폴백
     try:
         if os.path.exists(SCHEDULE_PATH):
             with open(SCHEDULE_PATH, "r", encoding="utf-8") as f:
@@ -96,6 +121,18 @@ def load_schedule():
 
 
 def save_schedule(data):
+    # Supabase 저장
+    try:
+        sb = _get_sb()
+        if sb:
+            sb.table("app_data").upsert(
+                {"key": _SB_KEY, "data": data,
+                 "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
+                on_conflict="key",
+            ).execute()
+    except Exception:
+        pass
+    # 로컬 파일도 동기화
     os.makedirs(os.path.dirname(SCHEDULE_PATH), exist_ok=True)
     try:
         with open(SCHEDULE_PATH, "w", encoding="utf-8") as f:
