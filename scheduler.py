@@ -232,6 +232,34 @@ def _rpt_save(path, data):
         print(f"[보고서스케줄] 저장 실패 {path}: {e}")
 
 
+def _load_schedule_data():
+    """Supabase 우선, 로컬 파일 폴백으로 스케줄 데이터 로드."""
+    try:
+        sb = _get_sb()
+        if sb:
+            res = sb.table("app_data").select("data").eq("key", "report_schedule").execute()
+            if res.data:
+                return res.data[0]["data"]
+    except Exception as e:
+        print(f"[보고서스케줄] Supabase 로드 실패: {e}")
+    return _rpt_load(_SCHEDULE_PATH, {"scheduled": [], "auto_monthly": {}})
+
+
+def _save_schedule_data(data):
+    """Supabase + 로컬 파일 양쪽에 저장."""
+    try:
+        sb = _get_sb()
+        if sb:
+            sb.table("app_data").upsert(
+                {"key": "report_schedule", "data": data,
+                 "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
+                on_conflict="key",
+            ).execute()
+    except Exception as e:
+        print(f"[보고서스케줄] Supabase 저장 실패: {e}")
+    _rpt_save(_SCHEDULE_PATH, data)
+
+
 def _send_one_report(client, since, until, period_key, history, smtp_cfg):
     from report_engine.naver_api import NaverAdAPI
     from report_engine.emailer import send_report
@@ -267,7 +295,7 @@ def run_scheduled_reports():
     if not os.path.exists(_SCHEDULE_PATH):
         return
 
-    sched   = _rpt_load(_SCHEDULE_PATH, {"scheduled": [], "auto_monthly": {}})
+    sched   = _load_schedule_data()
     clients = _rpt_load(_CLIENTS_PATH, [])
     history = _rpt_load(_HISTORY_PATH, [])
 
@@ -354,7 +382,7 @@ def run_scheduled_reports():
             print(f"[보고서스케줄] 자동월보 실패: {client.get('name')} — {e}")
 
     if changed:
-        _rpt_save(_SCHEDULE_PATH, sched)
+        _save_schedule_data(sched)
         _rpt_save(_HISTORY_PATH, history)
 
 
