@@ -1004,7 +1004,7 @@ ADMIN_PASSWORD = "관리자비밀번호"
     else:
         with st.form("auto_monthly_cfg"):
             _gcol1, _gcol2 = st.columns(2)
-            _g_day  = _gcol1.number_input("매월 발송일",    1, 28, int(_auto_cfg.get("_global_day",  5)))
+            _g_day  = _gcol1.number_input("매월 발송일",    1, 31, int(_auto_cfg.get("_global_day",  5)))
             _g_hour = _gcol2.number_input("발송 시각(시)",  0, 23, int(_auto_cfg.get("_global_hour", 9)))
             st.markdown("**광고주별 자동발송 활성화:**")
             _toggles = {}
