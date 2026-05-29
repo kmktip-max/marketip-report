@@ -1363,7 +1363,10 @@ with t_fl:
         if fl_sum:
             st.markdown("**프리랜서별 요약**")
             s_rows = []
-            for k, g in fl_sum.items():
+            # 권혁우 최상단, 나머지 이름순, 합계 최하단
+            _fl_top   = {k: g for k, g in fl_sum.items() if k == "권혁우"}
+            _fl_rest  = {k: g for k, g in fl_sum.items() if k != "권혁우"}
+            for k, g in {**_fl_top, **dict(sorted(_fl_rest.items()))}.items():
                 s_rows.append({
                     "프리랜서": k, "계정수": g["업체수"],
                     "광고비 공급가":   w(g["광고비 공급가"]),
