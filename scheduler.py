@@ -11,7 +11,7 @@
 종료: Ctrl+C
 """
 
-import os, sys, time, hmac, hashlib, base64
+import os, sys, time, hmac, hashlib, base64, json
 import requests
 from datetime import datetime, timedelta
 
@@ -36,6 +36,8 @@ except ImportError:
 DEFAULT_INTERVAL_MIN = 15   # 그룹 check_interval이 없을 때 기본값
 MAX_LOG_RUNS         = 30   # Supabase에 보관할 최대 실행 이력 수
 NAVER_API_BASE       = "https://api.searchad.naver.com"
+DEBUG_RANK           = True  # 순위 조회 디버그 로그 (문제 해결 후 False로)
+HB_PATH              = os.path.join(ROOT, "data", "scheduler_heartbeat.json")
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 def _get_sb():
@@ -49,6 +51,16 @@ def _get_sb():
     except Exception as e:
         print(f"[Supabase] 연결 실패: {e}")
         return None
+
+def _save_heartbeat(data: dict):
+    """heartbeat를 로컬 JSON + Supabase 양쪽에 저장."""
+    os.makedirs(os.path.dirname(HB_PATH), exist_ok=True)
+    try:
+        with open(HB_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"[Heartbeat] 로컬 저장 실패: {e}")
+    sb_save("scheduler_heartbeat", data)
 
 def sb_load(key_):
     sb = _get_sb()
@@ -134,6 +146,8 @@ def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> dict:
         return {}
     results = {}
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    if DEBUG_RANK:
+        print(f"  [RANK-DEBUG] stats API 조회 날짜: {yesterday}, 키워드 수: {len(keyword_ids)}")
     for i in range(0, len(keyword_ids), 50):
         batch = keyword_ids[i:i+50]
         try:
@@ -145,14 +159,19 @@ def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> dict:
                 "timeUnit":  "DAY",
                 "fields":    "clkCnt,impCnt,avgRnk",
             }) or []
+            if DEBUG_RANK and i == 0:
+                print(f"  [RANK-DEBUG] stats API 응답 원문(첫 배치): {str(rows)[:500]}")
             for item in rows:
                 kid_ = item.get("id", "")
                 for dr in (item.get("data") or []):
                     rnk = dr.get("avgRnk")
                     if rnk and float(rnk) > 0:
                         results[kid_] = float(rnk)
-        except Exception:
-            pass
+        except Exception as e:
+            if DEBUG_RANK:
+                print(f"  [RANK-DEBUG] stats API 예외: {e}")
+    if DEBUG_RANK:
+        print(f"  [RANK-DEBUG] 순위 수신된 키워드 수: {len(results)}/{len(keyword_ids)}")
     return results
 
 def update_bid(ak, sk, cid, kid, new_bid, keyword_text="", adgroup_id=""):
@@ -190,6 +209,155 @@ def update_bid(ak, sk, cid, kid, new_bid, keyword_text="", adgroup_id=""):
     return before, after, verify, http_status
 
 
+# ── 예약 보고서 실행 ──────────────────────────────────────────────────────────────
+_SCHEDULE_PATH = os.path.join(ROOT, "data", "report_schedule.json")
+_CLIENTS_PATH  = os.path.join(ROOT, "clients.json")
+_HISTORY_PATH  = os.path.join(ROOT, "report_history.json")
+
+
+def _rpt_load(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _rpt_save(path, data):
+    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[보고서스케줄] 저장 실패 {path}: {e}")
+
+
+def _send_one_report(client, since, until, period_key, history, smtp_cfg):
+    from report_engine.naver_api import NaverAdAPI
+    from report_engine.emailer import send_report
+    from report_engine.report_html import generate_html
+
+    api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
+    data = api.fetch_report(period=period_key, since=since, until=until)
+    html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+    send_report(
+        to_email=client["email"],
+        client_name=client["name"],
+        period=period_key,
+        since=since,
+        until=until,
+        html_body=html,
+        **smtp_cfg,
+    )
+    history.append({
+        "client":    client["name"],
+        "email":     client["email"],
+        "period":    period_key,
+        "since":     since,
+        "until":     until,
+        "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "status":    "성공",
+        "send_mode": "scheduled",
+    })
+    print(f"[보고서스케줄] ✅ {client['name']} → {client['email']}")
+
+
+def run_scheduled_reports():
+    """예약발송 + 자동 정기발송 처리."""
+    if not os.path.exists(_SCHEDULE_PATH):
+        return
+
+    sched   = _rpt_load(_SCHEDULE_PATH, {"scheduled": [], "auto_monthly": {}})
+    clients = _rpt_load(_CLIENTS_PATH, [])
+    history = _rpt_load(_HISTORY_PATH, [])
+
+    # ID와 이름 양쪽으로 조회 가능하게 맵 구성
+    cmap = {}
+    for c in clients:
+        if c.get("id"):    cmap[c["id"]]   = c
+        if c.get("name"):  cmap[c["name"]] = c
+
+    smtp = {
+        "smtp_user":     os.getenv("SMTP_USER", ""),
+        "smtp_password": os.getenv("SMTP_PASSWORD", ""),
+        "smtp_host":     os.getenv("SMTP_HOST", "smtp.naver.com"),
+        "smtp_port":     int(os.getenv("SMTP_PORT", "465")),
+    }
+    now     = datetime.now()
+    changed = False
+
+    # ── 1. 예약발송 처리 ─────────────────────────────────────────────
+    for item in sched.get("scheduled", []):
+        if item.get("status") != "pending":
+            continue
+        try:
+            sched_dt = datetime.strptime(item["scheduled_at"], "%Y-%m-%dT%H:%M:%S")
+        except Exception:
+            continue
+        if sched_dt > now:
+            continue
+
+        names = item.get("client_names", item.get("client_ids", []))
+        print(f"[보고서스케줄] 예약 실행: {names}")
+        errors = []
+
+        for cid in item.get("client_ids", []):
+            client = cmap.get(cid)
+            if not client:
+                errors.append(f"광고주 미발견: {cid}")
+                continue
+            try:
+                _send_one_report(client, item.get("since"), item.get("until"),
+                                 item.get("period_key", "monthly"), history, smtp)
+            except Exception as e:
+                errors.append(f"{client.get('name')}: {e}")
+                print(f"[보고서스케줄] 실패: {client.get('name')} — {e}")
+
+        item["status"]   = "failed" if errors else "sent"
+        item["sent_at"]  = now.strftime("%Y-%m-%dT%H:%M:%S")
+        item["error"]    = "; ".join(str(e) for e in errors[:3]) if errors else ""
+        changed = True
+
+    # ── 2. 자동 정기발송 처리 ────────────────────────────────────────
+    auto_cfg  = sched.get("auto_monthly", {})
+    cur_month = now.strftime("%Y-%m")
+
+    for cid, cfg in auto_cfg.items():
+        if cid.startswith("_"):
+            continue
+        if not cfg.get("enabled"):
+            continue
+        if cfg.get("last_sent_month") == cur_month:
+            continue
+
+        send_day  = int(cfg.get("send_day", 5))
+        send_hour = int(cfg.get("send_hour", 9))
+        if now.day != send_day or now.hour < send_hour:
+            continue
+
+        client = cmap.get(cid)
+        if not client:
+            continue
+
+        first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        until_d    = first_this - timedelta(days=1)
+        since_d    = until_d.replace(day=1)
+        since_s    = since_d.strftime("%Y-%m-%d")
+        until_s    = until_d.strftime("%Y-%m-%d")
+
+        print(f"[보고서스케줄] 자동월보: {client.get('name')} ({since_s}~{until_s})")
+        try:
+            _send_one_report(client, since_s, until_s, "monthly", history, smtp)
+            cfg["last_sent_month"] = cur_month
+            changed = True
+        except Exception as e:
+            print(f"[보고서스케줄] 자동월보 실패: {client.get('name')} — {e}")
+
+    if changed:
+        _rpt_save(_SCHEDULE_PATH, sched)
+        _rpt_save(_HISTORY_PATH, history)
+
+
 # ── 1회 사이클 실행 ─────────────────────────────────────────────────────────────
 def run_cycle(client_id: str) -> list:
     """
@@ -223,6 +391,8 @@ def run_cycle(client_id: str) -> list:
         ag_id    = g.get("naver_adgroup_id","")
         api_kws  = get_keywords_in_adgroup(ak, sk, ci, ag_id) if ag_id else []
         api_map  = {(k.get("keyword") or k.get("keywordText","")): k for k in api_kws}
+        if DEBUG_RANK:
+            print(f"  [RANK-DEBUG] 그룹={g['name']} | adgroup_id={ag_id!r} | API 키워드 수={len(api_kws)}")
 
         # 전일 평균순위 조회
         kid_list = []
@@ -253,6 +423,22 @@ def run_cycle(client_id: str) -> list:
                 kw["current_rank"] = api_rank
             else:
                 rank = None
+
+            if DEBUG_RANK:
+                in_api_map = kw["keyword"] in api_map
+                if rank is None:
+                    if not kid:
+                        skip = "keyword_id 없음 (api_map 매칭 실패 또는 ID 미저장)"
+                    elif kid not in kid_list:
+                        skip = "kid_list에 없음 (bidAmt<=70 등으로 제외됨)"
+                    else:
+                        skip = "stats API 응답 없음 (광고OFF/예산소진/어제노출0)"
+                    print(f"  [RANK-DEBUG] {kw['keyword']!r} | kid={kid!r} | "
+                          f"api_map={in_api_map} | stored={stored_rank} | "
+                          f"api={api_rank} → None 이유: {skip}")
+                else:
+                    print(f"  [RANK-DEBUG] {kw['keyword']!r} | kid={kid!r} | rank={rank} "
+                          f"(stored={stored_rank}, api={api_rank})")
 
             e = {
                 "time":         now_str,
@@ -317,15 +503,19 @@ def main():
     print("  종료: Ctrl+C")
     print("=" * 60)
 
-    cycle_count  = 0
-    _last_hb_t   = 0.0   # heartbeat 마지막 저장 시각
+    cycle_count         = 0
+    _last_hb_t          = 0.0   # heartbeat 마지막 저장 시각
+    _last_report_check  = 0.0   # 보고서 스케줄 마지막 체크 시각
 
     while True:
         now = datetime.now()
 
-        # 스케줄러 alive heartbeat (3분마다 Supabase 저장)
+        # 스케줄러 alive heartbeat (3분마다 로컬 파일 + Supabase 저장)
         if time.time() - _last_hb_t > 180:
-            sb_save("scheduler_heartbeat", now.strftime("%Y-%m-%dT%H:%M:%S"))
+            _save_heartbeat({
+                "status":         "running",
+                "last_heartbeat": now.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
             _last_hb_t = time.time()
 
         print(f"\n[{now.strftime('%H:%M:%S')}] 사이클 #{cycle_count + 1} 시작")
@@ -392,6 +582,24 @@ def main():
 
             chg = summary_["changed"]
             print(f"  결과: 변경 {chg}개 / 유지 {summary_['kept']}개 / 데이터없음 {summary_['no_data']}개")
+
+            # 사이클 완료 heartbeat 갱신
+            _save_heartbeat({
+                "status":         "running",
+                "last_heartbeat": now.strftime("%Y-%m-%dT%H:%M:%S"),
+                "last_run":       state["last_run"],
+                "next_run":       state["next_run"],
+                "cycle":          state["cycle_count"],
+            })
+            _last_hb_t = time.time()
+
+        # 예약 보고서 체크 (5분마다)
+        if time.time() - _last_report_check > 300:
+            try:
+                run_scheduled_reports()
+            except Exception as _rse:
+                print(f"[보고서스케줄] 오류: {_rse}")
+            _last_report_check = time.time()
 
         if not processed_any:
             print(f"  자동입찰 ON 클라이언트 없음 — 60초 후 재확인")

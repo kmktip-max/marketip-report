@@ -49,7 +49,16 @@ def load_clients():
             return _load_local()
 
         rows = ws.get_all_records()
-        return [r for r in rows if r.get("name")]
+        # Google Sheets 빈 셀은 0(int)으로 반환 → 모든 필드를 문자열로 변환
+        # falsy 숫자(0, 0.0)는 빈 문자열로 처리
+        normalized = []
+        for r in rows:
+            if r.get("name"):
+                normalized.append({
+                    k: (v if isinstance(v, str) else ("" if not v else str(v)))
+                    for k, v in r.items()
+                })
+        return normalized
     except Exception:
         return _load_local()
 
@@ -81,11 +90,20 @@ def save_clients(clients):
         _save_local(clients)
 
 
+def _str(v):
+    """어떤 값이든 문자열로 변환. falsy 비문자열(0, None)은 빈 문자열."""
+    if isinstance(v, str):
+        return v
+    return "" if not v else str(v)
+
+
 def _load_local():
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "clients.json")
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
+        # 모든 필드를 문자열로 보장 (특히 phone 등 누락/int 필드)
+        return [{k: _str(v) for k, v in c.items()} for c in raw]
     return []
 
 

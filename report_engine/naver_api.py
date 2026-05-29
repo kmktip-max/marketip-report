@@ -145,12 +145,16 @@ class NaverAdAPI:
             row["keyword"] = keyword
         return row
 
-    def fetch_report(self, period="weekly", on_step=None):
+    def fetch_report(self, period="weekly", on_step=None, since=None, until=None):
         def _step(msg):
             if callable(on_step):
                 on_step(msg)
 
-        since, until = get_date_range(period)
+        if since is not None and until is not None:
+            if isinstance(since, str): since = date.fromisoformat(since)
+            if isinstance(until, str): until = date.fromisoformat(until)
+        else:
+            since, until = get_date_range(period)
         debug_log = []
 
         # ── 1. 캠페인 목록 ────────────────────────────────────────────

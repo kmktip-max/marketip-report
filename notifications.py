@@ -215,6 +215,159 @@ def _solapi_send(to_phone: str, text: str) -> dict:
         return {"status": "failed", "error": str(e)[:200]}
 
 
+# ── 알림톡 발송 (템플릿 미설정 시 SMS 폴백) ─────────────────────────────────────
+def _solapi_send_alimtalk(to_phone: str, variables: dict, fallback_text: str) -> dict:
+    """SOLAPI_KAKAO_TEMPLATE_ID 설정 시 알림톡, 미설정 시 SMS 자동 폴백."""
+    _cfg = get_notify_config()
+    try:
+        from bizmoney_alert import _secret as _bz
+        pf_id       = _cfg.get("kakao_pf_id")       or _bz("SOLAPI_KAKAO_PF_ID")      or _secret("SOLAPI_KAKAO_PF_ID")
+        template_id = _cfg.get("kakao_template_id") or _bz("SOLAPI_KAKAO_TEMPLATE_ID") or _secret("SOLAPI_KAKAO_TEMPLATE_ID")
+    except Exception:
+        pf_id       = _cfg.get("kakao_pf_id")       or _secret("SOLAPI_KAKAO_PF_ID")
+        template_id = _cfg.get("kakao_template_id") or _secret("SOLAPI_KAKAO_TEMPLATE_ID")
+
+    if not template_id:
+        return _solapi_send(to_phone, fallback_text)
+
+    if _requests is None:
+        return {"status": "failed", "error": "requests 패키지 없음"}
+
+    try:
+        from bizmoney_alert import _secret as _bz
+        api_key    = _bz("SOLAPI_API_KEY")    or _secret("SOLAPI_API_KEY")
+        api_secret_val = _bz("SOLAPI_API_SECRET") or _secret("SOLAPI_API_SECRET")
+        sender_id  = _bz("SOLAPI_SENDER_ID")  or _secret("SOLAPI_SENDER_ID")
+    except Exception:
+        api_key    = _secret("SOLAPI_API_KEY")
+        api_secret_val = _secret("SOLAPI_API_SECRET")
+        sender_id  = _secret("SOLAPI_SENDER_ID")
+
+    if not api_key or not api_secret_val or not sender_id:
+        return {"status": "skipped", "reason": "SOLAPI 미설정"}
+    if not to_phone:
+        return {"status": "skipped", "reason": "수신번호 없음"}
+
+    from datetime import timezone, timedelta
+    _KST = timezone(timedelta(hours=9))
+    now_str   = datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
+    salt      = str(uuid.uuid4()).replace("-", "")
+    signature = hmac.new(
+        api_secret_val.encode(), f"{now_str}{salt}".encode(), hashlib.sha256
+    ).hexdigest()
+    headers = {
+        "Authorization": f"HMAC-SHA256 apiKey={api_key}, date={now_str}, salt={salt}, signature={signature}",
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "message": {
+            "to":   to_phone.replace("-", ""),
+            "from": sender_id.replace("-", ""),
+            "text": fallback_text,
+            "kakaoOptions": {
+                "pfId":       pf_id,
+                "templateId": template_id,
+                "variables":  variables,
+            },
+        }
+    }
+    try:
+        resp = _requests.post(
+            "https://api.solapi.com/messages/v4/send",
+            headers=headers, json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+        return {"status": "success", "type": "alimtalk", "response": resp.json()}
+    except _requests.HTTPError as e:
+        return {"status": "failed", "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)[:200]}
+
+
+# ── 월간보고서 광고주 알림톡 ──────────────────────────────────────────────────
+def send_monthly_report_alimtalk(phone: str, advertiser_name: str,
+                                  recipient_email: str, report_month: str) -> dict:
+    """월간보고서 이메일 발송 후 광고주에게 카카오 알림톡 확인 안내 발송.
+    enabled 여부는 호출자가 판단 (이 함수는 credentials/phone만 체크).
+    """
+    if not phone:
+        return {"status": "skipped", "reason": "수신번호 없음"}
+
+    _cfg = get_notify_config()
+    template_id = (
+        _cfg.get("monthly_report_template_id", "")
+        or _secret("MONTHLY_REPORT_ALIMTALK_TEMPLATE_ID")
+    )
+    pf_id = _cfg.get("monthly_report_pf_id", "") or _secret("SOLAPI_KAKAO_PF_ID")
+
+    try:
+        from bizmoney_alert import _secret as _bz
+        api_key        = _bz("SOLAPI_API_KEY")    or _secret("SOLAPI_API_KEY")
+        api_secret_val = _bz("SOLAPI_API_SECRET") or _secret("SOLAPI_API_SECRET")
+        sender_id      = _bz("SOLAPI_SENDER_ID")  or _secret("SOLAPI_SENDER_ID")
+    except Exception:
+        api_key        = _secret("SOLAPI_API_KEY")
+        api_secret_val = _secret("SOLAPI_API_SECRET")
+        sender_id      = _secret("SOLAPI_SENDER_ID")
+
+    if not api_key or not api_secret_val or not sender_id:
+        return {"status": "skipped", "reason": "SOLAPI 설정 없음"}
+
+    fallback_text = (
+        f"[마케팁 월간보고서 안내]\n\n"
+        f"{advertiser_name}님의 {report_month} 월간 광고 보고서가\n"
+        f"등록된 이메일로 발송되었습니다.\n\n"
+        f"수신 이메일:\n{recipient_email}\n\n"
+        f"메일함에서 보고서를 확인해 주세요.\n감사합니다."
+    )
+    if not template_id:
+        return _solapi_send(phone, fallback_text)
+
+    if _requests is None:
+        return {"status": "failed", "error": "requests 패키지 없음"}
+
+    from datetime import timezone, timedelta
+    _KST       = timezone(timedelta(hours=9))
+    now_str    = datetime.now(_KST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
+    salt       = str(uuid.uuid4()).replace("-", "")
+    signature  = hmac.new(
+        api_secret_val.encode(), f"{now_str}{salt}".encode(), hashlib.sha256
+    ).hexdigest()
+    headers = {
+        "Authorization": (
+            f"HMAC-SHA256 apiKey={api_key}, date={now_str}, salt={salt}, signature={signature}"
+        ),
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    payload = {
+        "message": {
+            "to":   phone.replace("-", ""),
+            "from": sender_id.replace("-", ""),
+            "text": fallback_text,
+            "kakaoOptions": {
+                "pfId":       pf_id,
+                "templateId": template_id,
+                "variables":  {
+                    "#{광고주명}":   advertiser_name,
+                    "#{발송이메일}": recipient_email,
+                    "#{보고서월}":   report_month,
+                },
+            },
+        }
+    }
+    try:
+        resp = _requests.post(
+            "https://api.solapi.com/messages/v4/send",
+            headers=headers, json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+        return {"status": "success", "type": "alimtalk", "response": resp.json()}
+    except _requests.HTTPError as e:
+        return {"status": "failed", "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)[:200]}
+
+
 # ── SMS 발송 ─────────────────────────────────────────────────────────────────
 def send_admin_sms(record: dict, phone: str = "") -> dict:
     if not phone:

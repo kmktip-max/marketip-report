@@ -1,7 +1,13 @@
 """광고 운영 — 목표순위 자동입찰 보조 시스템"""
 import streamlit as st
-import os, sys, uuid, hmac, hashlib, base64, time, re
+import os, sys, uuid, hmac, hashlib, base64, time, re, subprocess, json
 import requests
+
+try:
+    import psutil
+    _PSUTIL = True
+except ImportError:
+    _PSUTIL = False
 from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,6 +70,80 @@ def load_log():
 
 def save_log(runs: list):
     sb_save(LOG_SB_KEY, runs[-MAX_LOG_RUNS:], LOG_FALLBACK)
+
+BAT_PATH = os.path.join(ROOT, "run_scheduler.bat")
+HB_PATH  = os.path.join(ROOT, "data", "scheduler_heartbeat.json")
+
+def _read_heartbeat() -> dict | None:
+    """로컬 heartbeat JSON 읽기. 실패 시 Supabase fallback."""
+    try:
+        if os.path.exists(HB_PATH):
+            with open(HB_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    raw = sb_load("scheduler_heartbeat")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        return {"last_heartbeat": raw}
+    return None
+
+def _sched_status() -> tuple:
+    """
+    heartbeat 기준 스케줄러 상태 반환.
+    반환: (is_alive, diff_sec, hb_dict)
+      - is_alive: heartbeat가 2분 이내면 True
+      - diff_sec: 경과 초 (음수 = 시계 불일치)
+      - hb_dict:  원본 heartbeat 딕셔너리
+    """
+    hb = _read_heartbeat()
+    if not hb:
+        return False, None, None
+    ts_str = hb.get("last_heartbeat", "")
+    if not ts_str:
+        return False, None, hb
+    try:
+        ts   = datetime.fromisoformat(ts_str)
+        diff = (datetime.now() - ts).total_seconds()
+        return (0 <= diff <= 120), diff, hb
+    except Exception:
+        return False, None, hb
+
+def _find_scheduler_pid() -> int | None:
+    """실행 중인 scheduler.py 의 python PID 반환. 없으면 None."""
+    if not _PSUTIL:
+        return None
+    for p in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            if "python" not in (p.info.get("name") or "").lower():
+                continue
+            if "scheduler.py" in " ".join(p.info.get("cmdline") or []):
+                return p.info["pid"]
+        except Exception:
+            pass
+    return None
+
+def _kill_scheduler(stored_pid=None):
+    """cmd.exe(stored_pid) + python scheduler.py 프로세스 트리 모두 종료."""
+    if stored_pid:
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(stored_pid)],
+                           capture_output=True)
+        except Exception:
+            pass
+    py_pid = _find_scheduler_pid()
+    if py_pid and _PSUTIL:
+        try:
+            psutil.Process(py_pid).terminate()
+        except Exception:
+            pass
+    # heartbeat 파일 삭제 (상태 초기화)
+    try:
+        if os.path.exists(HB_PATH):
+            os.remove(HB_PATH)
+    except Exception:
+        pass
 
 def new_kw_obj(keyword, current_bid=None, ncc_keyword_id=None):
     return {
@@ -558,36 +638,48 @@ with tab1:
     ad_accounts = load_ad_accounts()
     acct_map    = {a["id"]: a for a in ad_accounts}
 
-    # ── 상태 카드 ─────────────────────────────────────────────────────
-    bid_state  = data.get("state", {})
-    is_running = bid_state.get("running", False)
-    last_run   = bid_state.get("last_run", "")
-    next_run   = bid_state.get("next_run", "")
-    cycle_cnt  = bid_state.get("cycle_count", 0)
-    interval   = bid_state.get("interval_min", DEFAULT_INTERVAL_MIN)
+    # ── heartbeat 기준 상태 판단 ──────────────────────────────────────
+    bid_state          = data.get("state", {})
+    _alive, _diff, _hb = _sched_status()
 
-    # 스케줄러 heartbeat 표시
-    _sched_hb = sb_load("scheduler_heartbeat") or ""
-    _sched_hb_str = ""
-    if _sched_hb and isinstance(_sched_hb, str):
+    # 시작 직후 grace period (heartbeat 첫 기록 전 최대 3분)
+    _grace = False
+    if not _alive and bid_state.get("running"):
         try:
-            _hb_delta = int((datetime.now() - datetime.fromisoformat(_sched_hb)).total_seconds() / 60)
-            if _hb_delta < 10:
-                _sched_hb_str = f" | 🟢 스케줄러 {_hb_delta}분 전 확인"
-            elif _hb_delta < 60:
-                _sched_hb_str = f" | 🟡 스케줄러 {_hb_delta}분 전 확인"
-            else:
-                _sched_hb_str = f" | 🔴 스케줄러 미실행 ({_hb_delta}분 전)"
+            _started = datetime.fromisoformat(bid_state.get("started_at", ""))
+            _grace   = 0 < (datetime.now() - _started).total_seconds() < 180
         except Exception:
             pass
 
+    is_running = _alive or _grace
+
+    # heartbeat 경과 표시 문자열
+    if _diff is None:
+        _hb_str = " | ⚪ heartbeat 없음"
+    elif _diff < 0:
+        _hb_str = " | ⚠️ 시간 계산 오류 (클럭 불일치 — 중지 후 재시작 권장)"
+    elif _diff < 60:
+        _hb_str = f" | 🟢 {int(_diff)}초 전 확인"
+    elif _diff < 120:
+        _hb_str = f" | 🟡 {int(_diff)}초 전 확인"
+    else:
+        _hb_str = f" | 🔴 미실행 ({int(_diff/60)}분 전)"
+
+    # 표시용 값 (heartbeat > state 우선)
+    _last_run  = (_hb or {}).get("last_run",  bid_state.get("last_run",  ""))
+    _next_run  = (_hb or {}).get("next_run",  bid_state.get("next_run",  ""))
+    _cycle_cnt = (_hb or {}).get("cycle",     bid_state.get("cycle_count", 0))
+    _interval  = bid_state.get("interval_min", DEFAULT_INTERVAL_MIN)
+
     if is_running:
+        _label = "시작 중... (초기화 대기)" if _grace else "자동입찰 실행중 (스케줄러)"
         st.markdown(
             f"<div style='padding:12px 18px;background:#EFF6FF;border-left:4px solid #0D47A1;"
             f"border-radius:8px;font-weight:700;color:#1E3A8A;'>"
-            f"● 자동입찰 실행중 (스케줄러)  "
+            f"● {_label}"
             f"<span style='font-weight:400;font-size:12px;'>"
-            f"마지막: {last_run} | 다음: {next_run} | 사이클: {cycle_cnt}회 | 주기: {interval}분{_sched_hb_str}"
+            f" &nbsp; 마지막: {_last_run} | 다음: {_next_run} | "
+            f"사이클: {_cycle_cnt}회 | 주기: {_interval}분{_hb_str}"
             f"</span></div>",
             unsafe_allow_html=True,
         )
@@ -596,7 +688,7 @@ with tab1:
             f"<div style='padding:12px 18px;background:#F9FAFB;border-left:4px solid #9CA3AF;"
             f"border-radius:8px;font-weight:700;color:#6B7280;'>"
             f"● 자동입찰 중지됨"
-            f"<span style='font-weight:400;font-size:12px;color:#9CA3AF;'>{_sched_hb_str}</span>"
+            f"<span style='font-weight:400;font-size:12px;color:#9CA3AF;'>{_hb_str}</span>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -605,23 +697,60 @@ with tab1:
         "Streamlit 화면은 상태 조회 · 제어만 담당합니다."
     )
 
+    # ── 실행 경로 디버그 (expander) ───────────────────────────────────────
+    from pathlib import Path as _PL
+    _pr_dbg  = _PL(__file__).resolve().parents[1]
+    _bp_dbg  = _pr_dbg / "run_scheduler.bat"
+    _sp_dbg  = _pr_dbg / "scheduler.py"
+    with st.expander("🔍 실행 경로 디버그", expanded=False):
+        st.code(
+            f"__file__         = {__file__}\n"
+            f"os.getcwd()      = {os.getcwd()}\n"
+            f"sys.executable   = {sys.executable}\n"
+            f"PROJECT_ROOT     = {_pr_dbg}\n"
+            f"BAT_PATH         = {_bp_dbg}\n"
+            f"BAT_EXISTS       = {_bp_dbg.exists()}\n"
+            f"SCHEDULER_EXISTS = {_sp_dbg.exists()}"
+        )
+
     if not groups:
         st.info("등록된 그룹이 없습니다. [그룹 관리] 탭에서 그룹을 추가하세요.")
     else:
         # ── 제어 버튼 4개 ───────────────────────────────────────────────
         b1, b2, b3, b4 = st.columns(4)
         with b1:
-            if st.button("▶ 자동입찰 시작", type="primary", use_container_width=True,
+            if st.button("▶ 자동입찰 시작", use_container_width=True,
                          disabled=is_running):
-                data["state"] = {**bid_state, "running": True,
-                                  "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
-                save_data(data)
-                st.success("자동입찰 ON — run_scheduler.bat이 실행 중이어야 합니다.")
-                st.rerun()
+                from pathlib import Path as _PL2
+                _pr2 = _PL2(__file__).resolve().parents[1]
+                _bp2 = _pr2 / "run_scheduler.bat"
+
+                if not _bp2.exists():
+                    st.error(f"BAT 파일 없음: {_bp2}")
+                else:
+                    try:
+                        _cmd2 = f'start "마케팁 자동입찰" cmd.exe /k "{_bp2}"'
+                        _proc2 = subprocess.Popen(
+                            _cmd2,
+                            shell=True,
+                            cwd=str(_pr2),
+                        )
+                        st.success("자동입찰 스케줄러가 시작됐습니다.")
+                        data["state"] = {
+                            **bid_state,
+                            "running":       True,
+                            "started_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                            "scheduler_pid": _proc2.pid,
+                        }
+                        save_data(data)
+                    except Exception as _e2:
+                        st.error("[자동입찰] CMD 실행 실패")
+                        st.exception(_e2)
         with b2:
             if st.button("⏹ 자동입찰 중지", use_container_width=True,
                          disabled=not is_running):
-                data["state"] = {**bid_state, "running": False}
+                _kill_scheduler(stored_pid=bid_state.get("scheduler_pid"))
+                data["state"] = {**bid_state, "running": False, "scheduler_pid": None}
                 save_data(data)
                 st.rerun()
         with b3:
@@ -773,6 +902,153 @@ with tab1:
                     entries_ = run_auto_bidding_once(run_groups, acct_map, test_mode=_test_mode)
                 _run_and_save(entries_, "순위기반" if not _test_mode else "순위기반(테스트)")
                 st.rerun()
+
+        # ── 실제 입찰가 변경 API 검증 ───────────────────────────────────────
+        with st.expander("🔬 실제 입찰가 +100원 변경 테스트 (API 전문 출력)", expanded=False):
+            st.warning("⚠️ 실제 네이버 광고 입찰가가 변경됩니다. 테스트 목적으로만 사용하세요.")
+            st.caption("순위/광고ON여부와 무관하게 네이버 API를 직접 호출합니다. 테스트모드 체크박스 무시.")
+
+            _t_groups_with_acct = [g for g in groups if acct_map.get(g.get("ad_account_id",""))]
+            if not _t_groups_with_acct:
+                st.error("광고계정이 연결된 그룹이 없습니다.")
+            else:
+                _t_g_names = [g["name"] for g in _t_groups_with_acct]
+                _t_sel_name = st.selectbox("그룹 선택", _t_g_names, key="force_test_group")
+                _t_g    = next(g for g in _t_groups_with_acct if g["name"] == _t_sel_name)
+                _t_acct = acct_map[_t_g["ad_account_id"]]
+                _t_ak   = _t_acct["api_key"]
+                _t_sk   = _t_acct["secret_key"]
+                _t_ci   = _t_acct["customer_id"]
+                _t_ag_id = _t_g.get("naver_adgroup_id", "")
+
+                st.info(f"customer_id: `{_t_ci}` | adgroup_id: `{_t_ag_id}` | 그룹: {_t_g['name']}")
+
+                if st.button("🚨 실제 입찰가 +100원 변경 테스트", type="primary",
+                             use_container_width=True, key="force_test_btn"):
+                    _flog = []   # 누적 로그
+
+                    def _flog_write(msg):
+                        _flog.append(msg)
+                        st.write(msg)
+
+                    st.markdown("---")
+                    _flog_write(f"[FORCE_BID_TEST] start — {datetime.now().strftime('%H:%M:%S')}")
+                    _flog_write(f"[FORCE_BID_TEST] customer_id  = {_t_ci}")
+                    _flog_write(f"[FORCE_BID_TEST] adgroup_id   = {_t_ag_id}")
+
+                    # ── STEP 1: 키워드 목록 GET ──────────────────────────
+                    st.markdown("#### STEP 1 — 키워드 목록 GET")
+                    if not _t_ag_id:
+                        st.error("[FORCE_BID_TEST] FAIL: naver_adgroup_id 없음 → [그룹 관리] 탭에서 네이버 불러오기로 그룹 재등록 필요")
+                        st.stop()
+
+                    try:
+                        _t_api_kws = naver_keywords(_t_ak, _t_sk, _t_ci, _t_ag_id)
+                        _flog_write(f"[FORCE_BID_TEST] keyword_list_count = {len(_t_api_kws)}")
+                    except Exception as _e:
+                        st.error(f"[FORCE_BID_TEST] FAIL: GET 실패 = {repr(_e)}")
+                        st.stop()
+
+                    if not _t_api_kws:
+                        st.error("[FORCE_BID_TEST] FAIL: 키워드 0개")
+                        st.stop()
+
+                    # ── STEP 2: 첫 키워드 선택 ───────────────────────────
+                    st.markdown("#### STEP 2 — 변경 대상 키워드 (1개)")
+                    _t_kw      = _t_api_kws[0]
+                    _t_kid     = _get_id(_t_kw, "nccKeywordId", "keywordId", "id")
+                    _t_kw_text = _t_kw.get("keyword") or _t_kw.get("keywordText", "")
+                    _t_raw_bid = _t_kw.get("bidAmt", 0)
+                    try:
+                        _t_cur_bid = int(_t_raw_bid) if int(_t_raw_bid) > 70 else int(_t_g.get("min_bid", 1000))
+                    except (TypeError, ValueError):
+                        _t_cur_bid = int(_t_g.get("min_bid", 1000))
+                    _t_new_bid = _t_cur_bid + 100
+
+                    _flog_write(f"[FORCE_BID_TEST] keyword       = {_t_kw_text}")
+                    _flog_write(f"[FORCE_BID_TEST] keyword_id    = {_t_kid}")
+                    _flog_write(f"[FORCE_BID_TEST] current_bidAmt= {_t_cur_bid}")
+                    _flog_write(f"[FORCE_BID_TEST] new_bidAmt    = {_t_new_bid}")
+                    _flog_write(f"[FORCE_BID_TEST] request method = PUT")
+                    _flog_write(f"[FORCE_BID_TEST] request url   = {NAVER_API_BASE}/ncc/keywords/{_t_kid}?fields=bidAmt,useGroupBidAmt")
+
+                    if not _t_kid:
+                        st.error("[FORCE_BID_TEST] FAIL: nccKeywordId 추출 실패")
+                        st.json(_t_kw)
+                        st.stop()
+
+                    # ── STEP 3: 변경 전 단건 GET ─────────────────────────
+                    st.markdown("#### STEP 3 — 변경 전 단건 GET")
+                    _t_before_kw = naver_get_keyword(_t_ak, _t_sk, _t_ci, _t_kid)
+                    if _t_before_kw:
+                        _flog_write(f"[FORCE_BID_TEST] before GET bidAmt       = {_t_before_kw.get('bidAmt')}")
+                        _flog_write(f"[FORCE_BID_TEST] before GET useGroupBidAmt= {_t_before_kw.get('useGroupBidAmt')}")
+                    else:
+                        st.warning("[FORCE_BID_TEST] 단건 GET 실패 — 그래도 PUT 시도")
+
+                    # ── STEP 4: PUT 바디 구성 ─────────────────────────────
+                    st.markdown("#### STEP 4 — PUT request payload")
+                    if _t_before_kw:
+                        _t_body = dict(_t_before_kw)
+                    else:
+                        _t_body = {"nccKeywordId": _t_kid, "keyword": _t_kw_text, "nccAdgroupId": _t_ag_id}
+                    _t_body["bidAmt"]         = _t_new_bid
+                    _t_body["useGroupBidAmt"] = False
+                    _safe_body = {k: v for k, v in _t_body.items() if k not in ("nccSecretKey",)}
+                    _flog_write(f"[FORCE_BID_TEST] request payload (key fields) = bidAmt={_t_new_bid} useGroupBidAmt=False")
+                    st.json(_safe_body)
+
+                    # ── STEP 5: 실제 PUT 호출 ─────────────────────────────
+                    st.markdown("#### STEP 5 — PUT 실행 (실제 API 호출)")
+                    _t_uri = f"/ncc/keywords/{_t_kid}"
+                    try:
+                        _t_r, _ = _naver_put(
+                            _t_uri, _t_ak, _t_sk, _t_ci, _t_body,
+                            params={"fields": "bidAmt,useGroupBidAmt"}
+                        )
+                        _flog_write(f"[FORCE_BID_TEST] response status = {_t_r.status_code}")
+                        _flog_write(f"[FORCE_BID_TEST] request url (actual) = {_t_r.url}")
+                        st.markdown("**[FORCE_BID_TEST] response raw:**")
+                        st.code(_t_r.text, language="json")
+                    except Exception as _e:
+                        st.error(f"[FORCE_BID_TEST] FAIL: PUT 호출 실패 = {repr(_e)}")
+                        st.stop()
+
+                    if not _t_r.ok:
+                        _flog_write(f"[FORCE_BID_TEST] success = False (HTTP {_t_r.status_code})")
+                        st.error(f"[FORCE_BID_TEST] FAIL: HTTP {_t_r.status_code}")
+                        st.stop()
+
+                    # ── STEP 6: 변경 후 재조회 ────────────────────────────
+                    st.markdown("#### STEP 6 — 변경 후 GET 재조회")
+                    time.sleep(1)
+                    _t_after_kw = naver_get_keyword(_t_ak, _t_sk, _t_ci, _t_kid)
+                    if _t_after_kw:
+                        _t_verified = _t_after_kw.get("bidAmt")
+                        _t_grp_bid  = _t_after_kw.get("useGroupBidAmt")
+                        _flog_write(f"[FORCE_BID_TEST] verified_bidAmt     = {_t_verified}")
+                        _flog_write(f"[FORCE_BID_TEST] verified_useGroupBid = {_t_grp_bid}")
+                        _ok = (_t_verified == _t_new_bid)
+                        _flog_write(f"[FORCE_BID_TEST] success = {_ok}")
+                        if _ok:
+                            st.success(f"✅ [FORCE_BID_TEST] 변경 성공: {_t_cur_bid}원 → {_t_verified}원")
+                            for _kw_obj in _t_g.get("keywords", []):
+                                if _kw_obj["keyword"] == _t_kw_text:
+                                    _kw_obj["current_bid"]    = _t_verified
+                                    _kw_obj["ncc_keyword_id"] = _t_kid
+                                    _kw_obj["last_checked"]   = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                            save_data(data)
+                            st.info("[FORCE_BID_TEST] DB 저장 완료")
+                        elif _t_grp_bid:
+                            st.warning("[FORCE_BID_TEST] useGroupBidAmt=True — 키워드가 광고그룹 기본입찰가 사용 중. 네이버 광고관리자에서 '개별입찰'로 변경 필요.")
+                        else:
+                            st.warning(f"[FORCE_BID_TEST] PUT 200이나 bidAmt 불일치: 요청={_t_new_bid} / 재조회={_t_verified}")
+                    else:
+                        _flog_write("[FORCE_BID_TEST] verified_bidAmt = GET실패")
+                        st.warning("[FORCE_BID_TEST] 재조회 GET 실패 — PUT 성공 여부 불명확")
+
+                    st.markdown("#### 전체 로그 요약")
+                    st.code("\n".join(_flog))
 
         st.divider()
 
@@ -1313,7 +1589,7 @@ with tab3:
                 + " " + kw_obj.get("status","데이터 부족")
             )
             del_check[kw] = c4.checkbox(
-                "", key=f"del_{sel_g['id']}_{kw}",
+                "삭제", key=f"del_{sel_g['id']}_{kw}",
                 label_visibility="collapsed",
             )
 

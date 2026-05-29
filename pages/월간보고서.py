@@ -2,7 +2,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 import os
+import re
 import sys
+import traceback
 from datetime import datetime, date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,6 +17,16 @@ from report_engine.storage import load_clients, save_clients
 
 
 # ── 유틸 ──────────────────────────────────────────────────────────────
+def _fmt_phone(raw: str) -> str:
+    """숫자만 추출 후 한국 휴대폰 번호 형식(010-XXXX-XXXX)으로 변환."""
+    d = re.sub(r"\D", "", (raw or "").strip())
+    if len(d) == 11:
+        return f"{d[:3]}-{d[3:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"{d[:3]}-{d[3:6]}-{d[6:]}"
+    return raw.strip()
+
+
 def get_secret(key, default=""):
     try:
         if hasattr(st, "secrets") and key in st.secrets:
@@ -67,6 +79,29 @@ def _get_period_range(period_key):
         until = first - timedelta(days=1)
         since = until.replace(day=1)
     return since.strftime("%Y-%m-%d"), until.strftime("%Y-%m-%d")
+
+
+# ── 예약발송 스케줄 관리 ──────────────────────────────────────────────
+SCHEDULE_PATH = os.path.join(ROOT, "data", "report_schedule.json")
+
+
+def load_schedule():
+    try:
+        if os.path.exists(SCHEDULE_PATH):
+            with open(SCHEDULE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"scheduled": [], "auto_monthly": {}}
+
+
+def save_schedule(data):
+    os.makedirs(os.path.dirname(SCHEDULE_PATH), exist_ok=True)
+    try:
+        with open(SCHEDULE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def _already_sent(history, client_name, period_key, since, until):
@@ -123,7 +158,7 @@ with _hc2:
         st.session_state.pop("preview_results", None)
         st.rerun()
 
-tab1, tab2, tab3, tab4 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "📜 발송 이력", "⚙️ 설정"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "📜 발송 이력", "⚙️ 설정", "📅 예약관리"])
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -154,7 +189,7 @@ with tab1:
                     "name": name.strip(),
                     "customer_id": cust_id.strip(),
                     "email": email.strip(),
-                    "phone": phone.strip(),
+                    "phone": _fmt_phone(phone),
                     "api_key": api_key.strip(),
                     "secret_key": secret_key.strip(),
                     "memo": memo,
@@ -221,7 +256,7 @@ with tab1:
                             clients[i].update({
                                 "name":       e_name.strip(),
                                 "email":      e_email.strip(),
-                                "phone":      e_phone.strip(),
+                                "phone":      _fmt_phone(e_phone),
                                 "api_key":    e_apikey.strip(),
                                 "secret_key": e_secret.strip(),
                                 "memo":       e_memo,
@@ -425,6 +460,38 @@ with tab2:
                         _do_send  = _send_email_only or _send_email_kakao
                         _do_kakao = _send_email_kakao
 
+                        # ── 예약 발송 ─────────────────────────────────
+                        with st.expander("📅 나중에 발송하기 (예약 등록)"):
+                            _sc1, _sc2, _sc3 = st.columns([2, 1, 1])
+                            _sch_date = _sc1.date_input(
+                                "발송 날짜",
+                                min_value=date.today() + timedelta(days=1),
+                                key="sch_date_single",
+                            )
+                            _sch_hour = _sc2.number_input("발송 시각(시)", 0, 23, 9, key="sch_hour_s")
+                            _sc3.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                            if _sc3.button("📅 예약 등록", key="sch_btn_s", use_container_width=True):
+                                import uuid as _uuid
+                                _sch_dt = datetime.combine(_sch_date, datetime.min.time()).replace(hour=int(_sch_hour))
+                                _sched = load_schedule()
+                                _sched["scheduled"].append({
+                                    "id":           datetime.now().strftime("%Y%m%d%H%M%S") + "_" + str(_uuid.uuid4())[:6],
+                                    "client_ids":   [r["client"]["id"] for r in ok_results],
+                                    "client_names": [r["client"]["name"] for r in ok_results],
+                                    "period_key":   st.session_state.get("preview_period", "monthly"),
+                                    "since":        str(ok_results[0]["data"]["since"]),
+                                    "until":        str(ok_results[0]["data"]["until"]),
+                                    "scheduled_at": _sch_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+                                    "status":       "pending",
+                                    "created_at":   datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                                    "error":        "",
+                                    "send_mode":    "single",
+                                })
+                                save_schedule(_sched)
+                                st.success(f"✅ {_sch_date.strftime('%Y-%m-%d')} {int(_sch_hour):02d}:00 발송 예약됐습니다!")
+                                st.session_state.pop("preview_results", None)
+                                st.rerun()
+
                         if _do_send:
                             smtp_cfg = {
                                 "smtp_user":     smtp_user,
@@ -439,6 +506,19 @@ with tab2:
                                 client = r["client"]
                                 _since = r["data"]["since"]
                                 _until = r["data"]["until"]
+
+                                # ── 이메일 발송 ────────────────────────────────
+                                _email_ok   = False
+                                _hist_entry = {
+                                    "client":    client["name"],
+                                    "email":     client["email"],
+                                    "period":    period_k,
+                                    "since":     _since,
+                                    "until":     _until,
+                                    "keywords":  r["data"]["total_keywords"],
+                                    "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "send_mode": "single",
+                                }
                                 try:
                                     send_report(
                                         to_email=client["email"],
@@ -450,50 +530,50 @@ with tab2:
                                         **smtp_cfg,
                                     )
                                     st.success(f"✅ **{client['name']}** → {client['email']} 이메일 발송 완료!")
-                                    history.append({
-                                        "client":    client["name"],
-                                        "email":     client["email"],
-                                        "period":    period_k,
-                                        "since":     _since,
-                                        "until":     _until,
-                                        "keywords":  r["data"]["total_keywords"],
-                                        "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                        "status":    "성공",
-                                        "send_mode": "single",
-                                    })
-
-                                    if _do_kakao:
-                                        _phone = client.get("phone", "").strip()
-                                        if _phone:
-                                            try:
-                                                from notifications import _solapi_send
-                                                _sms_text = (
-                                                    f"[마케팁] 광고 성과 보고서 발송 완료\n"
-                                                    f"광고주: {client['name']}\n"
-                                                    f"기간: {_since} ~ {_until}\n"
-                                                    f"이메일({client['email']})로 전송되었습니다."
-                                                )
-                                                _sms_r = _solapi_send(_phone, _sms_text)
-                                                if _sms_r.get("status") == "success":
-                                                    st.info(f"📱 **{client['name']}** → {_phone} 카톡/SMS 발송 완료!")
-                                                else:
-                                                    st.warning(
-                                                        f"📱 카톡/SMS 발송 실패: "
-                                                        f"{_sms_r.get('reason') or _sms_r.get('error','')}"
-                                                    )
-                                            except Exception as _sms_e:
-                                                st.warning(f"📱 카톡/SMS 오류: {_sms_e}")
-                                        else:
-                                            st.caption(f"📱 {client['name']} — 전화번호 미등록, SMS 건너뜀")
-
+                                    _hist_entry["status"] = "성공"
+                                    _email_ok = True
                                 except Exception as e:
-                                    st.error(f"❌ **{client['name']}** 발송 실패: {e}")
-                                    history.append({
-                                        "client":    client["name"],
-                                        "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                        "status":    f"실패: {str(e)[:100]}",
-                                        "send_mode": "single",
-                                    })
+                                    st.error(f"❌ **{client['name']}** 이메일 발송 실패: {e}")
+                                    with st.expander("오류 상세 (디버그)"):
+                                        st.code(traceback.format_exc())
+                                    _hist_entry["status"] = f"실패: {str(e)[:100]}"
+
+                                # ── 알림톡 발송 (이메일 성공 + 이메일+카톡 버튼 클릭 시) ─
+                                _alimtalk_r = {"status": "skipped", "reason": "이메일 실패 또는 미요청"}
+                                if _do_kakao and _email_ok:
+                                    try:
+                                        _at_phone = str(
+                                            client.get("alert_phone", "")
+                                            or client.get("phone", "") or ""
+                                        ).strip()
+                                        _since_dt     = datetime.strptime(_since, "%Y-%m-%d")
+                                        _report_month = f"{_since_dt.year}년 {_since_dt.month}월"
+                                        from notifications import send_monthly_report_alimtalk
+                                        _alimtalk_r = send_monthly_report_alimtalk(
+                                            phone=_at_phone,
+                                            advertiser_name=client["name"],
+                                            recipient_email=client["email"],
+                                            report_month=_report_month,
+                                        )
+                                        _at_s = _alimtalk_r.get("status", "")
+                                        if _at_s == "success":
+                                            _ch = "알림톡" if _alimtalk_r.get("type") == "alimtalk" else "SMS"
+                                            st.info(f"📱 **{client['name']}** → {_at_phone} {_ch} 발송 완료!")
+                                        elif _at_s == "skipped":
+                                            st.caption(f"📱 {client['name']} — {_alimtalk_r.get('reason','건너뜀')}")
+                                        else:
+                                            st.warning(
+                                                f"📱 알림톡 발송 실패: "
+                                                f"{_alimtalk_r.get('reason') or _alimtalk_r.get('error','')}"
+                                            )
+                                    except Exception as _at_e:
+                                        _alimtalk_r = {"status": "failed", "error": str(_at_e)[:100]}
+                                        st.warning(f"📱 알림톡 오류: {_at_e}")
+                                _hist_entry["alimtalk_status"] = _alimtalk_r.get("status", "")
+                                _hist_entry["alimtalk_error"]  = (
+                                    _alimtalk_r.get("error") or _alimtalk_r.get("reason", "")
+                                )
+                                history.append(_hist_entry)
 
                             save_history(history)
                             st.session_state.pop("preview_results", None)
@@ -669,16 +749,48 @@ with tab2:
                         label = f"{client['name']} (테스트→{to_addr})" if test_mode else f"{client['name']} / {client['email']}"
                         success_list.append(label)
                         log_list.append(f"✅ {client['name']}: {'테스트 완료' if test_mode else '발송 완료'} → {to_addr}")
+
+                        # ── 알림톡 (실제 발송 + 설정 활성화 시) ─────────────
+                        _bulk_at_r = {"status": "skipped", "reason": "테스트 모드"}
+                        if not test_mode:
+                            from notifications import get_notify_config as _gcfg_b, send_monthly_report_alimtalk as _sat_b
+                            if _gcfg_b().get("monthly_report_alimtalk_enabled", False):
+                                try:
+                                    _bphone = str(
+                                        client.get("alert_phone", "")
+                                        or client.get("phone", "") or ""
+                                    ).strip()
+                                    _bd      = datetime.strptime(data["since"], "%Y-%m-%d")
+                                    _bulk_at_r = _sat_b(
+                                        phone=_bphone,
+                                        advertiser_name=client["name"],
+                                        recipient_email=client["email"],
+                                        report_month=f"{_bd.year}년 {_bd.month}월",
+                                    )
+                                    _bst = _bulk_at_r.get("status", "")
+                                    log_list.append(
+                                        f"📱 {client['name']}: 알림톡 {_bst}"
+                                        + (f" — {_bulk_at_r.get('reason') or _bulk_at_r.get('error','')}"
+                                           if _bst != "success" else "")
+                                    )
+                                except Exception as _be:
+                                    _bulk_at_r = {"status": "failed", "error": str(_be)[:100]}
+                                    log_list.append(f"📱 {client['name']}: 알림톡 오류 — {_be}")
+                            else:
+                                _bulk_at_r = {"status": "skipped", "reason": "알림톡 미사용 설정"}
+
                         history.append({
-                            "client":    client["name"],
-                            "email":     to_addr,
-                            "period":    period_key,
-                            "since":     data["since"],
-                            "until":     data["until"],
-                            "keywords":  data.get("total_keywords", 0),
-                            "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "status":    "테스트" if test_mode else "성공",
-                            "send_mode": "bulk_test" if test_mode else "bulk",
+                            "client":          client["name"],
+                            "email":           to_addr,
+                            "period":          period_key,
+                            "since":           data["since"],
+                            "until":           data["until"],
+                            "keywords":        data.get("total_keywords", 0),
+                            "sent_at":         datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "status":          "테스트" if test_mode else "성공",
+                            "send_mode":       "bulk_test" if test_mode else "bulk",
+                            "alimtalk_status": _bulk_at_r.get("status", ""),
+                            "alimtalk_error":  _bulk_at_r.get("error") or _bulk_at_r.get("reason", ""),
                         })
 
                     except Exception as e:
@@ -740,6 +852,7 @@ with tab3:
 # 탭4: 설정
 # ═══════════════════════════════════════════════════════════════════════
 with tab4:
+    st.success("✅ 월간보고서 알림톡 설정 UI v1 적용됨")
     st.subheader("이메일 발송 설정")
     smtp_user = get_secret("SMTP_USER", "")
     if smtp_user:
@@ -754,6 +867,105 @@ SMTP_HOST = "smtp.naver.com"
 SMTP_PORT = "465"
 ADMIN_PASSWORD = "관리자비밀번호"
 """, language="toml")
+
+    st.divider()
+    st.subheader("카카오 알림톡 설정")
+    from notifications import get_notify_config, save_notify_config
+    _ncfg = get_notify_config()
+
+    # SOLAPI 설정 상태 표시 (실제 값은 숨김)
+    _api_key_ok = bool(get_secret("SOLAPI_API_KEY", ""))
+    _api_sec_ok = bool(get_secret("SOLAPI_API_SECRET", ""))
+    _sender_ok  = bool(get_secret("SOLAPI_SENDER_ID", ""))
+    _sc1, _sc2, _sc3 = st.columns(3)
+    _sc1.metric("SOLAPI_API_KEY",    "✅ 설정됨" if _api_key_ok else "❌ 없음")
+    _sc2.metric("SOLAPI_API_SECRET", "✅ 설정됨" if _api_sec_ok else "❌ 없음")
+    _sc3.metric("SOLAPI_SENDER_ID",  "✅ 설정됨" if _sender_ok  else "❌ 없음")
+    if not (_api_key_ok and _api_sec_ok and _sender_ok):
+        st.error("❌ SOLAPI 미설정 — secrets.toml에 SOLAPI_API_KEY / SOLAPI_API_SECRET / SOLAPI_SENDER_ID 추가 필요")
+
+    with st.form("monthly_alimtalk_cfg_form"):
+        _at_enabled = st.checkbox(
+            "알림톡 사용 (일괄 발송 시 이메일 성공 후 자동 발송)",
+            value=bool(_ncfg.get("monthly_report_alimtalk_enabled", False)),
+        )
+        _at_tmpl = st.text_input(
+            "월간보고서 알림톡 템플릿 ID",
+            value=(
+                _ncfg.get("monthly_report_template_id", "")
+                or get_secret("MONTHLY_REPORT_ALIMTALK_TEMPLATE_ID", "")
+            ),
+            placeholder="KA01TP...",
+            help="Solapi 대시보드 → 알림톡 → 템플릿 관리에서 승인된 템플릿 ID (미입력 시 SMS 폴백)",
+        )
+        _at_pf = st.text_input(
+            "카카오 채널 ID (pfId)",
+            value=(
+                _ncfg.get("monthly_report_pf_id", "")
+                or get_secret("SOLAPI_KAKAO_PF_ID", "")
+            ),
+            placeholder="KA01PF...",
+        )
+        if st.form_submit_button("💾 저장", type="primary"):
+            _ncfg["monthly_report_alimtalk_enabled"] = _at_enabled
+            _ncfg["monthly_report_template_id"]      = _at_tmpl.strip()
+            _ncfg["monthly_report_pf_id"]            = _at_pf.strip()
+            save_notify_config(_ncfg)
+            st.success("저장됐습니다.")
+            st.rerun()
+
+    _at_cur_tmpl = _ncfg.get("monthly_report_template_id", "")
+    if _at_cur_tmpl:
+        st.success(f"✅ 템플릿 ID 설정됨: `{_at_cur_tmpl}`")
+    else:
+        st.info("📱 템플릿 ID 미설정 → 이메일+카톡 버튼 클릭 시 SMS로 폴백 발송")
+
+    with st.expander("📋 Solapi 등록할 템플릿 내용 (복사용)"):
+        st.code(
+            "[마케팁 월간보고서 안내]\n\n"
+            "#{광고주명}님의 #{보고서월} 월간 광고 보고서가\n"
+            "등록된 이메일로 발송되었습니다.\n\n"
+            "수신 이메일:\n#{발송이메일}\n\n"
+            "메일함에서 보고서를 확인해 주세요.\n감사합니다.",
+            language="text",
+        )
+        st.caption("템플릿 변수: #{광고주명}  #{보고서월}  #{발송이메일}")
+
+    st.divider()
+    st.subheader("알림톡 테스트 발송")
+    _at_test_phone = st.text_input(
+        "테스트 수신번호",
+        value=_ncfg.get("monthly_report_test_phone", ""),
+        placeholder="010-0000-0000",
+        key="at_test_phone_input",
+    )
+    if st.button("📱 알림톡 테스트 발송"):
+        _t_ph = _at_test_phone.strip()
+        if not _t_ph:
+            st.warning("테스트 수신번호를 입력하세요.")
+        elif not (_api_key_ok and _api_sec_ok and _sender_ok):
+            st.error("SOLAPI 설정이 필요합니다.")
+        else:
+            _ncfg["monthly_report_test_phone"] = _t_ph
+            save_notify_config(_ncfg)
+            try:
+                from notifications import send_monthly_report_alimtalk
+                _tr = send_monthly_report_alimtalk(
+                    phone=_t_ph,
+                    advertiser_name="테스트 광고주",
+                    recipient_email="test@example.com",
+                    report_month="2026년 5월",
+                )
+                _tst = _tr.get("status", "")
+                if _tst == "success":
+                    _tch = "알림톡" if _tr.get("type") == "alimtalk" else "SMS"
+                    st.success(f"✅ {_tch} 테스트 발송 완료! ({_t_ph})")
+                elif _tst == "skipped":
+                    st.info(f"건너뜀: {_tr.get('reason', '')}")
+                else:
+                    st.error(f"❌ 실패: {_tr.get('error') or _tr.get('reason', '')}")
+            except Exception as _te:
+                st.error(f"오류: {_te}")
 
     st.divider()
     st.subheader("테스트 이메일 발송")
@@ -778,3 +990,112 @@ ADMIN_PASSWORD = "관리자비밀번호"
                 st.success(f"✅ {test_to} 발송 성공!")
             except Exception as e:
                 st.error(f"❌ 실패: {e}")
+
+    # ── 자동 정기발송 설정 ────────────────────────────────────────────
+    st.divider()
+    st.subheader("📅 자동 정기발송")
+    st.caption("매월 특정일에 지난달 보고서를 자동으로 발송합니다. (scheduler.py 실행 중일 때 동작)")
+    _auto_clients = load_clients()
+    _auto_sched   = load_schedule()
+    _auto_cfg     = _auto_sched.get("auto_monthly", {})
+
+    if not _auto_clients:
+        st.info("광고주를 먼저 등록해주세요.")
+    else:
+        with st.form("auto_monthly_cfg"):
+            _gcol1, _gcol2 = st.columns(2)
+            _g_day  = _gcol1.number_input("매월 발송일",    1, 28, int(_auto_cfg.get("_global_day",  5)))
+            _g_hour = _gcol2.number_input("발송 시각(시)",  0, 23, int(_auto_cfg.get("_global_hour", 9)))
+            st.markdown("**광고주별 자동발송 활성화:**")
+            _toggles = {}
+            for _ac in _auto_clients:
+                _acid = _ac.get("id") or _ac.get("name", "")
+                _toggles[_acid] = st.checkbox(
+                    _ac["name"],
+                    value=bool(_auto_cfg.get(_acid, {}).get("enabled", False)),
+                    key=f"auto_tog_{_acid}",
+                )
+            if st.form_submit_button("💾 저장", type="primary"):
+                for _ac in _auto_clients:
+                    _acid = _ac.get("id") or _ac.get("name", "")
+                    _prev = _auto_cfg.get(_acid, {})
+                    _auto_cfg[_acid] = {
+                        "enabled":         _toggles[_acid],
+                        "send_day":        int(_g_day),
+                        "send_hour":       int(_g_hour),
+                        "last_sent_month": _prev.get("last_sent_month", ""),
+                    }
+                _auto_cfg["_global_day"]  = int(_g_day)
+                _auto_cfg["_global_hour"] = int(_g_hour)
+                _auto_sched["auto_monthly"] = _auto_cfg
+                save_schedule(_auto_sched)
+                st.success(f"✅ 저장됨 — 매월 {int(_g_day)}일 {int(_g_hour):02d}:00 자동 발송")
+                st.rerun()
+
+        _on_list = [_ac["name"] for _ac in _auto_clients
+                    if _auto_cfg.get(_ac.get("id") or _ac.get("name", ""), {}).get("enabled")]
+        if _on_list:
+            st.info(f"🔄 자동발송 대상: {', '.join(_on_list)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 탭5: 예약관리
+# ═══════════════════════════════════════════════════════════════════════
+with tab5:
+    st.subheader("📅 예약발송 관리")
+    _t5_sched   = load_schedule()
+    _t5_items   = _t5_sched.get("scheduled", [])
+    _t5_pending = [i for i in _t5_items if i.get("status") == "pending"]
+    _t5_done    = [i for i in _t5_items if i.get("status") != "pending"]
+
+    if _t5_pending:
+        st.markdown("**⏳ 대기 중인 예약**")
+        for _ti in sorted(_t5_pending, key=lambda x: x.get("scheduled_at", "")):
+            _tia, _tib, _tic, _tid = st.columns([2.5, 2.5, 2, 1])
+            _tia.write(", ".join(_ti.get("client_names", _ti.get("client_ids", []))))
+            _tib.caption(f"{_ti.get('since','')} ~ {_ti.get('until','')}")
+            _tic.caption(f"📅 {_ti.get('scheduled_at','')[:16]}")
+            if _tid.button("취소", key=f"cancel_{_ti['id']}"):
+                _ti["status"] = "cancelled"
+                save_schedule(_t5_sched)
+                st.rerun()
+    else:
+        st.info("대기 중인 예약이 없습니다.")
+
+    if _t5_done:
+        st.divider()
+        st.markdown("**📋 완료된 예약 이력**")
+        import pandas as _pd5
+        _t5_df = _pd5.DataFrame([{
+            "광고주":   ", ".join(i.get("client_names", i.get("client_ids", []))),
+            "기간":     f"{i.get('since','')} ~ {i.get('until','')}",
+            "예약시각": i.get("scheduled_at", "")[:16],
+            "상태":     i.get("status", ""),
+            "오류":     i.get("error", ""),
+        } for i in reversed(_t5_done)])
+        st.dataframe(_t5_df, use_container_width=True, hide_index=True)
+        if st.button("🗑️ 완료 이력 초기화", key="t5_clear"):
+            _t5_sched["scheduled"] = _t5_pending
+            save_schedule(_t5_sched)
+            st.rerun()
+
+    # 자동 정기발송 현황
+    st.divider()
+    st.subheader("🔄 자동 정기발송 현황")
+    _t5_auto   = _t5_sched.get("auto_monthly", {})
+    _t5_clients = load_clients()
+    _t5_on = []
+    for _tc in _t5_clients:
+        _tcid = _tc.get("id") or _tc.get("name", "")
+        _tcc  = _t5_auto.get(_tcid, {})
+        if _tcc.get("enabled"):
+            _t5_on.append({
+                "광고주":        _tc["name"],
+                "발송일":        f"매월 {_tcc.get('send_day',5)}일 {_tcc.get('send_hour',9):02d}:00",
+                "마지막 발송월": _tcc.get("last_sent_month", "-"),
+            })
+    if _t5_on:
+        import pandas as _pd5b
+        st.dataframe(_pd5b.DataFrame(_t5_on), use_container_width=True, hide_index=True)
+    else:
+        st.info("자동 정기발송 설정된 광고주가 없습니다. ⚙️ 설정 탭에서 활성화하세요.")

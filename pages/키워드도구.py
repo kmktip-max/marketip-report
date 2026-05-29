@@ -8,6 +8,12 @@ import json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(ROOT, ".env"))
+except Exception:
+    pass
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 지역 DB
 # ══════════════════════════════════════════════════════════════════════════════
@@ -544,7 +550,7 @@ with t_extract:
             else:
                 client = _get_ai_client()
                 if not client:
-                    st.error("OpenAI API 키가 없습니다. Streamlit Secrets에 OPENAI_API_KEY를 등록해주세요.")
+                    st.error("OpenAI API 키가 설정되지 않았습니다. .env 또는 Streamlit Secrets에 OPENAI_API_KEY를 등록해주세요.")
                 else:
                     with st.spinner("🔍 사이트 내용 분석 중..."):
                         page_text = _fetch_page(ex_url.strip())

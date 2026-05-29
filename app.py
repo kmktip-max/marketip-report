@@ -1,4 +1,4 @@
-"""마케팁 OS — 메인 앱"""
+"""마케팁 OS — 메인 앱"""  # v2
 import streamlit as st
 import os
 import sys
@@ -52,33 +52,137 @@ def _login_page():
 <style>
 section[data-testid="stSidebar"] { display: none !important; }
 [data-testid="stSidebarNav"]      { display: none !important; }
+.main .block-container {
+    max-width: 960px !important;
+    padding-top: 1.5rem !important;
+    padding-bottom: 1rem !important;
+    margin: 0 auto;
+}
 </style>
 """, unsafe_allow_html=True)
 
-    _, cc, _ = st.columns([1, 1.1, 1])
-    with cc:
-        st.markdown("<div style='height:40px;'></div>", unsafe_allow_html=True)
+    # ── 로고 base64 인코딩 (우측 폼에서 재사용) ──────────────────────────
+    logo_html = ""
+    if LOGO_PATH:
+        try:
+            import base64 as _b64
+            ext = LOGO_PATH.rsplit(".", 1)[-1].lower().replace("jpg", "jpeg")
+            with open(LOGO_PATH, "rb") as _f:
+                logo_b64 = _b64.b64encode(_f.read()).decode()
+            logo_html = (
+                f'<img src="data:image/{ext};base64,{logo_b64}" '
+                f'style="width:88px;height:auto;display:block;margin:0 auto 10px;" />'
+            )
+        except Exception:
+            pass
 
-        # 로고 + 타이틀을 하나의 HTML 블록으로 렌더링 (st.image 빈 박스 방지)
-        logo_html = ""
-        if LOGO_PATH:
-            try:
-                import base64 as _b64
-                ext = LOGO_PATH.rsplit(".", 1)[-1].lower().replace("jpg", "jpeg")
-                with open(LOGO_PATH, "rb") as _f:
-                    logo_b64 = _b64.b64encode(_f.read()).decode()
-                logo_html = (
-                    f'<img src="data:image/{ext};base64,{logo_b64}" '
-                    f'style="width:100px;height:auto;display:block;margin:0 auto 12px;" />'
-                )
-            except Exception:
-                pass
+    left_col, right_col = st.columns([1, 1], gap="medium")
 
+    # ── 좌측: 서비스 카테고리 미리보기 ───────────────────────────────────
+    with left_col:
+        st.markdown("""
+<div style="padding:20px 4px 16px 4px;">
+  <div style="font-size:11px;font-weight:700;color:#9CA3AF;letter-spacing:.1em;
+              text-transform:uppercase;margin-bottom:12px;">마케팁 서비스</div>
+
+  <!-- 광고구조 컨설팅 -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고구조 컨설팅</div>
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">📈</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">광고분석 컨설팅</div>
+          <div style="font-size:10px;color:#64748B;">광고 구조 진단 및 개선 방향 제안</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">📩</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">월간보고서</div>
+          <div style="font-size:10px;color:#64748B;">월간 광고 성과 보고서 자동 생성 · 이메일 발송</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 광고주 관리 -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고주 관리</div>
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;">
+      <span style="font-size:18px;line-height:1;">💸</span>
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:700;color:#1E293B;">광고비 페이백 신청</div>
+        <div style="font-size:10px;color:#64748B;">네이버 · 카카오 · 당근 페이백 계정 연동</div>
+      </div>
+      <span style="font-size:11px;">🔒</span>
+    </div>
+  </div>
+
+  <!-- 광고 운영 -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고 운영</div>
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">📊</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">목표순위 자동입찰</div>
+          <div style="font-size:10px;color:#64748B;">키워드별 목표 순위 자동 입찰 관리</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">🔍</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">키워드 추출</div>
+          <div style="font-size:10px;color:#64748B;">경쟁사 기반 고효율 키워드 자동 발굴</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">✍️</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">광고소재 추출</div>
+          <div style="font-size:10px;color:#64748B;">AI 기반 광고 제목 · 설명 자동 생성</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">📐</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:#1E293B;">랜딩페이지 기획/분석</div>
+          <div style="font-size:10px;color:#64748B;">랜딩페이지 진단 및 개선안 제안</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:10px 12px;background:#F8FAFC;border-radius:6px;
+              border-left:3px solid #6366F1;">
+    <div style="font-size:11px;color:#475569;line-height:1.5;">
+      🔒 모든 서비스는 <b>로그인 후</b> 이용 가능합니다.
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── 우측: 로그인 폼 ────────────────────────────────────────────────────
+    with right_col:
         st.markdown(
-            f'<div style="text-align:center;margin-bottom:32px;">'
+            f'<div style="text-align:center;margin-bottom:18px;margin-top:4px;">'
             f'{logo_html}'
-            f'<div style="font-size:28px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 전용</div>'
-            f'<div style="font-size:13px;color:#6B7280;margin-top:6px;">광고 운영 관리 시스템</div>'
+            f'<div style="font-size:18px;font-weight:900;color:#111;letter-spacing:-.5px;">마케팁 전용</div>'
+            f'<div style="font-size:11px;color:#9CA3AF;margin-top:3px;">광고 운영 관리 시스템</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -103,7 +207,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_permissions": ["all"],
                         "settlement_auth":  True,
                         "_session_token":   token,
-                        "user_id":          "admin",   # 광고분석컨설팅 무제한
+                        "user_id":          "admin",
                     })
                     st.query_params["token"] = token
                     st.rerun()
@@ -127,7 +231,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                         "auth_client":      client,
                         "auth_permissions": perm_keys,
                         "_session_token":   token,
-                        "user_id":          c_id.strip(),  # 광고분석컨설팅 월 3회 제한
+                        "user_id":          c_id.strip(),
                     })
                     st.query_params["token"] = token
                     st.rerun()

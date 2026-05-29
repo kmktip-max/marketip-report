@@ -49,6 +49,6 @@ admarketip | {user}"""
     attachment["Content-Type"] = f'text/html; charset=utf-8; name="{filename}"'
     msg.attach(attachment)
 
-    with smtplib.SMTP_SSL(host, port, local_hostname="localhost") as smtp:
+    with smtplib.SMTP_SSL(host, port, local_hostname="localhost", timeout=30) as smtp:
         smtp.login(user, password)
         smtp.sendmail(user, to_email, msg.as_string())

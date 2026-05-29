@@ -1,0 +1,13 @@
+{
+  "scheduled": [],
+  "auto_monthly": {
+    "20260526181823": {
+      "enabled": true,
+      "send_day": 1,
+      "send_hour": 9,
+      "last_sent_month": ""
+    },
+    "_global_day": 1,
+    "_global_hour": 9
+  }
+}
