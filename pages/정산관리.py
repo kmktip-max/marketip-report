@@ -1388,10 +1388,7 @@ with t_fl:
                 "대표 수익":       w(sum(g["대표 수익"]       for g in fl_sum.values())),
                 "대표 세후 추정":  w(round(sum(g["대표 수익"] for g in fl_sum.values()) * 0.8)),
             })
-            _safe_dataframe(
-                pd.DataFrame(s_rows), _style_fl, axis=0,
-                use_container_width=True, hide_index=True,
-            )
+            st.table(pd.DataFrame(s_rows))
 
         # 업체별 상세
         st.markdown("**계정별 상세**")
