@@ -1061,6 +1061,7 @@ ADMIN_PASSWORD = "관리자비밀번호"
                         "send_day":        int(_g_day),
                         "send_hour":       int(_g_hour),
                         "last_sent_month": _prev.get("last_sent_month", ""),
+                        "client_name":     _ac.get("name", ""),
                     }
                 _auto_cfg["_global_day"]  = int(_g_day)
                 _auto_cfg["_global_hour"] = int(_g_hour)

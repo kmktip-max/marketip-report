@@ -329,8 +329,12 @@ def run_scheduled_reports():
         print(f"[보고서스케줄] 예약 실행: {names}")
         errors = []
 
-        for cid in item.get("client_ids", []):
+        _cnames = item.get("client_names", [])
+        for i, cid in enumerate(item.get("client_ids", [])):
             client = cmap.get(cid)
+            # ID 매칭 실패 시 이름으로 폴백 (GSheets ID ≠ local ID 대응)
+            if not client and i < len(_cnames):
+                client = cmap.get(_cnames[i])
             if not client:
                 errors.append(f"광고주 미발견: {cid}")
                 continue
@@ -364,7 +368,11 @@ def run_scheduled_reports():
             continue
 
         client = cmap.get(cid)
+        # ID 매칭 실패 시 저장된 이름으로 폴백
         if not client:
+            client = cmap.get(cfg.get("client_name", ""))
+        if not client:
+            print(f"[보고서스케줄] 자동월보 광고주 미발견: {cid}")
             continue
 
         first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
