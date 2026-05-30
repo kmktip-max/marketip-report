@@ -367,10 +367,8 @@ def run_scheduled_reports():
         if now.day != send_day or now.hour < send_hour:
             continue
 
-        client = cmap.get(cid)
-        # ID 매칭 실패 시 저장된 이름으로 폴백
-        if not client:
-            client = cmap.get(cfg.get("client_name", ""))
+        # cid가 이름일 수도 있고 ID일 수도 있음 — 둘 다 시도
+        client = cmap.get(cid) or cmap.get(cfg.get("client_name", ""))
         if not client:
             print(f"[보고서스케줄] 자동월보 광고주 미발견: {cid}")
             continue

@@ -1,13 +1,32 @@
 {
-  "scheduled": [],
+  "scheduled": [
+    {
+      "id": "20260529164333_46efaa",
+      "error": "광고주 미발견: 20260512074618",
+      "since": "2026-04-01",
+      "until": "2026-04-30",
+      "status": "failed",
+      "send_mode": "single",
+      "client_ids": [
+        "20260512074618"
+      ],
+      "created_at": "2026-05-29T16:43:33",
+      "period_key": "monthly",
+      "client_names": [
+        "마케팁"
+      ],
+      "scheduled_at": "2026-05-30T09:00:00",
+      "sent_at": "2026-05-30T13:52:48"
+    }
+  ],
   "auto_monthly": {
-    "20260526181823": {
+    "_global_day": 30,
+    "_global_hour": 3,
+    "마케팁": {
       "enabled": true,
-      "send_day": 1,
-      "send_hour": 9,
+      "send_day": 30,
+      "send_hour": 3,
       "last_sent_month": ""
-    },
-    "_global_day": 1,
-    "_global_hour": 9
+    }
   }
 }

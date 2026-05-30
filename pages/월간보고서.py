@@ -1053,15 +1053,24 @@ ADMIN_PASSWORD = "관리자비밀번호"
                     key=f"auto_tog_{_acid}",
                 )
             if st.form_submit_button("💾 저장", type="primary"):
+                # 기존 ID 기반 키를 이름 기반으로 마이그레이션
+                _migrated = {}
+                for _k, _v in _auto_cfg.items():
+                    if _k.startswith("_"):
+                        _migrated[_k] = _v
+                        continue
+                    _cname = _v.get("client_name") or _k
+                    _migrated[_cname] = _v
+                _auto_cfg = _migrated
+
                 for _ac in _auto_clients:
-                    _acid = _ac.get("id") or _ac.get("name", "")
+                    _acid = _ac.get("name", "")   # 이름을 키로 사용
                     _prev = _auto_cfg.get(_acid, {})
                     _auto_cfg[_acid] = {
-                        "enabled":         _toggles[_acid],
+                        "enabled":         _toggles.get(_ac.get("id") or _ac.get("name",""), False),
                         "send_day":        int(_g_day),
                         "send_hour":       int(_g_hour),
                         "last_sent_month": _prev.get("last_sent_month", ""),
-                        "client_name":     _ac.get("name", ""),
                     }
                 _auto_cfg["_global_day"]  = int(_g_day)
                 _auto_cfg["_global_hour"] = int(_g_hour)
