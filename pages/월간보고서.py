@@ -1134,7 +1134,8 @@ with tab5:
     _t5_on = []
     for _tc in _t5_clients:
         _tcid = _tc.get("id") or _tc.get("name", "")
-        _tcc  = _t5_auto.get(_tcid, {})
+        _tcc  = (_t5_auto.get(_tcid)
+                 or _t5_auto.get(_tc.get("name", ""), {}))
         if _tcc.get("enabled"):
             _t5_on.append({
                 "광고주":        _tc["name"],
