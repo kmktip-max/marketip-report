@@ -91,7 +91,9 @@ class NaverAdAPI:
         return _dedup(all_kw, "nccKeywordId")
 
     def get_stats(self, entity_ids, since, until):
-        tr     = json.dumps({"since": since, "until": until})
+        _s = since.isoformat() if hasattr(since, "isoformat") else str(since)
+        _u = until.isoformat() if hasattr(until, "isoformat") else str(until)
+        tr     = json.dumps({"since": _s, "until": _u})
         fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"])
         batches = [entity_ids[i:i+100] for i in range(0, len(entity_ids), 100)]
 
@@ -225,10 +227,13 @@ class NaverAdAPI:
             f"키워드 레벨 합계 — 클릭: {kw_summary['clicks']:,} / 노출: {kw_summary['impressions']:,}"
         )
 
+        since_s = since.isoformat() if hasattr(since, "isoformat") else str(since)
+        until_s = until.isoformat() if hasattr(until, "isoformat") else str(until)
+
         return {
             "period":    period,
-            "since":     since,
-            "until":     until,
+            "since":     since_s,
+            "until":     until_s,
             "keywords":  kw_rows,
             "summary":   summary,
             "kw_summary": kw_summary,
@@ -238,8 +243,8 @@ class NaverAdAPI:
             "debug": debug_log,
             "debug_params": {
                 "customer_id":     self.customer_id,
-                "since":           since,
-                "until":           until,
+                "since":           since_s,
+                "until":           until_s,
                 "endpoint":        BASE_URL + "/stats",
                 "fields":          "impCnt,clkCnt,salesAmt,ccnt,ctr,ror,cpConv,avgRnk",
                 "camp_stat_rows":  len(camp_stats),
