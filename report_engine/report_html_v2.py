@@ -203,7 +203,7 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         _tr = json.dumps({"since": _s, "until": _e})
 
         agg = {"impressions": 0, "clicks": 0, "cost": 0,
-               "conversions": 0, "revenue": 0}
+               "conversions": 0, "revenue": 0, "_raw_sales": 0}
 
         for i in range(0, len(_ids), 100):
             batch = _ids[i:i + 100]
@@ -219,18 +219,27 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
             rows = rj.get("data", []) if isinstance(rj, dict) else []
 
             for row in rows:
-                imps   = _safe_int(row.get("impCnt"))
-                clks   = _safe_int(row.get("clkCnt"))
-                convs  = _safe_int(row.get("ccnt"))
-                cpconv = _safe_float(row.get("cpConv"))
-                rev    = _safe_int(row.get("salesAmt")) if convs > 0 else 0
-                cost   = int(cpconv * convs)            if convs > 0 else 0
+                imps      = _safe_int(row.get("impCnt"))
+                clks      = _safe_int(row.get("clkCnt"))
+                convs     = _safe_int(row.get("ccnt"))
+                cpconv    = _safe_float(row.get("cpConv"))
+                raw_sales = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                cost      = int(cpconv * convs)            if convs > 0 else 0
 
-                agg["impressions"] += imps
-                agg["clicks"]      += clks
-                agg["cost"]        += cost
-                agg["conversions"] += convs
-                agg["revenue"]     += rev
+                # salesAmt ≈ cost 이면 Naver가 전환가치 미설정 상태에서
+                # cpConv*ccnt 를 salesAmt 로 반환하는 것으로 판단 → revenue = 0 처리
+                # (실제 매출 추적이 설정된 경우 salesAmt 는 cost 와 다른 값)
+                if raw_sales > 0 and cost > 0 and abs(raw_sales - cost) / cost < 0.02:
+                    rev = 0   # 전환가치 미설정: 광고비와 동일한 값 무시
+                else:
+                    rev = raw_sales
+
+                agg["impressions"]  += imps
+                agg["clicks"]       += clks
+                agg["cost"]         += cost
+                agg["conversions"]  += convs
+                agg["revenue"]      += rev
+                agg["_raw_sales"]   += raw_sales  # 디버그용 원본값
 
         return agg
 
@@ -271,9 +280,14 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         try:
             agg = _call(since_dt, until_dt, ids=p_ids)
             product_stats[product] = agg
+            _raw = agg.get("_raw_sales", 0)
+            _co  = agg.get("cost", 0)
+            _sus = (_raw > 0 and _co > 0 and abs(_raw - _co) / _co < 0.02)
             result["debug"].append(
                 f"[상품/{product}] 노출{agg['impressions']:,} 클릭{agg['clicks']:,} "
-                f"비용{agg['cost']:,} 전환{agg['conversions']:,} 매출{agg['revenue']:,}"
+                f"비용{_co:,} 전환{agg['conversions']:,} "
+                f"salesAmt원본={_raw:,} → 사용매출={agg['revenue']:,}"
+                f"{'(salesAmt≈cost→무시)' if _sus else ''}"
             )
         except Exception as e:
             product_stats[product] = {
@@ -984,6 +998,54 @@ def build_monthly_report_v2(
     else:
         _daily_section_html = ""   # 일자별 데이터 없으면 섹션 자체 미표시
 
+    # ── 디버그 표 (관리자용, 기본 숨김) ──────────────────────────────────────
+    _debug_rows = ""
+    for _p, _ps in product_stats.items():
+        _co  = _ps.get("cost",       0)
+        _cv  = _ps.get("conversions",0)
+        _raw = _ps.get("_raw_sales", 0)
+        _rv  = _ps.get("revenue",    0)
+        _suspect = (_raw > 0 and _co > 0 and abs(_raw - _co) / _co < 0.02)
+        _roas_v = f"{_rv/_co*100:.1f}%" if (_rv > 0 and _co > 0) else "-"
+        _reason = "salesAmt ≈ cost → 전환가치 미설정으로 무시" if _suspect else (
+                  "salesAmt = 0 → 매출 추적 미설정" if _raw == 0 else "정상")
+        _debug_rows += (
+            f"<tr>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;'>{_p}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;text-align:right;'>{_co:,}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;text-align:right;'>{_cv:,}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;text-align:right;"
+            f"color:{'#e74c3c' if _suspect else '#333'};'>{_raw:,}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;text-align:right;'>{_rv:,}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;text-align:center;'>{_roas_v}</td>"
+            f"<td style='padding:4px 8px;border:1px solid #ddd;font-size:11px;color:#888;'>{_reason}</td>"
+            f"</tr>"
+        )
+
+    _debug_block = f"""
+    <details style="margin:16px 0;">
+      <summary style="cursor:pointer;font-size:11px;color:#666;padding:6px 10px;
+                      background:#f8f9fa;border:1px solid #ddd;border-radius:4px;">
+        🔍 관리자 디버그: 전환매출액 원본 데이터 확인 (클릭하여 펼치기)
+      </summary>
+      <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px;">
+        <thead><tr style="background:#E8EAF6;">
+          <th style="padding:4px 8px;border:1px solid #ddd;">상품</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">총광고비</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">전환수</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">salesAmt 원본값</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">사용 전환매출액</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">ROAS</th>
+          <th style="padding:4px 8px;border:1px solid #ddd;">판단 사유</th>
+        </tr></thead>
+        <tbody>{_debug_rows}</tbody>
+      </table>
+      <div style="font-size:10px;color:#999;margin-top:6px;">
+        salesAmt 원본값이 총광고비와 2% 이내로 같으면 Naver 전환가치 미설정으로 판단,
+        전환매출액 = 0으로 처리합니다.
+      </div>
+    </details>""" if _debug_rows else ""
+
     # ── 최종 HTML ─────────────────────────────────────────────────────────────
     return f"""<!DOCTYPE html>
 <html lang="ko">
@@ -1135,6 +1197,7 @@ canvas{{width:100%!important;max-width:100%!important;}}
   </div>
 </div>
 
+{_debug_block}
 </div><!-- v2-body -->
 <div class="v2-footer">
   본 보고서는 {report_date}에 자동 생성되었습니다. &nbsp;|&nbsp; Powered by MarketiP
