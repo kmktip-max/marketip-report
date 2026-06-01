@@ -406,27 +406,13 @@ def build_monthly_report_v2(
     prev_since = v2_extra.get("prev_since", "")
     prev_until = v2_extra.get("prev_until", "")
 
-    # 일자별/주차별
+    # 일자별/주차별 — 임의 분배 절대 금지, 실제 API 데이터만 사용
     daily_map  = v2_extra.get("daily", {})
     weekly_raw = v2_extra.get("weekly", {})
 
-    # 일자별 API 데이터 없으면 주차 평균으로 근사치 생성 (차트용)
-    if not daily_map and weekly_raw and since and until:
-        _sd = date.fromisoformat(since)
-        _ud = date.fromisoformat(until)
-        for _wn, _ws, _we in _get_week_ranges(_sd, _ud):
-            _wd = weekly_raw.get(_wn, {})
-            _nd = (_we - _ws).days + 1
-            _d  = _ws
-            while _d <= _we:
-                daily_map[_d.isoformat()] = {
-                    k: _wd.get(k, 0) // _nd if _nd > 0 else 0
-                    for k in ["impressions", "clicks", "cost", "conversions", "revenue"]
-                }
-                _d += timedelta(days=1)
-
+    # 실제 일자별 데이터 존재 여부 (API timeUnit=DAY 성공 여부)
     has_daily  = bool(daily_map)
-    daily_list = _build_daily_list(daily_map, since, until)
+    daily_list = _build_daily_list(daily_map, since, until) if has_daily else []
 
     # 주차별: API 직접 호출 결과 우선 사용
     if weekly_raw:
@@ -598,14 +584,14 @@ def build_monthly_report_v2(
             f"</tr>"
         )
 
-    # 합계 행 (일자별 데이터 있으면 합산, 없으면 당월 summary 사용)
-    if has_daily:
-        ti  = sum(w["impressions"] for w in weekly_list)
-        tc  = sum(w["clicks"]      for w in weekly_list)
-        tco = sum(w["cost"]        for w in weekly_list)
-        tcv = sum(w["conversions"] for w in weekly_list)
-        tr_  = sum(w["revenue"]    for w in weekly_list)
-        td_  = sum(w["days"]       for w in weekly_list)
+    # 주차별 TOTAL: weekly_raw 합산 우선, 없으면 당월 summary
+    if weekly_raw:
+        ti  = sum(w.get("impressions", 0) for w in weekly_raw.values())
+        tc  = sum(w.get("clicks",      0) for w in weekly_raw.values())
+        tco = sum(w.get("cost",        0) for w in weekly_raw.values())
+        tcv = sum(w.get("conversions", 0) for w in weekly_raw.values())
+        tr_ = sum(w.get("revenue",     0) for w in weekly_raw.values())
+        td_ = sum(w.get("days",        0) for w in weekly_raw.values())
     else:
         ti, tc, tco, tcv, tr_, td_ = ci, cc, cco, ccv, cr, 0
 
@@ -647,9 +633,18 @@ def build_monthly_report_v2(
       </tbody>
     </table>"""
 
-    # ── 일자별 테이블 ──────────────────────────────────────────────────────────
-    daily_rows = ""
+    # ── 일자별 테이블 (실제 API 데이터 있을 때만 행 표시) ─────────────────────
+    _NO_DAILY_MSG = (
+        f'<div style="background:#FFF3CD;border:1px solid #FFC107;border-radius:4px;'
+        f'padding:14px 18px;font-size:12px;color:#856404;line-height:1.6;">'
+        f'<b>일자별 원천 데이터 없음</b><br>'
+        f'Naver 검색광고 API가 일자별(timeUnit=DAY) 통계를 제공하지 않습니다.<br>'
+        f'주차별 광고요약은 실제 API 데이터를 기반으로 표시됩니다.'
+        f'</div>'
+    )
+
     if has_daily:
+        daily_rows = ""
         for row in daily_list:
             ri  = row["impressions"]
             rc  = row["clicks"]
@@ -657,7 +652,7 @@ def build_monthly_report_v2(
             rcv = row["conversions"]
             rr  = row["revenue"]
             is_weekend = row["weekday"] in ("토", "일")
-            row_bg = "#FFF8F8" if is_weekend else ""
+            row_bg   = "#FFF8F8" if is_weekend else ""
             wd_color = "#c0392b" if is_weekend else ""
             daily_rows += (
                 f"<tr style='background:{row_bg};'>"
@@ -672,43 +667,43 @@ def build_monthly_report_v2(
                 f"{td(_roas_str(rr,rco),'right')}"
                 f"</tr>"
             )
-
-    d_ti  = sum(r["impressions"] for r in daily_list) if has_daily else ci
-    d_tc  = sum(r["clicks"]      for r in daily_list) if has_daily else cc
-    d_tco = sum(r["cost"]        for r in daily_list) if has_daily else cco
-
-    daily_total = (
-        f"<tr style='background:{C_HBG};'>"
-        f"{td('합계','center',True)}"
-        f"{td('-','center',True)}"
-        f"{td(_fmt_num(d_ti),'right',True)}"
-        f"{td(_fmt_num(d_tc),'right',True)}"
-        f"{td(_ctr(d_tc,d_ti),'right',True)}"
-        f"{td(_cpc_str(d_tco,d_tc),'right',True)}"
-        f"{td(_fmt_won(d_tco),'right',True)}"
-        f"{td(_fmt_num(ccv),'right',True)}"
-        f"{td(_roas_str(cr,cco),'right',True)}"
-        f"</tr>"
-    )
-
-    daily_table = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
-      <thead><tr>
-        {th("날짜","center","55px")}
-        {th("요일","center","35px")}
-        {th("노출수","right")}
-        {th("클릭수","right")}
-        {th("클릭률","right")}
-        {th("평균CPC","right")}
-        {th("총광고비","right")}
-        {th("전환수","right")}
-        {th("광고수익률","right")}
-      </tr></thead>
-      <tbody>
-        {daily_total}
-        {daily_rows if daily_rows else
-         f"<tr><td colspan='9' style='text-align:center;color:#999;padding:14px;font-size:11px;'>일자별 데이터를 불러오지 못했습니다</td></tr>"}
-      </tbody>
-    </table>"""
+        d_ti  = sum(r["impressions"] for r in daily_list)
+        d_tc  = sum(r["clicks"]      for r in daily_list)
+        d_tco = sum(r["cost"]        for r in daily_list)
+        d_tcv = sum(r["conversions"] for r in daily_list)
+        d_tr  = sum(r["revenue"]     for r in daily_list)
+        daily_total_row = (
+            f"<tr style='background:{C_HBG};'>"
+            f"{td('합계','center',True)}"
+            f"{td('-','center',True)}"
+            f"{td(_fmt_num(d_ti),'right',True)}"
+            f"{td(_fmt_num(d_tc),'right',True)}"
+            f"{td(_ctr(d_tc,d_ti),'right',True)}"
+            f"{td(_cpc_str(d_tco,d_tc),'right',True)}"
+            f"{td(_fmt_won(d_tco),'right',True)}"
+            f"{td(_fmt_num(d_tcv),'right',True)}"
+            f"{td(_roas_str(d_tr,d_tco),'right',True)}"
+            f"</tr>"
+        )
+        daily_table = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr>
+            {th("날짜","center","55px")}
+            {th("요일","center","35px")}
+            {th("노출수","right")}
+            {th("클릭수","right")}
+            {th("클릭률","right")}
+            {th("평균CPC","right")}
+            {th("총광고비","right")}
+            {th("전환수","right")}
+            {th("광고수익률","right")}
+          </tr></thead>
+          <tbody>
+            {daily_total_row}
+            {daily_rows}
+          </tbody>
+        </table>"""
+    else:
+        daily_table = _NO_DAILY_MSG
 
     # ── 키워드 TOP10 테이블 ────────────────────────────────────────────────────
     def kw_table_rows(kw_list, val_fn):
@@ -892,23 +887,16 @@ canvas{{width:100%!important;max-width:100%!important;}}
 
 <!-- ═══ 일자별 ══════════════════════════════════════════════════════════ -->
 <div class="v2-sec">
-  <div class="v2-two">
-    <div>
-      {sec_bar("일자별 광고요약", C_BLUE)}
-      <div class="v2-panel" style="padding:0;">{daily_table}</div>
-    </div>
-    <div>
-      {sec_bar("일자별 노출수 · 클릭수", C_BLUE3)}
-      <div class="v2-panel">
-        <div class="v2-chart"><canvas id="dailyChart1"></canvas></div>
-      </div>
-      <div style="height:14px;"></div>
-      {sec_bar("일자별 광고비 · 평균CPC", C_BLUE3)}
-      <div class="v2-panel">
-        <div class="v2-chart"><canvas id="dailyChart2"></canvas></div>
-      </div>
-    </div>
-  </div>
+  {sec_bar("일자별 광고요약", C_BLUE)}
+  {"<div class='v2-two'><div>" + daily_table + "</div><div>" +
+   sec_bar("일자별 노출수 · 클릭수", C_BLUE3) +
+   "<div class='v2-panel'><div class='v2-chart'><canvas id='dailyChart1'></canvas></div></div>" +
+   "<div style='height:14px;'></div>" +
+   sec_bar("일자별 광고비 · 평균CPC", C_BLUE3) +
+   "<div class='v2-panel'><div class='v2-chart'><canvas id='dailyChart2'></canvas></div></div>" +
+   "</div></div>"
+   if has_daily else
+   daily_table}
 </div>
 
 <!-- ═══ 키워드 TOP10 ════════════════════════════════════════════════════ -->
