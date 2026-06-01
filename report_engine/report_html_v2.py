@@ -228,7 +228,7 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 clks   = _safe_int(row.get("clkCnt"))
                 convs  = _safe_int(row.get("ccnt"))
                 cpconv = _safe_float(row.get("cpConv", 0))
-                sales  = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                sales  = _safe_int(row.get("salesAmt"))  # ccnt=0 캠페인도 포함 (브랜드검색 등)
                 cost   = int(cpconv * convs)              if convs > 0 else 0
                 ror    = _safe_float(row.get("ror", 0))   # Naver 직접 계산 ROAS(%)
 
@@ -633,38 +633,44 @@ def build_monthly_report_v2(
                        (product_stats[p].get("impressions", 0) > 0 or
                         product_stats[p].get("clicks", 0) > 0)]
 
-    # 당월 집계 (curr_sm 원본 사용)
-    ci  = _safe_int(curr_sm.get("impressions"))
-    cc  = _safe_int(curr_sm.get("clicks"))
-    cco = _safe_int(curr_sm.get("cost"))
-    ccv = _safe_int(curr_sm.get("conversions"))
-    cr  = _safe_int(curr_sm.get("revenue"))
-    # 전월 집계
-    pi  = _safe_int(prev_sm.get("impressions"))
-    pc  = _safe_int(prev_sm.get("clicks"))
-    pco = _safe_int(prev_sm.get("cost"))
-    pcv = _safe_int(prev_sm.get("conversions"))
-    pr  = _safe_int(prev_sm.get("revenue"))
+    # ── product_stats 합계로 당월 집계 (ccnt=0 캠페인 salesAmt 포함) ─────────
+    # curr_sm["revenue"] = fetch_report() 의 _parse_row() 에서
+    #   "if convs > 0" 조건 → ccnt=0 캠페인 salesAmt 누락
+    # product_stats는 _call() 수정 후 모든 캠페인 salesAmt 포함
+    _ps_rev  = sum(s.get("revenue",     0) for s in product_stats.values())
+    _ps_cost = sum(s.get("cost",        0) for s in product_stats.values())
+    _ps_conv = sum(s.get("conversions", 0) for s in product_stats.values())
+    _ps_imps = sum(s.get("impressions", 0) for s in product_stats.values())
+    _ps_clks = sum(s.get("clicks",      0) for s in product_stats.values())
 
-    # ROAS 표시: Naver API ror 필드 직접 사용 (역산 없음)
-    # product_stats에서 salesAmt 가중 평균 ror 계산
-    _ror_num_total = sum(s.get("_ror_num",   0) for s in product_stats.values())
-    _ror_den_total = sum(s.get("_ror_denom", 0) for s in product_stats.values())
-    _total_ror_pct = (_ror_num_total / _ror_den_total
-                     if _ror_den_total > 0 else 0.0)
-    # 전월 ror
-    _ror_num_prev = sum(s.get("_ror_num",   0) for s in product_prev_stats.values())
-    _ror_den_prev = sum(s.get("_ror_denom", 0) for s in product_prev_stats.values())
-    _prev_ror_pct = (_ror_num_prev / _ror_den_prev
-                    if _ror_den_prev > 0 else 0.0)
+    ci  = _ps_imps if _ps_imps > 0 else _safe_int(curr_sm.get("impressions"))
+    cc  = _ps_clks if _ps_clks > 0 else _safe_int(curr_sm.get("clicks"))
+    cco = _ps_cost if _ps_cost > 0 else _safe_int(curr_sm.get("cost"))
+    ccv = _ps_conv if _ps_conv > 0 else _safe_int(curr_sm.get("conversions"))
+    cr  = _ps_rev  if _ps_rev  > 0 else _safe_int(curr_sm.get("revenue"))
+
+    # 전월 집계
+    _pp_rev  = sum(s.get("revenue",     0) for s in product_prev_stats.values())
+    _pp_cost = sum(s.get("cost",        0) for s in product_prev_stats.values())
+    _pp_conv = sum(s.get("conversions", 0) for s in product_prev_stats.values())
+    _pp_imps = sum(s.get("impressions", 0) for s in product_prev_stats.values())
+    _pp_clks = sum(s.get("clicks",      0) for s in product_prev_stats.values())
+
+    pi  = _pp_imps if _pp_imps > 0 else _safe_int(prev_sm.get("impressions"))
+    pc  = _pp_clks if _pp_clks > 0 else _safe_int(prev_sm.get("clicks"))
+    pco = _pp_cost if _pp_cost > 0 else _safe_int(prev_sm.get("cost"))
+    pcv = _pp_conv if _pp_conv > 0 else _safe_int(prev_sm.get("conversions"))
+    pr  = _pp_rev  if _pp_rev  > 0 else _safe_int(prev_sm.get("revenue"))
+
+    # ror은 직접 계산으로 대체 (API ror 가중평균은 일부 캠페인 ror=0 문제로 부정확)
+    _total_ror_pct = 0.0   # _roas_v2가 rev/cost 로 직접 계산
+    _prev_ror_pct  = 0.0
 
     def _roas_v2(rev, cost, ror_pct=0.0):
         """
-        ROAS 표시 — Naver API ror 필드 우선, 없으면 rev/cost 계산
-        ror_pct > 0 이면 Naver 직접 계산값 사용 (역산 없음)
+        ROAS = revenue / cost × 100 직접 계산
+        (ror_pct 파라미터는 호환성 유지, 현재 미사용 — API ror 은 일부 캠페인에서 부정확)
         """
-        if ror_pct > 0:
-            return f"{ror_pct:.1f}%"
         r, c = _safe_int(rev), _safe_int(cost)
         if c == 0:
             return "-"
