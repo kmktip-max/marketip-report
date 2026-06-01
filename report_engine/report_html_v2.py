@@ -1133,6 +1133,34 @@ def build_monthly_report_v2(
       </div>
     </details>""" if _debug_rows else ""
 
+    # ── Raw 값 진단 배너 (항상 보고서 최상단에 표시) ──────────────────────────
+    import datetime as _dt
+    _ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # curr_sm raw (fetch_report() 원본)
+    _raw_sm       = data.get("summary", {})
+    _raw_sm_rev   = _safe_int(_raw_sm.get("revenue"))
+    _raw_sm_cost  = _safe_int(_raw_sm.get("cost"))
+
+    # product_stats raw
+    _ps_rev  = sum(_safe_int(s.get("revenue",    0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+    _ps_cost = sum(_safe_int(s.get("cost",        0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+    _ps_raw  = sum(_safe_int(s.get("_raw_sales",  0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+
+    _diag_banner = (
+        f'<div style="background:#fff3cd;border:2px solid #ffc107;padding:10px 16px;'
+        f'font-family:monospace;font-size:11px;margin-bottom:8px;border-radius:4px;">'
+        f'<b>🔍 V2 ROAS FIX ACTIVE [{_ts}]</b><br>'
+        f'curr_sm.revenue (fetch_report) = {_raw_sm_rev:,}<br>'
+        f'curr_sm.cost   (fetch_report) = {_raw_sm_cost:,}<br>'
+        f'product_stats._raw_sales 합 = {_ps_raw:,}<br>'
+        f'product_stats.revenue 합 (필터후) = {_ps_rev:,}<br>'
+        f'product_stats.cost 합 = {_ps_cost:,}<br>'
+        f'v2_extra.revenue_diagnosis = {v2_extra.get("revenue_diagnosis","없음")}<br>'
+        f'cr (HTML에 사용) = {cr:,} | cco = {cco:,}'
+        f'</div>'
+    )
+
     # ── 최종 HTML ─────────────────────────────────────────────────────────────
     return f"""<!DOCTYPE html>
 <html lang="ko">
@@ -1200,6 +1228,7 @@ canvas{{width:100%!important;max-width:100%!important;}}
 <div class="v2-body">
 
 <!-- ═══ 상품 필터 탭 ════════════════════════════════════════════════════ -->
+{_diag_banner}
 {_filter_section_html}
 
 <!-- ═══ COMMENT ════════════════════════════════════════════════════════ -->
