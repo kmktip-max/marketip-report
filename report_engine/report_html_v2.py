@@ -202,8 +202,13 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         _e = end.isoformat()   if hasattr(end,   "isoformat") else str(end)
         _tr = json.dumps({"since": _s, "until": _e})
 
-        agg = {"impressions": 0, "clicks": 0, "cost": 0,
-               "conversions": 0, "revenue": 0, "_raw_sales": 0}
+        agg = {
+            "impressions": 0, "clicks": 0, "cost": 0,
+            "conversions": 0, "revenue": 0,
+            "_raw_sales": 0,          # salesAmt 원본 합계
+            "_ror_num":   0.0,        # ror × cost 가중합 (가중평균 ROAS 계산용)
+            "_ror_denom": 0,          # cost 합계 (분모)
+        }
 
         for i in range(0, len(_ids), 100):
             batch = _ids[i:i + 100]
@@ -223,14 +228,17 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 clks      = _safe_int(row.get("clkCnt"))
                 convs     = _safe_int(row.get("ccnt"))
                 cpconv    = _safe_float(row.get("cpConv"))
+                ror       = _safe_float(row.get("ror", 0))   # Naver 계산 ROAS(%)
                 raw_sales = _safe_int(row.get("salesAmt")) if convs > 0 else 0
-                cost      = int(cpconv * convs)            if convs > 0 else 0
+                cost      = int(cpconv * convs)              if convs > 0 else 0
 
-                # salesAmt ≈ cost 이면 Naver가 전환가치 미설정 상태에서
-                # cpConv*ccnt 를 salesAmt 로 반환하는 것으로 판단 → revenue = 0 처리
-                # (실제 매출 추적이 설정된 경우 salesAmt 는 cost 와 다른 값)
+                # ── 전환매출액 유효성 판단 ───────────────────────────────────────
+                # salesAmt ≈ cost (2% 이내) : Naver가 전환가치 미설정 시
+                #   cpConv*ccnt (= 광고비)를 salesAmt 로 반환하는 현상
+                #   이 경우 실제 전환매출액이 아니므로 revenue = 0 처리
+                # salesAmt ≠ cost : 광고주가 전환가치를 별도 설정한 실제 데이터
                 if raw_sales > 0 and cost > 0 and abs(raw_sales - cost) / cost < 0.02:
-                    rev = 0   # 전환가치 미설정: 광고비와 동일한 값 무시
+                    rev = 0
                 else:
                     rev = raw_sales
 
@@ -239,8 +247,13 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 agg["cost"]         += cost
                 agg["conversions"]  += convs
                 agg["revenue"]      += rev
-                agg["_raw_sales"]   += raw_sales  # 디버그용 원본값
+                agg["_raw_sales"]   += raw_sales
+                agg["_ror_num"]     += ror * cost   # 가중 ROAS
+                agg["_ror_denom"]   += cost
 
+        # Naver API ror 필드 가중평균 (비용 기준)
+        agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_denom"]
+                          if agg["_ror_denom"] > 0 else 0.0)
         return agg
 
     # ── 주차별 통계 (5회 개별 호출) ──────────────────────────────────────────
@@ -304,6 +317,35 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
 
     result["product_stats"]      = product_stats
     result["product_prev_stats"] = product_prev_stats
+
+    # ── 전환매출액 진단 ───────────────────────────────────────────────────────
+    # 모든 상품의 ror 가중평균으로 실제 전환매출 데이터 여부 판단
+    _diag_ror_num   = sum(s.get("_ror_num",   0) for s in product_stats.values())
+    _diag_ror_denom = sum(s.get("_ror_denom", 0) for s in product_stats.values())
+    _diag_raw_sales = sum(s.get("_raw_sales", 0) for s in product_stats.values())
+    _diag_ror_avg   = _diag_ror_num / _diag_ror_denom if _diag_ror_denom > 0 else 0.0
+
+    if _diag_raw_sales == 0:
+        _revenue_diag = "salesAmt=0: 전환가치 미설정 (전환수만 추적 중)"
+        result["revenue_has_data"] = False
+    elif _diag_ror_denom > 0 and abs(_diag_ror_avg - 100) < 2:
+        _revenue_diag = (
+            f"salesAmt≈totalCost (Naver ror={_diag_ror_avg:.1f}%): "
+            f"전환가치를 광고비와 동일하게 설정한 것으로 판단 → 실제 매출 데이터 아님"
+        )
+        result["revenue_has_data"] = False
+    elif _diag_ror_avg > 0:
+        _revenue_diag = (
+            f"실제 전환매출액 데이터 존재 (Naver ror={_diag_ror_avg:.1f}%): "
+            f"salesAmt={_diag_raw_sales:,}원"
+        )
+        result["revenue_has_data"] = True
+    else:
+        _revenue_diag = f"전환매출액 판단 불가 (ror=0, salesAmt={_diag_raw_sales:,}원)"
+        result["revenue_has_data"] = False
+
+    result["revenue_diagnosis"] = _revenue_diag
+    result["debug"].append(f"[전환매출액 진단] {_revenue_diag}")
 
     # ── 일자별 통계 (timeUnit=DAY 시도) ──────────────────────────────────────
     daily_map = {}
@@ -520,6 +562,8 @@ def build_monthly_report_v2(
     # 상품별 통계
     product_stats      = v2_extra.get("product_stats",      {})
     product_prev_stats = v2_extra.get("product_prev_stats", {})
+    revenue_has_data   = v2_extra.get("revenue_has_data",   False)
+    revenue_diagnosis  = v2_extra.get("revenue_diagnosis",  "전환매출액 데이터 미확인")
 
     # 일자별/주차별 — 임의 분배 절대 금지, 실제 API 데이터만 사용
     daily_map  = v2_extra.get("daily", {})
@@ -704,14 +748,19 @@ def build_monthly_report_v2(
 
         total_row = _media_row("", period_total_sm, is_total=True, row_class="prow prow-all")
 
+        _roas_note = (
+            ""
+            if revenue_has_data else
+            '<br>※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.'
+            '<br>※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.'
+        )
         return (
             f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
             f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
             f'<div style="font-size:10px;color:#666;padding:6px 8px;line-height:1.8;">'
-            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동<br>'
-            f'※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>'
-            f'※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.<br>'
-            f'※ 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 표시되지 않을 수 있습니다.'
+            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동'
+            f'<br>※ 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 표시되지 않을 수 있습니다.'
+            f'{_roas_note}'
             f'</div>'
         )
 
@@ -828,10 +877,10 @@ def build_monthly_report_v2(
         {weekly_rows if weekly_rows else no_data_row}
       </tbody>
     </table>
-    <div style="font-size:10px;color:#666;padding:4px 8px;line-height:1.8;">
-      ※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>
-      ※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.
-    </div>"""
+    {"<div style='font-size:10px;color:#666;padding:4px 8px;line-height:1.8;'>"
+     "※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>"
+     "※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.</div>"
+     if not revenue_has_data else ""}"""
 
     # ── 일자별 테이블 (실제 API 데이터 있을 때만 행 표시) ─────────────────────
     _NO_DAILY_MSG = (
