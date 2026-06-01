@@ -275,7 +275,65 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
     except Exception as e:
         result["debug"].append(f"전월 실패: {e}")
 
-    # ── Raw API 응답 디버그 (전체 계정 당월 첫 3 row) ──────────────────────────
+    # ── ROAS 필드 전면 디버그 (모든 필드 후보 시도) ──────────────────────────
+    # 네이버 화면 기준값: 총비용 17,561,943 / 총전환매출액 46,179,174 / ROAS 262.95% / CPA 7,925
+    _ALL_CANDIDATE_FIELDS = json.dumps([
+        "impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk",
+        "convAmt", "totalSalesAmt", "convSalesAmt", "totalConvSalesAmt",
+        "purchaseSalesAmt", "allConvSalesAmt", "revenueAmt",
+        "conversion", "conversionValue", "totalConversionValue",
+    ])
+    try:
+        _s = since_dt.isoformat()
+        _e = until_dt.isoformat()
+        _tr_dbg = json.dumps({"since": _s, "until": _e})
+        path = "/stats"
+        h = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
+        resp_dbg = requests.get(
+            BASE_URL + path, headers=h,
+            params={"ids": ",".join(camp_ids), "fields": _ALL_CANDIDATE_FIELDS,
+                    "timeRange": _tr_dbg},
+            timeout=30,
+        )
+        resp_dbg.raise_for_status()
+        raw_rows = (resp_dbg.json().get("data", [])
+                    if isinstance(resp_dbg.json(), dict) else [])
+        result["debug"].append(
+            f"[ROAS FIELD DEBUG] campaign_count={len(raw_rows)} period={_s}~{_e}"
+        )
+
+        # 첫 번째 row의 모든 필드 목록 출력
+        if raw_rows:
+            _first = raw_rows[0]
+            result["debug"].append(f"  field_keys: {list(_first.keys())}")
+            result["debug"].append(f"  first_row_values: " +
+                " | ".join(f"{k}={v}" for k, v in _first.items()
+                           if k not in ("id",)))
+
+        # 각 필드별 전체 합산 및 네이버 기준값과 비교
+        _numeric_fields = [k for k in (raw_rows[0].keys() if raw_rows else [])
+                          if k not in ("id",) and isinstance(raw_rows[0].get(k), (int, float))]
+        _field_sums = {}
+        for _f in _numeric_fields:
+            _field_sums[_f] = sum(_safe_float(r.get(_f, 0)) for r in raw_rows)
+
+        result["debug"].append("  [필드별 합산]")
+        _TARGETS = {17561943: "총비용?", 2216: "전환수?", 46179174: "전환매출액?",
+                   262.95: "ROAS?", 7925: "CPA?"}
+        for _f, _s_val in sorted(_field_sums.items(), key=lambda x: -abs(x[1])):
+            _match = ""
+            for _t, _label in _TARGETS.items():
+                if abs(_s_val - _t) / max(abs(_t), 1) < 0.01:
+                    _match = f" ← [{_label} 일치!]"
+            result["debug"].append(f"  {_f}: {_s_val:,.2f}{_match}")
+
+        result["debug"].append(
+            f"  [네이버 화면 기준] 총비용=17,561,943 / "
+            f"총전환매출액=46,179,174 / ROAS=262.95% / CPA=7,925"
+        )
+    except Exception as e:
+        result["debug"].append(f"[ROAS FIELD DEBUG 실패] {e}")
+
     try:
         _s = since_dt.isoformat()
         _e = until_dt.isoformat()
