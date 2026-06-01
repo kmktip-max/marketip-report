@@ -726,14 +726,13 @@ def build_monthly_report_v2(
         ic = _safe_int(sm.get("impressions"))
         ck = _safe_int(sm.get("clicks"))
         co = _safe_int(sm.get("cost"))
-        cv = _safe_int(sm.get("conversions"))
-        rv = _safe_int(sm.get("revenue"))
+        cv  = _safe_int(sm.get("conversions"))
+        cpa = _cpc_str(co, cv)   # 전환당비용 = 총광고비 / 전환수 (정확한 값)
         name_cell = ("TOTAL" if is_total else
                      f'<span style="color:{C_BLUE};font-weight:700;">NAVER</span>')
         prod_cell = ("전체 합산" if is_total else product_name)
         bg_s = f"background:{C_HBG};" if is_total else ""
         attrs = f' class="{row_class}"' if row_class else ""
-        rev_cell = _fmt_won(rv) if rv > 0 else "-"
         return (
             f"<tr{attrs} style='{bg_s}'>"
             f"{td(name_cell,'center',is_total)}"
@@ -744,8 +743,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(co,ck),'right',is_total)}"
             f"{td(_fmt_won(co),'right',is_total)}"
             f"{td(_fmt_num(cv),'right',is_total)}"
-            f"{td(rev_cell,'right',is_total)}"
-            f"{td(_roas_v2(rv,co,ror_pct),'right',is_total)}"
+            f"{td(cpa,'right',is_total)}"
             f"</tr>"
         )
 
@@ -760,8 +758,7 @@ def build_monthly_report_v2(
             {th("평균CPC","right")}
             {th("총광고비","right")}
             {th("전환수","right")}
-            {th("전환매출액","right")}
-            {th("광고수익률","right")}
+            {th("전환당비용","right")}
           </tr></thead>"""
 
         product_rows = "".join(
@@ -810,13 +807,7 @@ def build_monthly_report_v2(
     prev_ctr_val = pc / pi * 100 if pi > 0 else 0
     curr_cpc_val = cco // cc if cc > 0 else 0
     prev_cpc_val = pco // pc if pc > 0 else 0
-    curr_roas_val = cr / cco * 100 if (cco > 0 and cr > 0) else 0
-    prev_roas_val = pr / pco * 100 if (pco > 0 and pr > 0) else 0
-    # ROAS 비교표: ror_pct 우선, 없으면 rev/cost 계산
-    curr_roas_str = (f"{_total_ror_pct:.1f}%" if _total_ror_pct > 0
-                     else (f"{curr_roas_val:.1f}%" if curr_roas_val > 0 else "-"))
-    prev_roas_str = (f"{_prev_ror_pct:.1f}%"  if _prev_ror_pct  > 0
-                     else (f"{prev_roas_val:.1f}%"  if prev_roas_val  > 0 else "-"))
+    # 전환매출액/ROAS는 API 데이터 부정확으로 비교표에서 제거
 
     comparison_html = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr>
@@ -832,10 +823,13 @@ def build_monthly_report_v2(
         {cmp_row("평균CPC(원)", curr_cpc_val, prev_cpc_val, lambda v: f"{_safe_int(v):,}원")}
         {cmp_row("총광고비", cco, pco, _fmt_won)}
         {cmp_row("전환수", ccv, pcv, _fmt_num)}
-        {cmp_row("전환매출액", cr, pr, lambda v: _fmt_won(v) if v > 0 else "-")}
-        <tr>{td("광고수익률","left")}{td(prev_roas_str,"right")}{td(curr_roas_str,"right",True)}{td("-","center")}</tr>
+        {cmp_row("전환당비용(원)", cco//ccv if ccv>0 else 0, pco//pcv if pcv>0 else 0, lambda v: f"{_safe_int(v):,}원" if v > 0 else "-")}
       </tbody>
-    </table>"""
+    </table>
+    <div style="font-size:10px;color:#e74c3c;padding:4px 8px;line-height:1.8;">
+      ※ 전환매출액/광고수익률은 Naver 검색광고 API(/stats)에서 정확히 제공되지 않습니다.<br>
+      &nbsp;&nbsp; 브랜드검색 간접전환·뷰스루전환 매출이 API에 포함되지 않으므로 네이버 광고관리 화면에서 확인하세요.
+    </div>"""
 
     # ── 주차별 테이블 ──────────────────────────────────────────────────────────
     weekly_rows = ""
@@ -844,12 +838,12 @@ def build_monthly_report_v2(
         wc  = w["clicks"]
         wco = w["cost"]
         wcv = w["conversions"]
-        wr  = w["revenue"]
+
         wd  = w["days"]
         if wi == 0 and wc == 0 and wd == 0:
             continue
-        _wlabel   = str(w["week"]) + "주차"
-        _w_ror    = _safe_float(w.get("_ror_avg", 0))
+        _wlabel = str(w["week"]) + "주차"
+        _w_cpa  = _cpc_str(wco, wcv)
         weekly_rows += (
             f"<tr>"
             f"{td(_wlabel,'center',True,C_BLUE)}"
@@ -860,21 +854,19 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(wco,wc),'right')}"
             f"{td(_fmt_won(wco),'right')}"
             f"{td(_fmt_num(wcv),'right')}"
-            f"{td(_fmt_won(wr) if wr > 0 else '-','right')}"
-            f"{td(_roas_v2(wr,wco,_w_ror),'right')}"
+            f"{td(_w_cpa,'right')}"
             f"</tr>"
         )
 
-    # 주차별 TOTAL: weekly_raw 합산 우선, 없으면 당월 summary
+    # 주차별 TOTAL
     if weekly_raw:
         ti  = sum(w.get("impressions", 0) for w in weekly_raw.values())
         tc  = sum(w.get("clicks",      0) for w in weekly_raw.values())
         tco = sum(w.get("cost",        0) for w in weekly_raw.values())
         tcv = sum(w.get("conversions", 0) for w in weekly_raw.values())
-        tr_ = sum(w.get("revenue",     0) for w in weekly_raw.values())
         td_ = sum(w.get("days",        0) for w in weekly_raw.values())
     else:
-        ti, tc, tco, tcv, tr_, td_ = ci, cc, cco, ccv, cr, 0
+        ti, tc, tco, tcv, td_ = ci, cc, cco, ccv, 0
 
     weekly_total = (
         f"<tr style='background:{C_HBG};'>"
@@ -886,13 +878,12 @@ def build_monthly_report_v2(
         f"{td(_cpc_str(tco,tc),'right',True)}"
         f"{td(_fmt_won(tco),'right',True)}"
         f"{td(_fmt_num(tcv),'right',True)}"
-        f"{td(_fmt_won(tr_) if tr_ > 0 else '-','right',True)}"
-        f"{td(_roas_v2(tr_,tco,_total_ror_pct),'right',True)}"
+        f"{td(_cpc_str(tco,tcv),'right',True)}"
         f"</tr>"
     )
 
     no_data_row = (
-        f"<tr><td colspan='10' style='text-align:center;color:#999;"
+        f"<tr><td colspan='9' style='text-align:center;color:#999;"
         f"padding:14px;font-size:11px;'>"
         f"주차별 API 데이터를 불러오지 못했습니다</td></tr>"
     )
@@ -907,8 +898,7 @@ def build_monthly_report_v2(
         {th("평균CPC","right")}
         {th("총광고비","right")}
         {th("전환수","right")}
-        {th("전환매출액","right")}
-        {th("광고수익률","right")}
+        {th("전환당비용","right")}
       </tr></thead>
       <tbody>
         {weekly_total}
