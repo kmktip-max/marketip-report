@@ -202,20 +202,12 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         _e = end.isoformat()   if hasattr(end,   "isoformat") else str(end)
         _tr = json.dumps({"since": _s, "until": _e})
 
-        # ── 필드 정의 ─────────────────────────────────────────────────────────
-        # salesAmt = 소진액(광고비/총비용) — 전환매출액 아님
-        # cpConv   = 전환당비용(CPA) = salesAmt / ccnt
-        # ccnt     = 전환수
-        # ror      = 네이버 자체 계산 ROAS(%) — 전체 전환 포함 여부 불명확
-        # 전환매출액(46,179,174) = API /stats 에서 직접 제공하지 않음
-        # ─────────────────────────────────────────────────────────────────────
+        # salesAmt=소진액(총광고비), cpConv=CPA, ccnt=전환수
+        # 전환매출액/ROAS는 API에서 정확히 제공되지 않아 V2에서 제외
         agg = {
             "impressions": 0, "clicks": 0,
-            "cost": 0,        # salesAmt 합산 = 소진액(총광고비)
+            "cost": 0,       # salesAmt 합산 (총광고비)
             "conversions": 0, # ccnt 합산
-            "cpa_sum": 0.0,
-            "_ror_num": 0.0,  # ror × spend 가중합 (ROAS 가중평균용)
-            "_ror_den": 0.0,  # spend 합산
         }
 
         for i in range(0, len(_ids), 100):
@@ -232,26 +224,16 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
             rows = rj.get("data", []) if isinstance(rj, dict) else []
 
             for row in rows:
-                imps   = _safe_int(row.get("impCnt"))
-                clks   = _safe_int(row.get("clkCnt"))
-                convs  = _safe_int(row.get("ccnt"))
-                cpconv = _safe_float(row.get("cpConv", 0))
-                # salesAmt = 소진액(총광고비). 전환매출액 아님
-                spend  = _safe_int(row.get("salesAmt"))
-                # ror = 네이버 자체 계산 광고수익률(%) - 소진액 기준
-                ror    = _safe_float(row.get("ror", 0))
+                imps  = _safe_int(row.get("impCnt"))
+                clks  = _safe_int(row.get("clkCnt"))
+                convs = _safe_int(row.get("ccnt"))
+                spend = _safe_int(row.get("salesAmt"))  # 소진액=총광고비
 
                 agg["impressions"] += imps
                 agg["clicks"]      += clks
                 agg["cost"]        += spend
                 agg["conversions"] += convs
-                agg["cpa_sum"]     += cpconv * convs
-                agg["_ror_num"]    += ror * spend   # spend 가중 ROAS 합
-                agg["_ror_den"]    += spend
 
-        # 소진액 가중 평균 ROAS (API ror 필드 집계)
-        agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_den"]
-                           if agg["_ror_den"] > 0 else 0.0)
         return agg
 
     # ── 주차별 통계 (5회 개별 호출) ──────────────────────────────────────────
@@ -577,6 +559,7 @@ def _build_weekly(daily_list: list) -> list:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _auto_comment(curr_sm: dict, prev_sm: dict, kws: list) -> list:
+    """전환매출액/ROAS 없이 CPA 중심 코멘트"""
     lines = []
     ci  = _safe_int(curr_sm.get("impressions"))
     pi  = _safe_int(prev_sm.get("impressions"))
@@ -584,17 +567,20 @@ def _auto_comment(curr_sm: dict, prev_sm: dict, kws: list) -> list:
     pc  = _safe_int(prev_sm.get("clicks"))
     cco = _safe_int(curr_sm.get("cost"))
     pco = _safe_int(prev_sm.get("cost"))
+    ccv = _safe_int(curr_sm.get("conversions"))
+    pcv = _safe_int(prev_sm.get("conversions"))
 
+    # 1. 노출수 변화
     if pi > 0:
         imp_chg = (ci - pi) / pi * 100
         direction = "증가" if imp_chg >= 0 else "감소"
         lines.append(
-            f"1. 전월 대비 노출수가 {abs(imp_chg):.1f}% {direction}했습니다"
-            f" ({pi:,} → {ci:,}회)."
+            f"1. 전월 대비 노출수가 {abs(imp_chg):.1f}% {direction}했습니다 ({pi:,} → {ci:,}회)."
         )
     else:
-        lines.append("1. 전월 노출 데이터 없음 — 이번 달 성과를 기준으로 분석합니다.")
+        lines.append("1. 이번 달 노출수 기준으로 성과를 분석합니다.")
 
+    # 2. 클릭률 변화
     curr_ctr = cc / ci * 100 if ci > 0 else 0
     prev_ctr = pc / pi * 100 if pi > 0 else 0
     if prev_ctr > 0:
@@ -602,30 +588,129 @@ def _auto_comment(curr_sm: dict, prev_sm: dict, kws: list) -> list:
         word = "개선" if diff >= 0 else "하락"
         lines.append(
             f"2. 클릭률이 전월 {prev_ctr:.2f}%에서 {curr_ctr:.2f}%로 {word}되었습니다."
+            + (" 소재 및 랜딩페이지 점검을 권장합니다." if diff < 0 else "")
         )
     else:
         lines.append(f"2. 이번 달 클릭률은 {curr_ctr:.2f}%입니다.")
 
+    # 3. 광고비 변화
     if pco > 0 and cco > 0:
         cost_chg = (cco - pco) / pco * 100
         lines.append(
-            f"3. 총 광고비는 전월 대비 {cost_chg:+.1f}% 변화했습니다"
-            f" ({_fmt_won(pco)} → {_fmt_won(cco)})."
+            f"3. 총 광고비는 전월 대비 {cost_chg:+.1f}% 변화했습니다 ({_fmt_won(pco)} → {_fmt_won(cco)})."
         )
 
-    valid_kws = [k for k in kws if k.get("keyword") and k["keyword"] not in ("", "-", None)]
-    if valid_kws:
-        top_imp = max(valid_kws, key=lambda k: k.get("impressions", 0), default=None)
-        if top_imp:
+    # 4. 전환수/CPA 변화
+    curr_cpa = cco // ccv if ccv > 0 else 0
+    prev_cpa = pco // pcv if pcv > 0 else 0
+    if ccv > 0:
+        if pcv > 0:
+            cpa_word = "하락(효율 개선)" if curr_cpa < prev_cpa else "상승"
             lines.append(
-                f"4. 노출수 1위 키워드 '{top_imp['keyword']}'에 대한 집중 입찰 관리를 권장합니다."
+                f"4. 전환수가 전월 {pcv:,}건에서 {ccv:,}건으로 변화했습니다. "
+                f"전환당비용은 {_fmt_won(prev_cpa)} → {_fmt_won(curr_cpa)}로 {cpa_word}했습니다."
             )
+        else:
+            lines.append(
+                f"4. 이번 달 전환수 {ccv:,}건, 전환당비용 {_fmt_won(curr_cpa)}입니다."
+            )
+    else:
+        lines.append("4. 이번 달 전환 데이터가 집계되지 않았습니다. 전환 추적 설정을 확인해 주세요.")
 
-    lines.append(
-        "5. 전환 성과 향상을 위해 클릭률 상위 키워드의 랜딩페이지 최적화 및 "
-        "소재 테스트를 진행해 주세요."
-    )
+    # 5. 추천 키워드 힌트
+    valid_kws = [k for k in kws if k.get("keyword") and k["keyword"] not in ("", "-", None)
+                 and k.get("clicks", 0) >= 5]
+    if valid_kws:
+        top_ctr_kw = max(valid_kws, key=lambda k: k.get("ctr", 0))
+        lines.append(
+            f"5. 클릭률이 높은 '{top_ctr_kw['keyword']}' 키워드를 중심으로 "
+            f"소재 확장 및 입찰가 점검을 진행해 보세요."
+        )
+    else:
+        lines.append(
+            "5. 클릭 반응이 높은 키워드의 랜딩페이지와 소재를 함께 점검하는 것을 권장합니다."
+        )
+
     return lines
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 다음 달 집중 추천 키워드 선정
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _recommend_keywords(kws: list, n: int = 10) -> list:
+    """
+    focus_score 기반 다음 달 집중 추천 키워드 선정
+    전환수 있으면: 전환수 > CTR > 클릭수 > CPC 안정성
+    전환수 없으면: CTR > 클릭수 > CPC 안정성
+    """
+    import math as _math
+
+    valid = [
+        k for k in kws
+        if k.get("keyword") and k["keyword"] not in ("", "-", None)
+        and k.get("clicks", 0) >= 3    # 최소 클릭 3회 이상
+        and k.get("impressions", 0) > 0
+    ]
+    if not valid:
+        return []
+
+    avg_ctr = (sum(k.get("ctr", 0) for k in valid) / len(valid)) if valid else 0
+    cpc_vals = [k.get("cpc", 0) for k in valid if k.get("cpc", 0) > 0]
+    avg_cpc  = sum(cpc_vals) / len(cpc_vals) if cpc_vals else 0
+    has_conv = any(k.get("conversions", 0) > 0 for k in valid)
+
+    scored = []
+    for k in valid:
+        score   = 0
+        ctr     = k.get("ctr",         0)
+        clicks  = k.get("clicks",      0)
+        convs   = k.get("conversions", 0)
+        kw_cpc  = k.get("cpc",         0)
+
+        # CTR 점수 (0~40)
+        if avg_ctr > 0:
+            score += min(40, int(ctr / avg_ctr * 20))
+
+        # 클릭수 점수 (0~20, log scale)
+        if clicks > 0:
+            score += min(20, int(_math.log(clicks + 1) * 3))
+
+        # 전환 점수 (0~30)
+        if has_conv and convs > 0:
+            score += min(30, convs * 4)
+
+        # CPC 안정성
+        if avg_cpc > 0 and kw_cpc > 0:
+            if kw_cpc > avg_cpc * 2:
+                score -= 10   # 과도 CPC 페널티
+            elif kw_cpc < avg_cpc * 0.8:
+                score += 5    # 효율 CPC 보너스
+
+        scored.append((score, k))
+
+    scored.sort(key=lambda x: -x[0])
+    return [k for _, k in scored[:n]]
+
+
+def _recommend_reason(k: dict, avg_ctr: float, avg_cpc: float, has_conv: bool) -> str:
+    """추천 키워드별 추천 사유 자동 생성"""
+    ctr   = k.get("ctr",         0)
+    convs = k.get("conversions", 0)
+    kw_cpc = k.get("cpc",        0)
+    cpa   = k.get("cpa",         0)
+
+    if has_conv and convs > 0 and cpa > 0:
+        return "클릭수와 전환이 함께 발생해 예산 집중 관리가 필요한 키워드입니다."
+    if avg_ctr > 0 and ctr > avg_ctr * 1.5:
+        return "클릭률이 평균보다 높아 집중 운영 가치가 있습니다."
+    if avg_cpc > 0 and kw_cpc > 0 and kw_cpc < avg_cpc * 0.8:
+        return "CPC 대비 유입 효율이 안정적입니다."
+    if k.get("clicks", 0) >= 30:
+        return "광고비 대비 클릭 반응이 좋아 다음 달 테스트 확대 후보입니다."
+    if avg_ctr > 0 and ctr > avg_ctr:
+        return "노출 대비 클릭 반응이 좋아 소재 확장 테스트에 적합합니다."
+    return "검색 의도가 명확해 랜딩페이지 개선과 함께 집중 운영하기 좋습니다."
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -780,13 +865,12 @@ def build_monthly_report_v2(
         )
 
     # ── 매체별 요약 테이블 (상품별 다중 행) ───────────────────────────────────
-    def _media_row(product_name, sm, is_total=False, row_class="", ror_pct=0.0):
-        ic = _safe_int(sm.get("impressions"))
-        ck = _safe_int(sm.get("clicks"))
-        co = _safe_int(sm.get("cost"))
+    def _media_row(product_name, sm, is_total=False, row_class=""):
+        ic  = _safe_int(sm.get("impressions"))
+        ck  = _safe_int(sm.get("clicks"))
+        co  = _safe_int(sm.get("cost"))
         cv  = _safe_int(sm.get("conversions"))
         cpa = _cpc_str(co, cv)
-        roas_cell = f"{ror_pct:.1f}%" if ror_pct > 0 else "-"
         name_cell = ("TOTAL" if is_total else
                      f'<span style="color:{C_BLUE};font-weight:700;">NAVER</span>')
         prod_cell = ("전체 합산" if is_total else product_name)
@@ -803,7 +887,6 @@ def build_monthly_report_v2(
             f"{td(_fmt_won(co),'right',is_total)}"
             f"{td(_fmt_num(cv),'right',is_total)}"
             f"{td(cpa,'right',is_total)}"
-            f"{td(roas_cell,'right',is_total)}"
             f"</tr>"
         )
 
@@ -819,42 +902,26 @@ def build_monthly_report_v2(
             {th("총광고비","right")}
             {th("전환수","right")}
             {th("전환당비용","right")}
-            {th("광고수익률","right")}
           </tr></thead>"""
 
         product_rows = "".join(
-            _media_row(p, period_product_stats.get(p, {}),
-                       row_class=f"prow prow-{p}",
-                       ror_pct=_safe_float(period_product_stats[p].get("_ror_avg", 0)))
+            _media_row(p, period_product_stats.get(p, {}), row_class=f"prow prow-{p}")
             for p in PRODUCT_ORDER
             if p in period_product_stats and
                (period_product_stats[p].get("impressions", 0) > 0 or
                 period_product_stats[p].get("clicks", 0) > 0)
         )
         if not product_rows:
-            product_rows = _media_row("검색광고 통합", period_total_sm,
-                                      row_class="prow prow-all",
-                                      ror_pct=0.0)
+            product_rows = _media_row("검색광고 통합", period_total_sm, row_class="prow prow-all")
 
-        _total_ror_n = sum(s.get("_ror_num", 0) for s in period_product_stats.values())
-        _total_ror_d = sum(s.get("_ror_den", 0) for s in period_product_stats.values())
-        _total_ror   = _total_ror_n / _total_ror_d if _total_ror_d > 0 else 0.0
-        total_row = _media_row("", period_total_sm, is_total=True,
-                               row_class="prow prow-all", ror_pct=_total_ror)
+        total_row = _media_row("", period_total_sm, is_total=True, row_class="prow prow-all")
 
-        _roas_note = (
-            ""
-            if revenue_has_data else
-            '<br>※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.'
-            '<br>※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.'
-        )
         return (
             f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
             f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
-            f'<div style="font-size:10px;color:#666;padding:6px 8px;line-height:1.8;">'
-            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동'
-            f'<br>※ 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 표시되지 않을 수 있습니다.'
-            f'{_roas_note}'
+            f'<div style="font-size:10px;color:#666;padding:4px 8px;line-height:1.8;">'
+            f'※ Naver 검색광고 계정 전체 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동'
+            f'<br>※ 전환매출액/ROAS는 API 수집값과 관리자 화면 값이 불일치하여 자동 보고서에서는 제외했습니다.'
             f'</div>'
         )
 
@@ -968,10 +1035,7 @@ def build_monthly_report_v2(
         {weekly_rows if weekly_rows else no_data_row}
       </tbody>
     </table>
-    {"<div style='font-size:10px;color:#666;padding:4px 8px;line-height:1.8;'>"
-     "※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>"
-     "※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.</div>"
-     if not revenue_has_data else ""}"""
+    """
 
     # ── 일자별 테이블 (실제 API 데이터 있을 때만 행 표시) ─────────────────────
     _NO_DAILY_MSG = (
@@ -990,7 +1054,7 @@ def build_monthly_report_v2(
             rc  = row["clicks"]
             rco = row["cost"]
             rcv = row["conversions"]
-            rr  = row["revenue"]
+
             is_weekend = row["weekday"] in ("토", "일")
             row_bg   = "#FFF8F8" if is_weekend else ""
             wd_color = "#c0392b" if is_weekend else ""
@@ -1004,14 +1068,13 @@ def build_monthly_report_v2(
                 f"{td(_cpc_str(rco,rc),'right')}"
                 f"{td(_fmt_won(rco),'right')}"
                 f"{td(_fmt_num(rcv),'right')}"
-                f"{td(_roas_v2(rr,rco),'right')}"
+                f"{td(_cpc_str(rco,rcv),'right')}"
                 f"</tr>"
             )
         d_ti  = sum(r["impressions"] for r in daily_list)
         d_tc  = sum(r["clicks"]      for r in daily_list)
         d_tco = sum(r["cost"]        for r in daily_list)
         d_tcv = sum(r["conversions"] for r in daily_list)
-        d_tr  = sum(r["revenue"]     for r in daily_list)
         daily_total_row = (
             f"<tr style='background:{C_HBG};'>"
             f"{td('합계','center',True)}"
@@ -1022,7 +1085,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(d_tco,d_tc),'right',True)}"
             f"{td(_fmt_won(d_tco),'right',True)}"
             f"{td(_fmt_num(d_tcv),'right',True)}"
-            f"{td(_roas_v2(d_tr,d_tco),'right',True)}"
+            f"{td(_cpc_str(d_tco,d_tcv),'right',True)}"
             f"</tr>"
         )
         daily_table = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -1035,7 +1098,7 @@ def build_monthly_report_v2(
             {th("평균CPC","right")}
             {th("총광고비","right")}
             {th("전환수","right")}
-            {th("광고수익률","right")}
+            {th("전환당비용","right")}
           </tr></thead>
           <tbody>
             {daily_total_row}
@@ -1089,14 +1152,27 @@ def build_monthly_report_v2(
           </table>
         </div>"""
 
+    # ── 추천 키워드 계산 ──────────────────────────────────────────────────────────
+    avg_ctr_all = (sum(k.get("ctr", 0) for k in valid_kws) / len(valid_kws)
+                   if valid_kws else 0)
+    cpc_vals_all = [k.get("cpc", 0) for k in valid_kws if k.get("cpc", 0) > 0]
+    avg_cpc_all  = sum(cpc_vals_all) / len(cpc_vals_all) if cpc_vals_all else 0
+    has_conv_data = any(k.get("conversions", 0) > 0 for k in valid_kws)
+    conv_top10    = sorted(valid_kws, key=lambda k: k.get("conversions", 0), reverse=True)[:10]
+    focus_kws     = _recommend_keywords(valid_kws, n=10)
+
     # ── Chart.js 데이터 (JSON) ─────────────────────────────────────────────────
     jd = lambda lst: json.dumps(lst, ensure_ascii=False)
 
     # 주차별 — 데이터 있는 주차만
     active_weeks = [w for w in weekly_list if w["days"] > 0 or w["impressions"] > 0]
-    w_labels = jd([f"{w['week']}주차" for w in active_weeks])
-    w_imp    = jd([w["impressions"]   for w in active_weeks])
-    w_clk    = jd([w["clicks"]        for w in active_weeks])
+    w_labels = jd([f"{w['week']}주차"  for w in active_weeks])
+    w_imp    = jd([w["impressions"]    for w in active_weeks])
+    w_clk    = jd([w["clicks"]         for w in active_weeks])
+    w_cost   = jd([w["cost"]           for w in active_weeks])
+    w_conv   = jd([w["conversions"]    for w in active_weeks])
+    w_cpa    = jd([w["cost"] // w["conversions"] if w["conversions"] > 0 else 0
+                   for w in active_weeks])
 
     # 일자별
     d_labels = jd([r["date"][5:] for r in daily_list])
@@ -1112,6 +1188,8 @@ def build_monthly_report_v2(
     clk_kw_vals    = jd([k.get("clicks",0)    for k in clk_top10])
     cost_kw_labels = jd([k.get("keyword","") for k in cost_top10])
     cost_kw_vals   = jd([k.get("cost",0)      for k in cost_top10])
+    conv_kw_labels = jd([k.get("keyword","") for k in conv_top10 if k.get("conversions",0)>0])
+    conv_kw_vals   = jd([k.get("conversions",0) for k in conv_top10 if k.get("conversions",0)>0])
 
     # 코멘트 HTML
     comment_html = "".join(
@@ -1337,6 +1415,7 @@ canvas{{width:100%!important;max-width:100%!important;}}
 </div>
 
 <!-- ═══ 주차별 ══════════════════════════════════════════════════════════ -->
+<!-- ═══ 주차별 ══════════════════════════════════════════════════════════ -->
 <div class="v2-sec">
   <div class="v2-two">
     <div style="flex:1.3;">
@@ -1344,9 +1423,20 @@ canvas{{width:100%!important;max-width:100%!important;}}
       <div class="v2-panel" style="padding:0;">{weekly_table}</div>
     </div>
     <div>
-      {sec_bar("주차별 광고요약 GRAPH", C_BLUE3)}
+      {sec_bar("주차별 노출수 · 클릭수", C_BLUE3)}
       <div class="v2-panel">
         <div class="v2-chart"><canvas id="weeklyChart"></canvas></div>
+      </div>
+      <div style="height:12px;"></div>
+      {sec_bar("주차별 광고비 · 전환수", C_GREEN)}
+      <div class="v2-panel">
+        <div class="v2-chart"><canvas id="weeklyCostConvChart"></canvas></div>
+      </div>
+      <div style="height:12px;"></div>
+      {sec_bar("주차별 전환당비용(CPA) 추이", "#7B1FA2")}
+      <div class="v2-panel">
+        <div style="font-size:10px;color:#888;margin-bottom:4px;">CPA가 낮을수록 효율적입니다</div>
+        <div class="v2-chart"><canvas id="weeklyCpaChart"></canvas></div>
       </div>
     </div>
   </div>
@@ -1359,35 +1449,98 @@ canvas{{width:100%!important;max-width:100%!important;}}
   {sec_bar("KEYWORD TOP10", C_BLUE)}
   <div style="height:12px;"></div>
   <div class="v2-three">
-    <!-- 노출수 TOP10 -->
     <div>
       {kw_section("노출수 TOP10", kw_table_rows(imp_top10, lambda k: _fmt_num(k.get('impressions',0))), "노출수")}
       <div style="height:10px;"></div>
       {sec_bar("노출수 차트", C_BLUE3)}
-      <div class="v2-panel">
-        <div class="v2-hbar"><canvas id="kwImpChart"></canvas></div>
-      </div>
+      <div class="v2-panel"><div class="v2-hbar"><canvas id="kwImpChart"></canvas></div></div>
     </div>
-    <!-- 클릭수 TOP10 -->
     <div>
       {kw_section("클릭수 TOP10", kw_table_rows(clk_top10, lambda k: _fmt_num(k.get('clicks',0))), "클릭수")}
       <div style="height:10px;"></div>
       {sec_bar("클릭수 차트", C_BLUE3)}
-      <div class="v2-panel">
-        <div class="v2-hbar"><canvas id="kwClkChart"></canvas></div>
-      </div>
+      <div class="v2-panel"><div class="v2-hbar"><canvas id="kwClkChart"></canvas></div></div>
     </div>
-    <!-- 광고비 TOP10 -->
     <div>
       {kw_section("광고비 TOP10", kw_table_rows(cost_top10, lambda k: _fmt_won(k.get('cost',0))), "총광고비")}
       <div style="height:10px;"></div>
       {sec_bar("광고비 차트", C_BLUE3)}
-      <div class="v2-panel">
-        <div class="v2-hbar"><canvas id="kwCostChart"></canvas></div>
-      </div>
+      <div class="v2-panel"><div class="v2-hbar"><canvas id="kwCostChart"></canvas></div></div>
+    </div>
+  </div>
+  {"<div style='height:16px;'></div>" + sec_bar("전환수 TOP10", C_GREEN) + """
+  <div class='v2-panel' style='padding:0;'>""" + kw_section("전환수 TOP10", kw_table_rows([k for k in conv_top10 if k.get('conversions',0)>0], lambda k: _fmt_num(k.get('conversions',0))), "전환수") + """</div>"""
+  if has_conv_data and any(k.get('conversions',0)>0 for k in conv_top10) else ""}
+</div>
+
+<!-- ═══ 다음 달 집중 추천 키워드 ════════════════════════════════════════ -->
+{"" if not focus_kws else f"""
+<div class='v2-sec'>
+  {sec_bar("다음 달 집중 추천 키워드 10개", "#B71C1C")}
+  <div class='v2-panel'>
+    <div style='font-size:12px;color:#555;margin-bottom:14px;line-height:1.8;'>
+      아래 키워드는 클릭 반응과 전환 가능성을 기준으로 선별한 다음 달 집중 후보입니다.<br>
+      무작정 예산을 늘리기보다, 소재·랜딩페이지·입찰가를 함께 점검하면서 집중 운영하는 것을 권장드립니다.
+    </div>
+
+    <!-- 상위 3개 카드 -->
+    <div style='display:flex;gap:12px;margin-bottom:18px;'>
+      {"".join(
+        f"<div style='flex:1;border:2px solid #0D47A1;border-radius:8px;padding:14px;background:#F0F4FF;'>"
+        f"<div style='font-size:11px;color:#B71C1C;font-weight:700;margin-bottom:4px;'>추천 {i+1}위</div>"
+        f"<div style='font-size:16px;font-weight:700;color:#0D47A1;margin-bottom:10px;'>{k.get('keyword','')}</div>"
+        f"<div style='font-size:11px;color:#555;line-height:1.8;'>"
+        f"클릭수 {_fmt_num(k.get('clicks',0))}회 &nbsp;|&nbsp; CTR {k.get('ctr',0):.2f}% &nbsp;|&nbsp; "
+        f"전환수 {_fmt_num(k.get('conversions',0))}건 &nbsp;|&nbsp; "
+        f"전환당비용 {_cpc_str(k.get('cost',0), k.get('conversions',0))}"
+        f"</div>"
+        f"<div style='margin-top:8px;font-size:11px;color:#333;background:#fff;padding:6px 10px;border-radius:4px;border-left:3px solid #0D47A1;'>"
+        f"💡 {_recommend_reason(k, avg_ctr_all, avg_cpc_all, has_conv_data)}"
+        f"</div></div>"
+        for i, k in enumerate(focus_kws[:3])
+      )}
+    </div>
+
+    <!-- 전체 10개 표 -->
+    <table style='width:100%;border-collapse:collapse;font-size:11px;'>
+      <thead><tr style='background:#E8EAF6;'>
+        <th style='padding:6px 8px;text-align:center;border:1px solid #DDE3EA;'>순위</th>
+        <th style='padding:6px 8px;text-align:left;border:1px solid #DDE3EA;'>추천 키워드</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>노출수</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>클릭수</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>클릭률</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>평균CPC</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>총광고비</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>전환수</th>
+        <th style='padding:6px 8px;text-align:right;border:1px solid #DDE3EA;'>전환당비용</th>
+        <th style='padding:6px 8px;text-align:left;border:1px solid #DDE3EA;'>추천 사유</th>
+      </tr></thead>
+      <tbody>
+        {"".join(
+          f"<tr style='background:{'#F8F9FF' if i%2==0 else '#fff'};'>"
+          f"<td style='padding:5px 8px;text-align:center;border:1px solid #DDE3EA;font-weight:700;color:#0D47A1;'>{i+1}</td>"
+          f"<td style='padding:5px 8px;border:1px solid #DDE3EA;font-weight:600;'>{k.get('keyword','')}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_fmt_num(k.get('impressions',0))}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_fmt_num(k.get('clicks',0))}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{k.get('ctr',0):.2f}%</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_cpc_str(k.get('cost',0), k.get('clicks',0))}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_fmt_won(k.get('cost',0))}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_fmt_num(k.get('conversions',0))}</td>"
+          f"<td style='padding:5px 8px;text-align:right;border:1px solid #DDE3EA;'>{_cpc_str(k.get('cost',0), k.get('conversions',0))}</td>"
+          f"<td style='padding:5px 8px;font-size:10px;color:#555;border:1px solid #DDE3EA;'>"
+          f"{_recommend_reason(k, avg_ctr_all, avg_cpc_all, has_conv_data)}</td>"
+          f"</tr>"
+          for i, k in enumerate(focus_kws)
+        )}
+      </tbody>
+    </table>
+    <div style='font-size:10px;color:#999;margin-top:6px;'>
+      ※ 전환매출액/ROAS는 API 수집값과 관리자 화면 값이 불일치하여 제외했습니다.
+      전환 성과는 전환수와 전환당비용 기준으로 확인해 주세요.
     </div>
   </div>
 </div>
+"""}
 
 {_debug_block}
 </div><!-- v2-body -->
@@ -1533,6 +1686,78 @@ function makeHBar(canvasId, labels, vals, barColor) {{
 makeHBar('kwImpChart',  {imp_kw_labels},  {imp_kw_vals},  'rgba(13,71,161,0.7)');
 makeHBar('kwClkChart',  {clk_kw_labels},  {clk_kw_vals},  'rgba(33,150,243,0.7)');
 makeHBar('kwCostChart', {cost_kw_labels}, {cost_kw_vals}, 'rgba(40,180,99,0.7)');
+if ({conv_kw_labels}.length > 0) {{
+  makeHBar('kwConvChart', {conv_kw_labels}, {conv_kw_vals}, 'rgba(230,81,0,0.7)');
+}}
+
+// ── 주차별 광고비 + 전환수 복합 차트 ─────────────────────────────────────────
+(function() {{
+  var labels = {w_labels};
+  var costs  = {w_cost};
+  var convs  = {w_conv};
+  if (!labels || !labels.length) return;
+  new Chart(document.getElementById('weeklyCostConvChart'), {{
+    type: 'bar',
+    data: {{
+      labels: labels,
+      datasets: [
+        {{ type:'bar',  label:'총광고비', data:costs,
+           backgroundColor:'rgba(40,180,99,0.65)', borderRadius:4, yAxisID:'y' }},
+        {{ type:'line', label:'전환수', data:convs,
+           borderColor:'#e74c3c', backgroundColor:'rgba(231,76,60,0.1)',
+           tension:0.3, pointRadius:4, yAxisID:'y1' }}
+      ]
+    }},
+    options: {{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{{ legend:{{ position:'top', labels:{{ font:{{ size:10 }} }} }} }},
+      scales:{{
+        y:  {{ type:'linear', position:'left',
+               ticks:{{ font:{{ size:10 }}, callback:v=>v.toLocaleString() }},
+               grid:{{ color:'rgba(0,0,0,0.04)' }} }},
+        y1: {{ type:'linear', position:'right',
+               ticks:{{ font:{{ size:10 }}, callback:v=>v.toLocaleString() }},
+               grid:{{ drawOnChartArea:false }} }},
+        x:  {{ ticks:{{ font:{{ size:10 }} }}, grid:{{ display:false }} }}
+      }}
+    }}
+  }});
+}})();
+
+// ── 주차별 CPA 추이 차트 ────────────────────────────────────────────────────
+(function() {{
+  var labels = {w_labels};
+  var cpas   = {w_cpa};
+  if (!labels || !labels.length) return;
+  var minIdx = cpas.reduce(function(mi,v,i) {{ return v>0 && v < (cpas[mi]||Infinity) ? i : mi; }}, 0);
+  new Chart(document.getElementById('weeklyCpaChart'), {{
+    type: 'line',
+    data: {{
+      labels: labels,
+      datasets: [{{
+        label:'전환당비용(원)',
+        data: cpas,
+        borderColor:'#7B1FA2',
+        backgroundColor:'rgba(123,31,162,0.08)',
+        tension:0.3,
+        pointRadius: cpas.map(function(_,i) {{ return i===minIdx ? 7 : 4; }}),
+        pointBackgroundColor: cpas.map(function(_,i) {{ return i===minIdx ? '#e74c3c' : '#7B1FA2'; }})
+      }}]
+    }},
+    options: {{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{{
+        legend:{{ position:'top', labels:{{ font:{{ size:10 }} }} }},
+        tooltip:{{ callbacks:{{ label:ctx => ctx.raw.toLocaleString()+'원' }} }}
+      }},
+      scales:{{
+        y: {{ ticks:{{ font:{{ size:10 }}, callback:v=>v.toLocaleString() }},
+               grid:{{ color:'rgba(0,0,0,0.04)' }} }},
+        x: {{ ticks:{{ font:{{ size:10 }} }}, grid:{{ display:false }} }}
+      }}
+    }}
+  }});
+}})();
 
 // ── 상품 필터 탭 ──────────────────────────────────────────────────────────
 function v2FilterProduct(btn) {{
