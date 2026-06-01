@@ -227,20 +227,10 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 imps   = _safe_int(row.get("impCnt"))
                 clks   = _safe_int(row.get("clkCnt"))
                 convs  = _safe_int(row.get("ccnt"))
-                sales  = _safe_int(row.get("salesAmt")) if convs > 0 else 0
-                ror    = _safe_float(row.get("ror", 0))   # Naver 직접 계산 ROAS(%)
                 cpconv = _safe_float(row.get("cpConv", 0))
-
-                # ── 광고비(cost) 역산 ────────────────────────────────────────
-                # cpConv = salesAmt/ccnt (전환가치당 비용, CPA 아님)
-                # → cpConv × ccnt = salesAmt (revenue) ≠ 실제 광고비
-                # 실제 광고비 = salesAmt ÷ (ror/100) when ror > 0
-                if ror > 0 and sales > 0:
-                    cost = int(sales * 100 / ror)   # 역산: 11.7M = 17.5M / 1.497
-                elif convs > 0:
-                    cost = int(cpconv * convs)       # fallback (ror=0 = 전환추적 없음)
-                else:
-                    cost = 0
+                sales  = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                cost   = int(cpconv * convs)              if convs > 0 else 0
+                ror    = _safe_float(row.get("ror", 0))   # Naver 직접 계산 ROAS(%)
 
                 agg["impressions"] += imps
                 agg["clicks"]      += clks
@@ -248,8 +238,9 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 agg["conversions"] += convs
                 agg["revenue"]     += sales
                 agg["_raw_sales"]  += sales
-                agg["_ror_num"]    += ror * cost
-                agg["_ror_denom"]  += cost
+                # ror은 salesAmt-가중 평균으로 집계 (역산 없음)
+                agg["_ror_num"]    += ror * (sales if sales > 0 else 1)
+                agg["_ror_denom"]  += (sales if sales > 0 else 1)
 
         agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_denom"]
                           if agg["_ror_denom"] > 0 else 0.0)
@@ -617,7 +608,7 @@ def build_monthly_report_v2(
         weekly_list = [
             {"week": w, **weekly_raw.get(w, {
                 "impressions": 0, "clicks": 0, "cost": 0,
-                "conversions": 0, "revenue": 0, "days": 0,
+                "conversions": 0, "revenue": 0, "days": 0, "_ror_avg": 0.0,
             })}
             for w in range(1, 6)
         ]
@@ -642,39 +633,38 @@ def build_monthly_report_v2(
                        (product_stats[p].get("impressions", 0) > 0 or
                         product_stats[p].get("clicks", 0) > 0)]
 
-    # ── product_stats 로 당월 합계 재계산 (ror 역산 광고비 포함) ──────────────
-    # fetch_report()의 curr_sm["cost"] = cpConv×ccnt = salesAmt (잘못된 값)
-    # _call()에서 ror 역산으로 수정된 product_stats를 우선 사용
-    _ps_imps = sum(s.get("impressions", 0) for s in product_stats.values())
-    _ps_clks = sum(s.get("clicks",      0) for s in product_stats.values())
-    _ps_cost = sum(s.get("cost",        0) for s in product_stats.values())
-    _ps_conv = sum(s.get("conversions", 0) for s in product_stats.values())
-    _ps_rev  = sum(s.get("revenue",     0) for s in product_stats.values())
-
-    # product_stats에 데이터가 있으면 우선 사용 (cost가 ror 역산값)
-    # 없으면 curr_sm fallback (impressions/clicks는 항상 정확)
-    ci  = _ps_imps if _ps_imps > 0 else _safe_int(curr_sm.get("impressions"))
-    cc  = _ps_clks if _ps_clks > 0 else _safe_int(curr_sm.get("clicks"))
-    cco = _ps_cost if _ps_cost > 0 else _safe_int(curr_sm.get("cost"))   # ror 역산 광고비
-    ccv = _ps_conv if _ps_conv > 0 else _safe_int(curr_sm.get("conversions"))
-    cr  = _ps_rev  if _ps_rev  > 0 else _safe_int(curr_sm.get("revenue"))
-
-    # 전월 집계 (product_prev_stats 우선)
-    _pp_cost = sum(s.get("cost",    0) for s in product_prev_stats.values())
-    _pp_rev  = sum(s.get("revenue", 0) for s in product_prev_stats.values())
+    # 당월 집계 (curr_sm 원본 사용)
+    ci  = _safe_int(curr_sm.get("impressions"))
+    cc  = _safe_int(curr_sm.get("clicks"))
+    cco = _safe_int(curr_sm.get("cost"))
+    ccv = _safe_int(curr_sm.get("conversions"))
+    cr  = _safe_int(curr_sm.get("revenue"))
+    # 전월 집계
     pi  = _safe_int(prev_sm.get("impressions"))
     pc  = _safe_int(prev_sm.get("clicks"))
-    pco = _pp_cost if _pp_cost > 0 else _safe_int(prev_sm.get("cost"))
+    pco = _safe_int(prev_sm.get("cost"))
     pcv = _safe_int(prev_sm.get("conversions"))
-    pr  = _pp_rev  if _pp_rev  > 0 else _safe_int(prev_sm.get("revenue"))
+    pr  = _safe_int(prev_sm.get("revenue"))
 
-    def _roas_v2(rev, cost):
+    # ROAS 표시: Naver API ror 필드 직접 사용 (역산 없음)
+    # product_stats에서 salesAmt 가중 평균 ror 계산
+    _ror_num_total = sum(s.get("_ror_num",   0) for s in product_stats.values())
+    _ror_den_total = sum(s.get("_ror_denom", 0) for s in product_stats.values())
+    _total_ror_pct = (_ror_num_total / _ror_den_total
+                     if _ror_den_total > 0 else 0.0)
+    # 전월 ror
+    _ror_num_prev = sum(s.get("_ror_num",   0) for s in product_prev_stats.values())
+    _ror_den_prev = sum(s.get("_ror_denom", 0) for s in product_prev_stats.values())
+    _prev_ror_pct = (_ror_num_prev / _ror_den_prev
+                    if _ror_den_prev > 0 else 0.0)
+
+    def _roas_v2(rev, cost, ror_pct=0.0):
         """
-        V2 ROAS 계산 — salesAmt 기반 직접 계산
-        - revenue = 0 : 'Naver 전환 매출액 미추적'
-        - cost = 0    : '-'
-        - revenue > 0 : 실제 ROAS 계산
+        ROAS 표시 — Naver API ror 필드 우선, 없으면 rev/cost 계산
+        ror_pct > 0 이면 Naver 직접 계산값 사용 (역산 없음)
         """
+        if ror_pct > 0:
+            return f"{ror_pct:.1f}%"
         r, c = _safe_int(rev), _safe_int(cost)
         if c == 0:
             return "-"
@@ -726,7 +716,7 @@ def build_monthly_report_v2(
         )
 
     # ── 매체별 요약 테이블 (상품별 다중 행) ───────────────────────────────────
-    def _media_row(product_name, sm, is_total=False, row_class=""):
+    def _media_row(product_name, sm, is_total=False, row_class="", ror_pct=0.0):
         ic = _safe_int(sm.get("impressions"))
         ck = _safe_int(sm.get("clicks"))
         co = _safe_int(sm.get("cost"))
@@ -749,7 +739,7 @@ def build_monthly_report_v2(
             f"{td(_fmt_won(co),'right',is_total)}"
             f"{td(_fmt_num(cv),'right',is_total)}"
             f"{td(rev_cell,'right',is_total)}"
-            f"{td(_roas_v2(rv,co),'right',is_total)}"
+            f"{td(_roas_v2(rv,co,ror_pct),'right',is_total)}"
             f"</tr>"
         )
 
@@ -769,17 +759,21 @@ def build_monthly_report_v2(
           </tr></thead>"""
 
         product_rows = "".join(
-            _media_row(p, period_product_stats.get(p, {}), row_class=f"prow prow-{p}")
+            _media_row(p, period_product_stats.get(p, {}),
+                       row_class=f"prow prow-{p}",
+                       ror_pct=_safe_float(period_product_stats[p].get("_ror_avg", 0)))
             for p in PRODUCT_ORDER
             if p in period_product_stats and
                (period_product_stats[p].get("impressions", 0) > 0 or
                 period_product_stats[p].get("clicks", 0) > 0)
         )
         if not product_rows:
-            # per-product 데이터 없으면 통합 한 줄
-            product_rows = _media_row("검색광고 통합", period_total_sm, row_class="prow prow-all")
+            product_rows = _media_row("검색광고 통합", period_total_sm,
+                                      row_class="prow prow-all",
+                                      ror_pct=_total_ror_pct)
 
-        total_row = _media_row("", period_total_sm, is_total=True, row_class="prow prow-all")
+        total_row = _media_row("", period_total_sm, is_total=True,
+                               row_class="prow prow-all", ror_pct=_total_ror_pct)
 
         _roas_note = (
             ""
@@ -812,7 +806,11 @@ def build_monthly_report_v2(
     prev_cpc_val = pco // pc if pc > 0 else 0
     curr_roas_val = cr / cco * 100 if (cco > 0 and cr > 0) else 0
     prev_roas_val = pr / pco * 100 if (pco > 0 and pr > 0) else 0
-    _roas_fmt     = lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "-"
+    # ROAS 비교표: ror_pct 우선, 없으면 rev/cost 계산
+    curr_roas_str = (f"{_total_ror_pct:.1f}%" if _total_ror_pct > 0
+                     else (f"{curr_roas_val:.1f}%" if curr_roas_val > 0 else "-"))
+    prev_roas_str = (f"{_prev_ror_pct:.1f}%"  if _prev_ror_pct  > 0
+                     else (f"{prev_roas_val:.1f}%"  if prev_roas_val  > 0 else "-"))
 
     comparison_html = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr>
@@ -829,7 +827,7 @@ def build_monthly_report_v2(
         {cmp_row("총광고비", cco, pco, _fmt_won)}
         {cmp_row("전환수", ccv, pcv, _fmt_num)}
         {cmp_row("전환매출액", cr, pr, lambda v: _fmt_won(v) if v > 0 else "-")}
-        {cmp_row("광고수익률", curr_roas_val, prev_roas_val, _roas_fmt)}
+        <tr>{td("광고수익률","left")}{td(prev_roas_str,"right")}{td(curr_roas_str,"right",True)}{td("-","center")}</tr>
       </tbody>
     </table>"""
 
@@ -844,7 +842,8 @@ def build_monthly_report_v2(
         wd  = w["days"]
         if wi == 0 and wc == 0 and wd == 0:
             continue
-        _wlabel = str(w["week"]) + "주차"
+        _wlabel   = str(w["week"]) + "주차"
+        _w_ror    = _safe_float(w.get("_ror_avg", 0))
         weekly_rows += (
             f"<tr>"
             f"{td(_wlabel,'center',True,C_BLUE)}"
@@ -856,7 +855,7 @@ def build_monthly_report_v2(
             f"{td(_fmt_won(wco),'right')}"
             f"{td(_fmt_num(wcv),'right')}"
             f"{td(_fmt_won(wr) if wr > 0 else '-','right')}"
-            f"{td(_roas_v2(wr,wco),'right')}"
+            f"{td(_roas_v2(wr,wco,_w_ror),'right')}"
             f"</tr>"
         )
 
@@ -882,7 +881,7 @@ def build_monthly_report_v2(
         f"{td(_fmt_won(tco),'right',True)}"
         f"{td(_fmt_num(tcv),'right',True)}"
         f"{td(_fmt_won(tr_) if tr_ > 0 else '-','right',True)}"
-        f"{td(_roas_v2(tr_,tco),'right',True)}"
+        f"{td(_roas_v2(tr_,tco,_total_ror_pct),'right',True)}"
         f"</tr>"
     )
 
