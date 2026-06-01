@@ -391,7 +391,7 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
             result["debug"].append(
                 f"[상품/{product}] 노출{agg['impressions']:,} 클릭{agg['clicks']:,} "
                 f"비용{_co:,} 전환{agg['conversions']:,} "
-                f"salesAmt원본={_raw:,} → 사용매출={agg['revenue']:,}"
+                f"salesAmt(소진액)={_raw:,}"
                 f"{'(salesAmt≈cost→무시)' if _sus else ''}"
             )
         except Exception as e:
