@@ -228,30 +228,20 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 clks      = _safe_int(row.get("clkCnt"))
                 convs     = _safe_int(row.get("ccnt"))
                 cpconv    = _safe_float(row.get("cpConv"))
-                ror       = _safe_float(row.get("ror", 0))   # Naver 계산 ROAS(%)
+                ror       = _safe_float(row.get("ror",  0))  # Naver 직접 계산 ROAS(%)
+                # salesAmt = Naver 전환매출액 원본값 — 필터 없이 그대로 사용
                 raw_sales = _safe_int(row.get("salesAmt")) if convs > 0 else 0
                 cost      = int(cpconv * convs)              if convs > 0 else 0
-
-                # ── 전환매출액 유효성 판단 ───────────────────────────────────────
-                # salesAmt ≈ cost (2% 이내) : Naver가 전환가치 미설정 시
-                #   cpConv*ccnt (= 광고비)를 salesAmt 로 반환하는 현상
-                #   이 경우 실제 전환매출액이 아니므로 revenue = 0 처리
-                # salesAmt ≠ cost : 광고주가 전환가치를 별도 설정한 실제 데이터
-                if raw_sales > 0 and cost > 0 and abs(raw_sales - cost) / cost < 0.02:
-                    rev = 0
-                else:
-                    rev = raw_sales
 
                 agg["impressions"]  += imps
                 agg["clicks"]       += clks
                 agg["cost"]         += cost
                 agg["conversions"]  += convs
-                agg["revenue"]      += rev
+                agg["revenue"]      += raw_sales   # 필터 없음, API 원본값 사용
                 agg["_raw_sales"]   += raw_sales
-                agg["_ror_num"]     += ror * cost   # 가중 ROAS
+                agg["_ror_num"]     += ror * cost
                 agg["_ror_denom"]   += cost
 
-        # Naver API ror 필드 가중평균 (비용 기준)
         agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_denom"]
                           if agg["_ror_denom"] > 0 else 0.0)
         return agg
@@ -284,6 +274,51 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         )
     except Exception as e:
         result["debug"].append(f"전월 실패: {e}")
+
+    # ── Raw API 응답 디버그 (전체 계정 당월 첫 3 row) ──────────────────────────
+    try:
+        _s = since_dt.isoformat()
+        _e = until_dt.isoformat()
+        _tr_dbg = json.dumps({"since": _s, "until": _e})
+        path = "/stats"
+        h = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
+        resp_dbg = requests.get(
+            BASE_URL + path, headers=h,
+            params={"ids": ",".join(camp_ids[:10]), "fields": _FIELDS, "timeRange": _tr_dbg},
+            timeout=30,
+        )
+        resp_dbg.raise_for_status()
+        raw_rows = (resp_dbg.json().get("data", [])
+                    if isinstance(resp_dbg.json(), dict) else [])
+        result["debug"].append(
+            f"[RAW DEBUG] 전체계정 당월({_s}~{_e}) 상위{len(raw_rows[:3])}캠페인:"
+        )
+        for i, rrow in enumerate(raw_rows[:3]):
+            _ccnt   = rrow.get("ccnt",   0)
+            _cpConv = rrow.get("cpConv", 0)
+            _sAmt   = rrow.get("salesAmt", 0)
+            _ror    = rrow.get("ror",    0)
+            _cost_calc = int(float(_cpConv) * int(_ccnt)) if int(_ccnt) > 0 else 0
+            result["debug"].append(
+                f"  row{i}: "
+                f"ccnt={_ccnt} "
+                f"cpConv={_cpConv} "
+                f"salesAmt={_sAmt} "
+                f"ror={_ror}% "
+                f"cost(calc)={_cost_calc}"
+            )
+        # 전체 합산
+        _total_sales = sum(_safe_int(r.get("salesAmt",0)) for r in raw_rows if _safe_int(r.get("ccnt",0)) > 0)
+        _total_cost  = sum(int(_safe_float(r.get("cpConv",0)) * _safe_int(r.get("ccnt",0)))
+                          for r in raw_rows if _safe_int(r.get("ccnt",0)) > 0)
+        _total_ror   = _total_sales / _total_cost * 100 if _total_cost > 0 else 0
+        result["debug"].append(
+            f"  [합산] salesAmt합={_total_sales:,} "
+            f"cost합={_total_cost:,} "
+            f"ROAS(계산)={_total_ror:.1f}%"
+        )
+    except Exception as e:
+        result["debug"].append(f"[RAW DEBUG 실패] {e}")
 
     # ── 상품별 당월/전월 통계 ──────────────────────────────────────────────────
     product_stats      = {}   # 당월 상품별
@@ -319,30 +354,25 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
     result["product_prev_stats"] = product_prev_stats
 
     # ── 전환매출액 진단 ───────────────────────────────────────────────────────
-    # 모든 상품의 ror 가중평균으로 실제 전환매출 데이터 여부 판단
+    _diag_raw_sales = sum(s.get("_raw_sales", 0) for s in product_stats.values())
     _diag_ror_num   = sum(s.get("_ror_num",   0) for s in product_stats.values())
     _diag_ror_denom = sum(s.get("_ror_denom", 0) for s in product_stats.values())
-    _diag_raw_sales = sum(s.get("_raw_sales", 0) for s in product_stats.values())
     _diag_ror_avg   = _diag_ror_num / _diag_ror_denom if _diag_ror_denom > 0 else 0.0
 
     if _diag_raw_sales == 0:
-        _revenue_diag = "salesAmt=0: 전환가치 미설정 (전환수만 추적 중)"
-        result["revenue_has_data"] = False
-    elif _diag_ror_denom > 0 and abs(_diag_ror_avg - 100) < 2:
-        _revenue_diag = (
-            f"salesAmt≈totalCost (Naver ror={_diag_ror_avg:.1f}%): "
-            f"전환가치를 광고비와 동일하게 설정한 것으로 판단 → 실제 매출 데이터 아님"
-        )
+        _revenue_diag = "salesAmt=0: 전환가치 미설정 (전환수만 추적)"
         result["revenue_has_data"] = False
     elif _diag_ror_avg > 0:
         _revenue_diag = (
-            f"실제 전환매출액 데이터 존재 (Naver ror={_diag_ror_avg:.1f}%): "
-            f"salesAmt={_diag_raw_sales:,}원"
+            f"전환매출액 존재: salesAmt합={_diag_raw_sales:,}원 / "
+            f"Naver ror(가중평균)={_diag_ror_avg:.1f}%"
         )
         result["revenue_has_data"] = True
     else:
-        _revenue_diag = f"전환매출액 판단 불가 (ror=0, salesAmt={_diag_raw_sales:,}원)"
-        result["revenue_has_data"] = False
+        _revenue_diag = (
+            f"전환매출액 판단 불가 (ror=0): salesAmt합={_diag_raw_sales:,}원"
+        )
+        result["revenue_has_data"] = _diag_raw_sales > 0
 
     result["revenue_diagnosis"] = _revenue_diag
     result["debug"].append(f"[전환매출액 진단] {_revenue_diag}")
@@ -594,27 +624,8 @@ def build_monthly_report_v2(
     clk_top10  = sorted(valid_kws, key=lambda k: k.get("clicks", 0),      reverse=True)[:10]
     cost_top10 = sorted(valid_kws, key=lambda k: k.get("cost", 0),        reverse=True)[:10]
 
-    # salesAmt(전환매출액) 필터: Naver API가 전환가치 미설정 시
-    # salesAmt = cpConv×ccnt = totalCost 를 반환 → revenue ≈ cost → ROAS = 100% 오류
-    # 비율 차 2% 이내이면 "전환가치 미설정"으로 판단, revenue = 0 처리
-    _ROAS_FILTER_RATIO = 0.02
-
-    def _filter_sm(sm: dict) -> dict:
-        """fetch_report() summary의 salesAmt≈cost 케이스를 revenue=0으로 정규화"""
-        rv = _safe_int(sm.get("revenue"))
-        co = _safe_int(sm.get("cost"))
-        if rv > 0 and co > 0 and abs(rv - co) / co < _ROAS_FILTER_RATIO:
-            out = dict(sm)
-            out["revenue"] = 0
-            return out
-        return sm
-
-    curr_sm = _filter_sm(curr_sm)
-    prev_sm = _filter_sm(prev_sm)
-
-    # 상품별 통계도 동일 필터 적용
-    product_stats      = {p: _filter_sm(s) for p, s in product_stats.items()}
-    product_prev_stats = {p: _filter_sm(s) for p, s in product_prev_stats.items()}
+    # salesAmt, ror 원본값 그대로 사용 — 필터 없음
+    # (이전 2% 필터가 실제 전환매출액 데이터까지 0으로 만들던 버그 제거)
 
     # 데이터 있는 상품 목록 (PRODUCT_ORDER 순)
     active_products = [p for p in PRODUCT_ORDER
