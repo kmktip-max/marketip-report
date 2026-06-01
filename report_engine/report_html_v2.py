@@ -211,9 +211,11 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         # ─────────────────────────────────────────────────────────────────────
         agg = {
             "impressions": 0, "clicks": 0,
-            "cost": 0,        # salesAmt 합산 = 소진액
+            "cost": 0,        # salesAmt 합산 = 소진액(총광고비)
             "conversions": 0, # ccnt 합산
-            "cpa_sum": 0.0,   # cpConv 가중합 (CPA 계산용, cpConv*ccnt = cost 와 동일)
+            "cpa_sum": 0.0,
+            "_ror_num": 0.0,  # ror × spend 가중합 (ROAS 가중평균용)
+            "_ror_den": 0.0,  # spend 합산
         }
 
         for i in range(0, len(_ids), 100):
@@ -234,15 +236,22 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 clks   = _safe_int(row.get("clkCnt"))
                 convs  = _safe_int(row.get("ccnt"))
                 cpconv = _safe_float(row.get("cpConv", 0))
-                # salesAmt = 소진액(광고비). 전환매출액 아님
+                # salesAmt = 소진액(총광고비). 전환매출액 아님
                 spend  = _safe_int(row.get("salesAmt"))
+                # ror = 네이버 자체 계산 광고수익률(%) - 소진액 기준
+                ror    = _safe_float(row.get("ror", 0))
 
                 agg["impressions"] += imps
                 agg["clicks"]      += clks
-                agg["cost"]        += spend     # 소진액 합산
+                agg["cost"]        += spend
                 agg["conversions"] += convs
-                agg["cpa_sum"]     += cpconv * convs  # = spend per campaign
+                agg["cpa_sum"]     += cpconv * convs
+                agg["_ror_num"]    += ror * spend   # spend 가중 ROAS 합
+                agg["_ror_den"]    += spend
 
+        # 소진액 가중 평균 ROAS (API ror 필드 집계)
+        agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_den"]
+                           if agg["_ror_den"] > 0 else 0.0)
         return agg
 
     # ── 주차별 통계 (5회 개별 호출) ──────────────────────────────────────────
@@ -776,7 +785,8 @@ def build_monthly_report_v2(
         ck = _safe_int(sm.get("clicks"))
         co = _safe_int(sm.get("cost"))
         cv  = _safe_int(sm.get("conversions"))
-        cpa = _cpc_str(co, cv)   # 전환당비용 = 총광고비 / 전환수 (정확한 값)
+        cpa = _cpc_str(co, cv)
+        roas_cell = f"{ror_pct:.1f}%" if ror_pct > 0 else "-"
         name_cell = ("TOTAL" if is_total else
                      f'<span style="color:{C_BLUE};font-weight:700;">NAVER</span>')
         prod_cell = ("전체 합산" if is_total else product_name)
@@ -793,6 +803,7 @@ def build_monthly_report_v2(
             f"{td(_fmt_won(co),'right',is_total)}"
             f"{td(_fmt_num(cv),'right',is_total)}"
             f"{td(cpa,'right',is_total)}"
+            f"{td(roas_cell,'right',is_total)}"
             f"</tr>"
         )
 
@@ -808,6 +819,7 @@ def build_monthly_report_v2(
             {th("총광고비","right")}
             {th("전환수","right")}
             {th("전환당비용","right")}
+            {th("광고수익률","right")}
           </tr></thead>"""
 
         product_rows = "".join(
@@ -824,8 +836,11 @@ def build_monthly_report_v2(
                                       row_class="prow prow-all",
                                       ror_pct=0.0)
 
+        _total_ror_n = sum(s.get("_ror_num", 0) for s in period_product_stats.values())
+        _total_ror_d = sum(s.get("_ror_den", 0) for s in period_product_stats.values())
+        _total_ror   = _total_ror_n / _total_ror_d if _total_ror_d > 0 else 0.0
         total_row = _media_row("", period_total_sm, is_total=True,
-                               row_class="prow prow-all", ror_pct=0.0)
+                               row_class="prow prow-all", ror_pct=_total_ror)
 
         _roas_note = (
             ""
@@ -875,9 +890,8 @@ def build_monthly_report_v2(
         {cmp_row("전환당비용(원)", cco//ccv if ccv>0 else 0, pco//pcv if pcv>0 else 0, lambda v: f"{_safe_int(v):,}원" if v > 0 else "-")}
       </tbody>
     </table>
-    <div style="font-size:10px;color:#e74c3c;padding:4px 8px;line-height:1.8;">
-      ※ 전환매출액/광고수익률은 Naver 검색광고 API(/stats)에서 정확히 제공되지 않습니다.<br>
-      &nbsp;&nbsp; 브랜드검색 간접전환·뷰스루전환 매출이 API에 포함되지 않으므로 네이버 광고관리 화면에서 확인하세요.
+    <div style="font-size:10px;color:#888;padding:4px 8px;line-height:1.8;">
+      ※ 광고수익률은 Naver API ror 필드(소진액 기준) 표시 — 브랜드검색 간접전환 미포함으로 대시보드 값과 다를 수 있음
     </div>"""
 
     # ── 주차별 테이블 ──────────────────────────────────────────────────────────
