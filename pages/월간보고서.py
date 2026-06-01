@@ -13,6 +13,7 @@ sys.path.insert(0, ROOT)
 from report_engine.naver_api import NaverAdAPI
 from report_engine.emailer import send_report
 from report_engine.report_html import generate_html
+from report_engine.report_html_v2 import build_monthly_report_v2, fetch_v2_extra
 from report_engine.storage import load_clients, save_clients
 
 
@@ -338,6 +339,15 @@ with tab2:
             period_label = st.radio("기간", ["주간 (지난 7일)", "월간 (지난달)"], horizontal=True)
             period_key = "weekly" if "주간" in period_label else "monthly"
 
+        report_fmt_single = st.radio(
+            "보고서 형식",
+            ["기존 보고서", "월간보고서 V2"],
+            index=0,
+            horizontal=True,
+            key="report_fmt_single",
+            help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
+        )
+
         if not selected_names:
             st.info("광고주를 선택하세요.")
         else:
@@ -360,7 +370,13 @@ with tab2:
                         try:
                             api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
                             data = api.fetch_report(period_key, on_step=_on_step)
-                            html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+                            _rpt_date = datetime.now().strftime("%Y-%m-%d")
+                            if report_fmt_single == "월간보고서 V2":
+                                _on_step("V2 추가 데이터 수집 중 (일자별·전월)...")
+                                _v2e = fetch_v2_extra(api, data["since"], data["until"])
+                                html = build_monthly_report_v2(data, client["name"], _rpt_date, v2_extra=_v2e)
+                            else:
+                                html = generate_html(data, client["name"], _rpt_date)
                             results.append({"client": client, "data": data, "html": html, "status": "ok"})
                             sm = data.get("summary", {})
                             _col_status.update(
@@ -630,6 +646,14 @@ with tab2:
             period_key = "weekly" if "주간" in period_label else "monthly"
             since, until = _get_period_range(period_key)
             st.caption(f"분석 기간: **{since} ~ {until}**")
+            report_fmt_bulk = st.radio(
+                "보고서 형식",
+                ["기존 보고서", "월간보고서 V2"],
+                index=0,
+                horizontal=True,
+                key="report_fmt_bulk",
+                help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
+            )
         with bc2:
             dedup_on = st.checkbox(
                 "중복 발송 방지",
@@ -767,7 +791,12 @@ with tab2:
                     try:
                         api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
                         data = api.fetch_report(period_key)
-                        html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+                        _rpt_date_b = datetime.now().strftime("%Y-%m-%d")
+                        if report_fmt_bulk == "월간보고서 V2":
+                            _v2e_b = fetch_v2_extra(api, data["since"], data["until"])
+                            html = build_monthly_report_v2(data, client["name"], _rpt_date_b, v2_extra=_v2e_b)
+                        else:
+                            html = generate_html(data, client["name"], _rpt_date_b)
 
                         to_addr = test_email if test_mode else client["email"]
                         status_box.info(f"📧 {idx+1}/{total_sel} — **{client['name']}** → {to_addr} 발송 중...")
