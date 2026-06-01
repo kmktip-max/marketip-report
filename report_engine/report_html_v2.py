@@ -554,17 +554,20 @@ def build_monthly_report_v2(
     pcv = _safe_int(prev_sm.get("conversions"))
     pr  = _safe_int(prev_sm.get("revenue"))
 
-    # ROAS 신뢰성 판단:
-    # revenue ≈ cost (99~101%) 이면 Naver API의 salesAmt=cost 기본값 or api_ror fallback으로 판단,
-    # 실제 전환매출 추적 데이터가 없는 것으로 간주 → ROAS "-" 표시
-    _rev_ratio = cr / cco if (cco > 0 and cr > 0) else 0
-    _revenue_is_real = (cr > 0 and cco > 0 and not (0.98 <= _rev_ratio <= 1.02))
-
     def _roas_v2(rev, cost):
-        """V2 전용 ROAS 표시: 실제 전환매출 추적이 확인된 경우에만 계산"""
-        if not _revenue_is_real:
+        """
+        V2 ROAS 계산 — salesAmt 기반 직접 계산
+        - revenue = 0 : 'Naver 전환 매출액 미추적'
+        - cost = 0    : '-'
+        - revenue > 0 : 실제 ROAS 계산
+        """
+        r, c = _safe_int(rev), _safe_int(cost)
+        if c == 0:
             return "-"
-        return _roas_str(rev, cost)
+        if r == 0:
+            return "매출 미추적"
+        val = r / c * 100
+        return f"{val:.1f}%" if val >= 0 else "검증필요"
 
     # 운영 코멘트
     comment_lines = _auto_comment(curr_sm, prev_sm, valid_kws)
@@ -620,6 +623,7 @@ def build_monthly_report_v2(
         prod_cell = ("전체 합산" if is_total else product_name)
         bg_s = f"background:{C_HBG};" if is_total else ""
         attrs = f' class="{row_class}"' if row_class else ""
+        rev_cell = _fmt_won(rv) if rv > 0 else "미추적"
         return (
             f"<tr{attrs} style='{bg_s}'>"
             f"{td(name_cell,'center',is_total)}"
@@ -630,6 +634,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(co,ck),'right',is_total)}"
             f"{td(_fmt_won(co),'right',is_total)}"
             f"{td(_fmt_num(cv),'right',is_total)}"
+            f"{td(rev_cell,'right',is_total)}"
             f"{td(_roas_v2(rv,co),'right',is_total)}"
             f"</tr>"
         )
@@ -645,6 +650,7 @@ def build_monthly_report_v2(
             {th("평균CPC","right")}
             {th("총광고비","right")}
             {th("전환수","right")}
+            {th("전환매출액","right")}
             {th("광고수익률","right")}
           </tr></thead>"""
 
@@ -665,8 +671,10 @@ def build_monthly_report_v2(
             f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
             f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
             f'<div style="font-size:10px;color:#888;padding:4px 8px;">'
-            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등)'
-            f'&nbsp;|&nbsp; GFA/성과형DA는 별도 API — 미연동'
+            f'※ Naver 검색광고 계정 전체 (파워링크·쇼핑검색·브랜드검색 등)'
+            f'&nbsp;|&nbsp; 전환매출액은 Naver 전환추적 설정 시에만 표시'
+            f'&nbsp;|&nbsp; 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 나타나지 않을 수 있음'
+            f'&nbsp;|&nbsp; GFA/성과형DA: 별도 API 미연동'
             f'</div>'
         )
 
@@ -683,9 +691,9 @@ def build_monthly_report_v2(
     prev_ctr_val = pc / pi * 100 if pi > 0 else 0
     curr_cpc_val = cco // cc if cc > 0 else 0
     prev_cpc_val = pco // pc if pc > 0 else 0
-    curr_roas_val = cr / cco * 100 if (cco > 0 and _revenue_is_real) else 0
-    prev_roas_val = pr / pco * 100 if (pco > 0 and _revenue_is_real) else 0
-    _roas_fmt = (lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "-") if _revenue_is_real else (lambda v: "-")
+    curr_roas_val = cr / cco * 100 if (cco > 0 and cr > 0) else 0
+    prev_roas_val = pr / pco * 100 if (pco > 0 and pr > 0) else 0
+    _roas_fmt     = lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "매출 미추적"
 
     comparison_html = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr>
@@ -701,8 +709,7 @@ def build_monthly_report_v2(
         {cmp_row("평균CPC(원)", curr_cpc_val, prev_cpc_val, lambda v: f"{_safe_int(v):,}원")}
         {cmp_row("총광고비", cco, pco, _fmt_won)}
         {cmp_row("전환수", ccv, pcv, _fmt_num)}
-        {cmp_row("전환매출", cr if _revenue_is_real else 0, pr if _revenue_is_real else 0,
-                  lambda v: _fmt_won(v) if v > 0 else "매출 추적 미설정")}
+        {cmp_row("전환매출액", cr, pr, lambda v: _fmt_won(v) if v > 0 else "매출 미추적")}
         {cmp_row("광고수익률", curr_roas_val, prev_roas_val, _roas_fmt)}
       </tbody>
     </table>"""
@@ -729,6 +736,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(wco,wc),'right')}"
             f"{td(_fmt_won(wco),'right')}"
             f"{td(_fmt_num(wcv),'right')}"
+            f"{td(_fmt_won(wr) if wr > 0 else '미추적','right')}"
             f"{td(_roas_v2(wr,wco),'right')}"
             f"</tr>"
         )
@@ -754,14 +762,15 @@ def build_monthly_report_v2(
         f"{td(_cpc_str(tco,tc),'right',True)}"
         f"{td(_fmt_won(tco),'right',True)}"
         f"{td(_fmt_num(tcv),'right',True)}"
+        f"{td(_fmt_won(tr_) if tr_ > 0 else '미추적','right',True)}"
         f"{td(_roas_v2(tr_,tco),'right',True)}"
         f"</tr>"
     )
 
     no_data_row = (
-        f"<tr><td colspan='9' style='text-align:center;color:#999;"
+        f"<tr><td colspan='10' style='text-align:center;color:#999;"
         f"padding:14px;font-size:11px;'>"
-        f"일자별 데이터를 불러오지 못했습니다 (Naver API timeUnit=DAY 지원 여부 확인)</td></tr>"
+        f"주차별 API 데이터를 불러오지 못했습니다</td></tr>"
     )
 
     weekly_table = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -774,6 +783,7 @@ def build_monthly_report_v2(
         {th("평균CPC","right")}
         {th("총광고비","right")}
         {th("전환수","right")}
+        {th("전환매출액","right")}
         {th("광고수익률","right")}
       </tr></thead>
       <tbody>
