@@ -1292,28 +1292,7 @@ def build_monthly_report_v2(
     </details>""" if _debug_rows else ""
 
     # ── Raw 값 진단 배너 (항상 보고서 최상단에 표시) ──────────────────────────
-    import datetime as _dt
-    _ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # 진단 배너
-    _raw_sm      = data.get("summary", {})
-    _raw_sm_cost = _safe_int(_raw_sm.get("cost"))
-    _ps_cost_b   = sum(_safe_int(s.get("cost", 0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
-    _ps_conv_b   = sum(_safe_int(s.get("conversions", 0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
-    _cpa_calc    = _ps_cost_b // _ps_conv_b if _ps_conv_b > 0 else 0
-
-    _diag_banner = (
-        f'<div style="background:#fff3cd;border:2px solid #ffc107;padding:10px 16px;'
-        f'font-family:monospace;font-size:11px;margin-bottom:8px;border-radius:4px;">'
-        f'<b>🔍 V2 FIX [{_ts}]</b><br>'
-        f'salesAmt(소진액) = {_raw_sm_cost:,}원 (광고비, 전환매출액 아님)<br>'
-        f'product_stats.cost(소진액합) = {_ps_cost_b:,}원<br>'
-        f'product_stats.conversions = {_ps_conv_b:,}<br>'
-        f'CPA(전환당비용) = {_cpa_calc:,}원<br>'
-        f'전환매출액/ROAS = API /stats 미지원 — ROAS 필드 탐색 중<br>'
-        f'field_debug: {v2_extra.get("revenue_diagnosis","없음")}'
-        f'</div>'
-    )
+    _diag_banner = ""  # debug 배너 제거
 
     # ── 최종 HTML ─────────────────────────────────────────────────────────────
     return f"""<!DOCTYPE html>
@@ -1415,24 +1394,25 @@ canvas{{width:100%!important;max-width:100%!important;}}
 </div>
 
 <!-- ═══ 주차별 ══════════════════════════════════════════════════════════ -->
-<!-- ═══ 주차별 ══════════════════════════════════════════════════════════ -->
 <div class="v2-sec">
-  <div class="v2-two">
-    <div style="flex:1.3;">
-      {sec_bar("주차별 광고요약", C_BLUE)}
-      <div class="v2-panel" style="padding:0;">{weekly_table}</div>
-    </div>
+  {sec_bar("주차별 광고요약", C_BLUE)}
+  <div class="v2-panel" style="padding:0;">{weekly_table}</div>
+</div>
+<div class="v2-sec">
+  <div class="v2-three">
     <div>
       {sec_bar("주차별 노출수 · 클릭수", C_BLUE3)}
       <div class="v2-panel">
         <div class="v2-chart"><canvas id="weeklyChart"></canvas></div>
       </div>
-      <div style="height:12px;"></div>
+    </div>
+    <div>
       {sec_bar("주차별 광고비 · 전환수", C_GREEN)}
       <div class="v2-panel">
         <div class="v2-chart"><canvas id="weeklyCostConvChart"></canvas></div>
       </div>
-      <div style="height:12px;"></div>
+    </div>
+    <div>
       {sec_bar("주차별 전환당비용(CPA) 추이", "#7B1FA2")}
       <div class="v2-panel">
         <div style="font-size:10px;color:#888;margin-bottom:4px;">CPA가 낮을수록 효율적입니다</div>
