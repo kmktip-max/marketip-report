@@ -87,116 +87,159 @@ def _change_html(curr, prev):
 
 def fetch_v2_extra(api, since: str, until: str) -> dict:
     """
-    V2 보고서 추가 데이터 수집
-    - 일자별 캠페인 통계 (timeUnit=DAY)
-    - 전월 캠페인 통계 (비교용)
-    기존 fetch_report() 와 별개로 호출되며 독립적으로 동작
+    V2 보고서 추가 데이터 수집 (직접 순차 HTTP 호출 방식)
+    - api.get_stats() 의 내부 ThreadPoolExecutor 를 우회
+    - 주차별 5회 + 전월 1회 직접 호출
+    - 에러 발생 시 해당 주차만 0 처리, 나머지 데이터 보존
     """
     from report_engine.naver_api import _headers, BASE_URL
 
-    since_dt  = date.fromisoformat(since) if isinstance(since, str) else since
-    until_dt  = date.fromisoformat(until) if isinstance(until, str) else until
+    since_dt   = date.fromisoformat(since) if isinstance(since, str) else since
+    until_dt   = date.fromisoformat(until) if isinstance(until, str) else until
     prev_until = since_dt - timedelta(days=1)
     prev_since = prev_until.replace(day=1)
 
+    _FIELDS = json.dumps(
+        ["impCnt", "clkCnt", "salesAmt", "ccnt", "ctr", "ror", "cpConv", "avgRnk"]
+    )
+
     result = {
-        "daily": {},
-        "prev_summary": {
-            "impressions": 0, "clicks": 0, "cost": 0,
-            "conversions": 0, "revenue": 0,
-        },
-        "prev_since": prev_since.isoformat(),
-        "prev_until": prev_until.isoformat(),
+        "daily":        {},
+        "weekly":       {},
+        "prev_summary": {"impressions": 0, "clicks": 0, "cost": 0,
+                         "conversions": 0, "revenue": 0},
+        "prev_since":   prev_since.isoformat(),
+        "prev_until":   prev_until.isoformat(),
+        "debug":        [],
     }
 
+    # ── 캠페인 목록 ──────────────────────────────────────────────────────────
     try:
-        camps = api.get_campaigns()
+        camps    = api.get_campaigns()
         camp_ids = [c["nccCampaignId"] for c in camps]
-    except Exception:
+        result["debug"].append(f"캠페인 {len(camp_ids)}개")
+    except Exception as e:
+        result["debug"].append(f"캠페인 조회 실패: {e}")
         return result
 
     if not camp_ids:
+        result["debug"].append("캠페인 없음")
         return result
 
-    # ── 일자별 통계 (timeUnit=DAY) ────────────────────────────────────────────
-    daily_map = {}
-    try:
-        fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "cpConv"])
-        tr = json.dumps({"since": since, "until": until})
+    # ── 직접 순차 통계 호출 헬퍼 ─────────────────────────────────────────────
+    def _call(start, end):
+        """ThreadPoolExecutor 없이 순차 HTTP 호출 — 집계 dict 반환"""
+        _s = start.isoformat() if hasattr(start, "isoformat") else str(start)
+        _e = end.isoformat()   if hasattr(end,   "isoformat") else str(end)
+        _tr = json.dumps({"since": _s, "until": _e})
+
+        agg = {"impressions": 0, "clicks": 0, "cost": 0,
+               "conversions": 0, "revenue": 0}
+
         for i in range(0, len(camp_ids), 100):
             batch = camp_ids[i:i + 100]
-            path = "/stats"
-            h = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
-            resp = requests.get(
-                BASE_URL + path,
-                headers=h,
-                params={
-                    "ids": ",".join(batch),
-                    "fields": fields,
-                    "timeRange": tr,
-                    "timeUnit": "DAY",
-                },
+            path  = "/stats"
+            h     = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
+            resp  = requests.get(
+                BASE_URL + path, headers=h,
+                params={"ids": ",".join(batch), "fields": _FIELDS, "timeRange": _tr},
                 timeout=30,
             )
             resp.raise_for_status()
-            rj = resp.json()
+            rj   = resp.json()
+            rows = rj.get("data", []) if isinstance(rj, dict) else []
+
+            for row in rows:
+                imps   = _safe_int(row.get("impCnt"))
+                clks   = _safe_int(row.get("clkCnt"))
+                convs  = _safe_int(row.get("ccnt"))
+                cpconv = _safe_float(row.get("cpConv"))
+                rev    = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                cost   = int(cpconv * convs)            if convs > 0 else 0
+
+                agg["impressions"] += imps
+                agg["clicks"]      += clks
+                agg["cost"]        += cost
+                agg["conversions"] += convs
+                agg["revenue"]     += rev
+
+        return agg
+
+    # ── 주차별 통계 (5회 개별 호출) ──────────────────────────────────────────
+    for week_num, ws, we in _get_week_ranges(since_dt, until_dt):
+        try:
+            agg = _call(ws, we)
+            agg["days"] = (we - ws).days + 1
+            result["weekly"][week_num] = agg
+            result["debug"].append(
+                f"W{week_num}({ws}~{we}): "
+                f"노출{agg['impressions']:,} 클릭{agg['clicks']:,} 비용{agg['cost']:,}"
+            )
+        except Exception as e:
+            result["weekly"][week_num] = {
+                "impressions": 0, "clicks": 0, "cost": 0,
+                "conversions": 0, "revenue": 0,
+                "days": (we - ws).days + 1,
+            }
+            result["debug"].append(f"W{week_num} 실패: {e}")
+
+    # ── 전월 통계 ─────────────────────────────────────────────────────────────
+    try:
+        prev_agg = _call(prev_since, prev_until)
+        result["prev_summary"] = prev_agg
+        result["debug"].append(
+            f"전월({prev_since}~{prev_until}): "
+            f"노출{prev_agg['impressions']:,} 클릭{prev_agg['clicks']:,}"
+        )
+    except Exception as e:
+        result["debug"].append(f"전월 실패: {e}")
+
+    # ── 일자별 통계 (timeUnit=DAY 시도) ──────────────────────────────────────
+    daily_map = {}
+    try:
+        _daily_fields = json.dumps(["impCnt", "clkCnt", "salesAmt", "ccnt", "cpConv"])
+        _tr_full = json.dumps({"since": since if isinstance(since, str) else since_dt.isoformat(),
+                               "until": until if isinstance(until, str) else until_dt.isoformat()})
+        for i in range(0, len(camp_ids), 100):
+            batch = camp_ids[i:i + 100]
+            path  = "/stats"
+            h     = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
+            resp  = requests.get(
+                BASE_URL + path, headers=h,
+                params={"ids": ",".join(batch), "fields": _daily_fields,
+                        "timeRange": _tr_full, "timeUnit": "DAY"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            rj   = resp.json()
             rows = rj.get("data", []) if isinstance(rj, dict) else []
             for row in rows:
                 stat_date = row.get("statDate") or row.get("date") or ""
                 if not stat_date:
                     continue
-                clks  = _safe_int(row.get("clkCnt"))
-                imps  = _safe_int(row.get("impCnt"))
-                convs = _safe_int(row.get("ccnt"))
+                imps   = _safe_int(row.get("impCnt"))
+                clks   = _safe_int(row.get("clkCnt"))
+                convs  = _safe_int(row.get("ccnt"))
                 cpconv = _safe_float(row.get("cpConv"))
-                rev  = _safe_int(row.get("salesAmt")) if convs > 0 else 0
-                cost = int(cpconv * convs) if convs > 0 else 0
+                rev    = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                cost   = int(cpconv * convs)            if convs > 0 else 0
                 if stat_date not in daily_map:
-                    daily_map[stat_date] = {
-                        "impressions": 0, "clicks": 0, "cost": 0,
-                        "conversions": 0, "revenue": 0,
-                    }
+                    daily_map[stat_date] = {"impressions": 0, "clicks": 0, "cost": 0,
+                                            "conversions": 0, "revenue": 0}
                 daily_map[stat_date]["impressions"] += imps
                 daily_map[stat_date]["clicks"]      += clks
                 daily_map[stat_date]["cost"]        += cost
                 daily_map[stat_date]["conversions"] += convs
                 daily_map[stat_date]["revenue"]     += rev
-    except Exception:
+        if daily_map:
+            result["debug"].append(f"일자별 {len(daily_map)}일 수집 성공")
+        else:
+            result["debug"].append("일자별 timeUnit=DAY 미지원 (주차 평균으로 대체)")
+    except Exception as e:
+        result["debug"].append(f"일자별 실패: {e}")
         daily_map = {}
+
     result["daily"] = daily_map
-
-    # ── 주차별 통계 (주차별 date range로 개별 API 호출) ───────────────────────
-    weekly = {}
-    try:
-        for week_num, ws, we in _get_week_ranges(since_dt, until_dt):
-            wstats = api.get_stats(camp_ids, ws, we)
-            agg = {"impressions": 0, "clicks": 0, "cost": 0,
-                   "conversions": 0, "revenue": 0}
-            for s in wstats:
-                row = api._parse_row(s)
-                for k in agg:
-                    agg[k] += row[k]
-            agg["days"] = (we - ws).days + 1
-            weekly[week_num] = agg
-    except Exception:
-        weekly = {}
-    result["weekly"] = weekly
-
-    # ── 전월 통계 ─────────────────────────────────────────────────────────────
-    try:
-        prev_stats = api.get_stats(camp_ids, prev_since, prev_until)
-        ps = {"impressions": 0, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 0}
-        for s in prev_stats:
-            row = api._parse_row(s)
-            ps["impressions"] += row["impressions"]
-            ps["clicks"]      += row["clicks"]
-            ps["cost"]        += row["cost"]
-            ps["conversions"] += row["conversions"]
-            ps["revenue"]     += row["revenue"]
-        result["prev_summary"] = ps
-    except Exception:
-        pass
-
     return result
 
 

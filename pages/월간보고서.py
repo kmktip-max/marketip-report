@@ -14,6 +14,7 @@ from report_engine.naver_api import NaverAdAPI
 from report_engine.emailer import send_report
 from report_engine.report_html import generate_html
 from report_engine.report_html_v2 import build_monthly_report_v2, fetch_v2_extra
+from report_engine.report_data_adapters import normalize_naver_data
 from report_engine.storage import load_clients, save_clients
 
 
@@ -339,14 +340,25 @@ with tab2:
             period_label = st.radio("기간", ["주간 (지난 7일)", "월간 (지난달)"], horizontal=True)
             period_key = "weekly" if "주간" in period_label else "monthly"
 
-        report_fmt_single = st.radio(
-            "보고서 형식",
-            ["기존 보고서", "월간보고서 V2"],
-            index=0,
-            horizontal=True,
-            key="report_fmt_single",
-            help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
-        )
+        _fmt_col, _plt_col = st.columns([1, 1])
+        with _fmt_col:
+            report_fmt_single = st.radio(
+                "보고서 형식",
+                ["기존 보고서", "월간보고서 V2"],
+                index=0,
+                horizontal=True,
+                key="report_fmt_single",
+                help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
+            )
+        with _plt_col:
+            platform_single = st.radio(
+                "플랫폼",
+                ["네이버", "구글", "카카오", "당근"],
+                index=0,
+                horizontal=True,
+                key="platform_single",
+                help="현재 네이버만 지원. 구글/카카오/당근은 준비 중.",
+            ) if report_fmt_single == "월간보고서 V2" else "네이버"
 
         if not selected_names:
             st.info("광고주를 선택하세요.")
@@ -372,9 +384,18 @@ with tab2:
                             data = api.fetch_report(period_key, on_step=_on_step)
                             _rpt_date = datetime.now().strftime("%Y-%m-%d")
                             if report_fmt_single == "월간보고서 V2":
-                                _on_step("V2 추가 데이터 수집 중 (일자별·전월)...")
+                                _plt = st.session_state.get("platform_single", "네이버")
+                                if _plt != "네이버":
+                                    st.warning(f"⚠️ {_plt} 플랫폼은 준비 중입니다. 네이버로 대체합니다.")
+                                _on_step("V2: 주차별/전월 데이터 수집 중 (5회 API 호출)...")
                                 _v2e = fetch_v2_extra(api, data["since"], data["until"])
-                                html = build_monthly_report_v2(data, client["name"], _rpt_date, v2_extra=_v2e)
+                                # debug 출력
+                                for _dbg in _v2e.get("debug", []):
+                                    _on_step(f"  ↳ {_dbg}")
+                                _norm = normalize_naver_data(data, _v2e)
+                                html = build_monthly_report_v2(
+                                    data, client["name"], _rpt_date, v2_extra=_v2e
+                                )
                             else:
                                 html = generate_html(data, client["name"], _rpt_date)
                             results.append({"client": client, "data": data, "html": html, "status": "ok"})
@@ -654,6 +675,13 @@ with tab2:
                 key="report_fmt_bulk",
                 help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
             )
+            if report_fmt_bulk == "월간보고서 V2":
+                platform_bulk = st.radio(
+                    "플랫폼",
+                    ["네이버", "구글", "카카오", "당근"],
+                    index=0, horizontal=True, key="platform_bulk",
+                    help="현재 네이버만 지원",
+                )
         with bc2:
             dedup_on = st.checkbox(
                 "중복 발송 방지",
@@ -794,6 +822,9 @@ with tab2:
                         _rpt_date_b = datetime.now().strftime("%Y-%m-%d")
                         if report_fmt_bulk == "월간보고서 V2":
                             _v2e_b = fetch_v2_extra(api, data["since"], data["until"])
+                            for _dbg_b in _v2e_b.get("debug", []):
+                                log_list.append(f"  V2 {client['name']}: {_dbg_b}")
+                            _norm_b = normalize_naver_data(data, _v2e_b)
                             html = build_monthly_report_v2(data, client["name"], _rpt_date_b, v2_extra=_v2e_b)
                         else:
                             html = generate_html(data, client["name"], _rpt_date_b)
