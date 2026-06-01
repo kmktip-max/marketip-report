@@ -448,6 +448,18 @@ def build_monthly_report_v2(
     pcv = _safe_int(prev_sm.get("conversions"))
     pr  = _safe_int(prev_sm.get("revenue"))
 
+    # ROAS 신뢰성 판단:
+    # revenue ≈ cost (99~101%) 이면 Naver API의 salesAmt=cost 기본값 or api_ror fallback으로 판단,
+    # 실제 전환매출 추적 데이터가 없는 것으로 간주 → ROAS "-" 표시
+    _rev_ratio = cr / cco if (cco > 0 and cr > 0) else 0
+    _revenue_is_real = (cr > 0 and cco > 0 and not (0.98 <= _rev_ratio <= 1.02))
+
+    def _roas_v2(rev, cost):
+        """V2 전용 ROAS 표시: 실제 전환매출 추적이 확인된 경우에만 계산"""
+        if not _revenue_is_real:
+            return "-"
+        return _roas_str(rev, cost)
+
     # 운영 코멘트
     comment_lines = _auto_comment(curr_sm, prev_sm, valid_kws)
 
@@ -511,16 +523,20 @@ def build_monthly_report_v2(
           </tr></thead>
           <tbody><tr>
             {td("NAVER","center",True,C_BLUE)}
-            {td("키워드광고","center")}
+            {td("검색광고 통합","center")}
             {td(_fmt_num(ic),"right")}
             {td(_fmt_num(ck),"right")}
             {td(_ctr(ck,ic),"right")}
             {td(_cpc_str(co,ck),"right")}
             {td(_fmt_won(co),"right",True)}
             {td(_fmt_num(cv),"right")}
-            {td(_roas_str(rv,co),"right")}
+            {td(_roas_v2(rv,co),"right")}
           </tr></tbody>
-        </table>"""
+        </table>
+        <div style="font-size:10px;color:#888;padding:4px 8px;">
+          ※ 포함: 파워링크·쇼핑검색·브랜드검색 등 Naver 검색광고 계정 전체
+          &nbsp;|&nbsp; 미포함: GFA/성과형DA(별도 API)
+        </div>"""
 
     # ── 전월대비 비교 테이블 ───────────────────────────────────────────────────
     def cmp_row(label, cv, pv, fmt_fn):
@@ -535,8 +551,9 @@ def build_monthly_report_v2(
     prev_ctr_val = pc / pi * 100 if pi > 0 else 0
     curr_cpc_val = cco // cc if cc > 0 else 0
     prev_cpc_val = pco // pc if pc > 0 else 0
-    curr_roas_val = cr / cco * 100 if cco > 0 else 0
-    prev_roas_val = pr / pco * 100 if pco > 0 else 0
+    curr_roas_val = cr / cco * 100 if (cco > 0 and _revenue_is_real) else 0
+    prev_roas_val = pr / pco * 100 if (pco > 0 and _revenue_is_real) else 0
+    _roas_fmt = (lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "-") if _revenue_is_real else (lambda v: "-")
 
     comparison_html = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr>
@@ -552,9 +569,9 @@ def build_monthly_report_v2(
         {cmp_row("평균CPC(원)", curr_cpc_val, prev_cpc_val, lambda v: f"{_safe_int(v):,}원")}
         {cmp_row("총광고비", cco, pco, _fmt_won)}
         {cmp_row("전환수", ccv, pcv, _fmt_num)}
-        {cmp_row("전환매출", cr, pr, _fmt_won)}
-        {cmp_row("광고수익률", curr_roas_val, prev_roas_val,
-                  lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "-")}
+        {cmp_row("전환매출", cr if _revenue_is_real else 0, pr if _revenue_is_real else 0,
+                  lambda v: _fmt_won(v) if v > 0 else "매출 추적 미설정")}
+        {cmp_row("광고수익률", curr_roas_val, prev_roas_val, _roas_fmt)}
       </tbody>
     </table>"""
 
@@ -580,7 +597,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(wco,wc),'right')}"
             f"{td(_fmt_won(wco),'right')}"
             f"{td(_fmt_num(wcv),'right')}"
-            f"{td(_roas_str(wr,wco),'right')}"
+            f"{td(_roas_v2(wr,wco),'right')}"
             f"</tr>"
         )
 
@@ -605,7 +622,7 @@ def build_monthly_report_v2(
         f"{td(_cpc_str(tco,tc),'right',True)}"
         f"{td(_fmt_won(tco),'right',True)}"
         f"{td(_fmt_num(tcv),'right',True)}"
-        f"{td(_roas_str(tr_,tco),'right',True)}"
+        f"{td(_roas_v2(tr_,tco),'right',True)}"
         f"</tr>"
     )
 
@@ -664,7 +681,7 @@ def build_monthly_report_v2(
                 f"{td(_cpc_str(rco,rc),'right')}"
                 f"{td(_fmt_won(rco),'right')}"
                 f"{td(_fmt_num(rcv),'right')}"
-                f"{td(_roas_str(rr,rco),'right')}"
+                f"{td(_roas_v2(rr,rco),'right')}"
                 f"</tr>"
             )
         d_ti  = sum(r["impressions"] for r in daily_list)
@@ -682,7 +699,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(d_tco,d_tc),'right',True)}"
             f"{td(_fmt_won(d_tco),'right',True)}"
             f"{td(_fmt_num(d_tcv),'right',True)}"
-            f"{td(_roas_str(d_tr,d_tco),'right',True)}"
+            f"{td(_roas_v2(d_tr,d_tco),'right',True)}"
             f"</tr>"
         )
         daily_table = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -779,6 +796,24 @@ def build_monthly_report_v2(
         f'{line}</div>'
         for line in comment_lines
     )
+
+    # ── 일자별 섹션 HTML (실제 데이터 없으면 완전 비노출) ────────────────────────
+    if has_daily:
+        _daily_section_html = (
+            f'<div class="v2-sec">'
+            f'{sec_bar("일자별 광고요약", C_BLUE)}'
+            f'<div class="v2-two"><div>{daily_table}</div><div>'
+            f'{sec_bar("일자별 노출수 · 클릭수", C_BLUE3)}'
+            f'<div class="v2-panel"><div class="v2-chart">'
+            f'<canvas id="dailyChart1"></canvas></div></div>'
+            f'<div style="height:14px;"></div>'
+            f'{sec_bar("일자별 광고비 · 평균CPC", C_BLUE3)}'
+            f'<div class="v2-panel"><div class="v2-chart">'
+            f'<canvas id="dailyChart2"></canvas></div></div>'
+            f'</div></div></div>'
+        )
+    else:
+        _daily_section_html = ""   # 일자별 데이터 없으면 섹션 자체 미표시
 
     # ── 최종 HTML ─────────────────────────────────────────────────────────────
     return f"""<!DOCTYPE html>
@@ -885,19 +920,7 @@ canvas{{width:100%!important;max-width:100%!important;}}
   </div>
 </div>
 
-<!-- ═══ 일자별 ══════════════════════════════════════════════════════════ -->
-<div class="v2-sec">
-  {sec_bar("일자별 광고요약", C_BLUE)}
-  {"<div class='v2-two'><div>" + daily_table + "</div><div>" +
-   sec_bar("일자별 노출수 · 클릭수", C_BLUE3) +
-   "<div class='v2-panel'><div class='v2-chart'><canvas id='dailyChart1'></canvas></div></div>" +
-   "<div style='height:14px;'></div>" +
-   sec_bar("일자별 광고비 · 평균CPC", C_BLUE3) +
-   "<div class='v2-panel'><div class='v2-chart'><canvas id='dailyChart2'></canvas></div></div>" +
-   "</div></div>"
-   if has_daily else
-   daily_table}
-</div>
+{_daily_section_html}
 
 <!-- ═══ 키워드 TOP10 ════════════════════════════════════════════════════ -->
 <div class="v2-sec">
