@@ -224,23 +224,32 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
             rows = rj.get("data", []) if isinstance(rj, dict) else []
 
             for row in rows:
-                imps      = _safe_int(row.get("impCnt"))
-                clks      = _safe_int(row.get("clkCnt"))
-                convs     = _safe_int(row.get("ccnt"))
-                cpconv    = _safe_float(row.get("cpConv"))
-                ror       = _safe_float(row.get("ror",  0))  # Naver 직접 계산 ROAS(%)
-                # salesAmt = Naver 전환매출액 원본값 — 필터 없이 그대로 사용
-                raw_sales = _safe_int(row.get("salesAmt")) if convs > 0 else 0
-                cost      = int(cpconv * convs)              if convs > 0 else 0
+                imps   = _safe_int(row.get("impCnt"))
+                clks   = _safe_int(row.get("clkCnt"))
+                convs  = _safe_int(row.get("ccnt"))
+                sales  = _safe_int(row.get("salesAmt")) if convs > 0 else 0
+                ror    = _safe_float(row.get("ror", 0))   # Naver 직접 계산 ROAS(%)
+                cpconv = _safe_float(row.get("cpConv", 0))
 
-                agg["impressions"]  += imps
-                agg["clicks"]       += clks
-                agg["cost"]         += cost
-                agg["conversions"]  += convs
-                agg["revenue"]      += raw_sales   # 필터 없음, API 원본값 사용
-                agg["_raw_sales"]   += raw_sales
-                agg["_ror_num"]     += ror * cost
-                agg["_ror_denom"]   += cost
+                # ── 광고비(cost) 역산 ────────────────────────────────────────
+                # cpConv = salesAmt/ccnt (전환가치당 비용, CPA 아님)
+                # → cpConv × ccnt = salesAmt (revenue) ≠ 실제 광고비
+                # 실제 광고비 = salesAmt ÷ (ror/100) when ror > 0
+                if ror > 0 and sales > 0:
+                    cost = int(sales * 100 / ror)   # 역산: 11.7M = 17.5M / 1.497
+                elif convs > 0:
+                    cost = int(cpconv * convs)       # fallback (ror=0 = 전환추적 없음)
+                else:
+                    cost = 0
+
+                agg["impressions"] += imps
+                agg["clicks"]      += clks
+                agg["cost"]        += cost
+                agg["conversions"] += convs
+                agg["revenue"]     += sales
+                agg["_raw_sales"]  += sales
+                agg["_ror_num"]    += ror * cost
+                agg["_ror_denom"]  += cost
 
         agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_denom"]
                           if agg["_ror_denom"] > 0 else 0.0)
@@ -633,18 +642,31 @@ def build_monthly_report_v2(
                        (product_stats[p].get("impressions", 0) > 0 or
                         product_stats[p].get("clicks", 0) > 0)]
 
-    # 당월 집계
-    ci  = _safe_int(curr_sm.get("impressions"))
-    cc  = _safe_int(curr_sm.get("clicks"))
-    cco = _safe_int(curr_sm.get("cost"))
-    ccv = _safe_int(curr_sm.get("conversions"))
-    cr  = _safe_int(curr_sm.get("revenue"))   # 필터 후 값 (salesAmt≈cost → 0)
-    # 전월 집계
+    # ── product_stats 로 당월 합계 재계산 (ror 역산 광고비 포함) ──────────────
+    # fetch_report()의 curr_sm["cost"] = cpConv×ccnt = salesAmt (잘못된 값)
+    # _call()에서 ror 역산으로 수정된 product_stats를 우선 사용
+    _ps_imps = sum(s.get("impressions", 0) for s in product_stats.values())
+    _ps_clks = sum(s.get("clicks",      0) for s in product_stats.values())
+    _ps_cost = sum(s.get("cost",        0) for s in product_stats.values())
+    _ps_conv = sum(s.get("conversions", 0) for s in product_stats.values())
+    _ps_rev  = sum(s.get("revenue",     0) for s in product_stats.values())
+
+    # product_stats에 데이터가 있으면 우선 사용 (cost가 ror 역산값)
+    # 없으면 curr_sm fallback (impressions/clicks는 항상 정확)
+    ci  = _ps_imps if _ps_imps > 0 else _safe_int(curr_sm.get("impressions"))
+    cc  = _ps_clks if _ps_clks > 0 else _safe_int(curr_sm.get("clicks"))
+    cco = _ps_cost if _ps_cost > 0 else _safe_int(curr_sm.get("cost"))   # ror 역산 광고비
+    ccv = _ps_conv if _ps_conv > 0 else _safe_int(curr_sm.get("conversions"))
+    cr  = _ps_rev  if _ps_rev  > 0 else _safe_int(curr_sm.get("revenue"))
+
+    # 전월 집계 (product_prev_stats 우선)
+    _pp_cost = sum(s.get("cost",    0) for s in product_prev_stats.values())
+    _pp_rev  = sum(s.get("revenue", 0) for s in product_prev_stats.values())
     pi  = _safe_int(prev_sm.get("impressions"))
     pc  = _safe_int(prev_sm.get("clicks"))
-    pco = _safe_int(prev_sm.get("cost"))
+    pco = _pp_cost if _pp_cost > 0 else _safe_int(prev_sm.get("cost"))
     pcv = _safe_int(prev_sm.get("conversions"))
-    pr  = _safe_int(prev_sm.get("revenue"))   # 필터 후 값
+    pr  = _pp_rev  if _pp_rev  > 0 else _safe_int(prev_sm.get("revenue"))
 
     def _roas_v2(rev, cost):
         """
