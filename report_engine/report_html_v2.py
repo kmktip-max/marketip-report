@@ -520,11 +520,6 @@ def build_monthly_report_v2(
     # 상품별 통계
     product_stats      = v2_extra.get("product_stats",      {})
     product_prev_stats = v2_extra.get("product_prev_stats", {})
-    # 데이터가 있는 상품만, PRODUCT_ORDER 순서로 정렬
-    active_products = [p for p in PRODUCT_ORDER
-                       if p in product_stats and
-                       (product_stats[p].get("impressions", 0) > 0 or
-                        product_stats[p].get("clicks", 0) > 0)]
 
     # 일자별/주차별 — 임의 분배 절대 금지, 실제 API 데이터만 사용
     daily_map  = v2_extra.get("daily", {})
@@ -555,18 +550,46 @@ def build_monthly_report_v2(
     clk_top10  = sorted(valid_kws, key=lambda k: k.get("clicks", 0),      reverse=True)[:10]
     cost_top10 = sorted(valid_kws, key=lambda k: k.get("cost", 0),        reverse=True)[:10]
 
+    # salesAmt(전환매출액) 필터: Naver API가 전환가치 미설정 시
+    # salesAmt = cpConv×ccnt = totalCost 를 반환 → revenue ≈ cost → ROAS = 100% 오류
+    # 비율 차 2% 이내이면 "전환가치 미설정"으로 판단, revenue = 0 처리
+    _ROAS_FILTER_RATIO = 0.02
+
+    def _filter_sm(sm: dict) -> dict:
+        """fetch_report() summary의 salesAmt≈cost 케이스를 revenue=0으로 정규화"""
+        rv = _safe_int(sm.get("revenue"))
+        co = _safe_int(sm.get("cost"))
+        if rv > 0 and co > 0 and abs(rv - co) / co < _ROAS_FILTER_RATIO:
+            out = dict(sm)
+            out["revenue"] = 0
+            return out
+        return sm
+
+    curr_sm = _filter_sm(curr_sm)
+    prev_sm = _filter_sm(prev_sm)
+
+    # 상품별 통계도 동일 필터 적용
+    product_stats      = {p: _filter_sm(s) for p, s in product_stats.items()}
+    product_prev_stats = {p: _filter_sm(s) for p, s in product_prev_stats.items()}
+
+    # 데이터 있는 상품 목록 (PRODUCT_ORDER 순)
+    active_products = [p for p in PRODUCT_ORDER
+                       if p in product_stats and
+                       (product_stats[p].get("impressions", 0) > 0 or
+                        product_stats[p].get("clicks", 0) > 0)]
+
     # 당월 집계
     ci  = _safe_int(curr_sm.get("impressions"))
     cc  = _safe_int(curr_sm.get("clicks"))
     cco = _safe_int(curr_sm.get("cost"))
     ccv = _safe_int(curr_sm.get("conversions"))
-    cr  = _safe_int(curr_sm.get("revenue"))
+    cr  = _safe_int(curr_sm.get("revenue"))   # 필터 후 값 (salesAmt≈cost → 0)
     # 전월 집계
     pi  = _safe_int(prev_sm.get("impressions"))
     pc  = _safe_int(prev_sm.get("clicks"))
     pco = _safe_int(prev_sm.get("cost"))
     pcv = _safe_int(prev_sm.get("conversions"))
-    pr  = _safe_int(prev_sm.get("revenue"))
+    pr  = _safe_int(prev_sm.get("revenue"))   # 필터 후 값
 
     def _roas_v2(rev, cost):
         """
