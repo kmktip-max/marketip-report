@@ -602,7 +602,7 @@ def build_monthly_report_v2(
         if c == 0:
             return "-"
         if r == 0:
-            return "매출 미추적"
+            return "-"
         val = r / c * 100
         return f"{val:.1f}%" if val >= 0 else "검증필요"
 
@@ -660,7 +660,7 @@ def build_monthly_report_v2(
         prod_cell = ("전체 합산" if is_total else product_name)
         bg_s = f"background:{C_HBG};" if is_total else ""
         attrs = f' class="{row_class}"' if row_class else ""
-        rev_cell = _fmt_won(rv) if rv > 0 else "미추적"
+        rev_cell = _fmt_won(rv) if rv > 0 else "-"
         return (
             f"<tr{attrs} style='{bg_s}'>"
             f"{td(name_cell,'center',is_total)}"
@@ -707,11 +707,11 @@ def build_monthly_report_v2(
         return (
             f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
             f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
-            f'<div style="font-size:10px;color:#888;padding:4px 8px;">'
-            f'※ Naver 검색광고 계정 전체 (파워링크·쇼핑검색·브랜드검색 등)'
-            f'&nbsp;|&nbsp; 전환매출액은 Naver 전환추적 설정 시에만 표시'
-            f'&nbsp;|&nbsp; 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 나타나지 않을 수 있음'
-            f'&nbsp;|&nbsp; GFA/성과형DA: 별도 API 미연동'
+            f'<div style="font-size:10px;color:#666;padding:6px 8px;line-height:1.8;">'
+            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동<br>'
+            f'※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>'
+            f'※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.<br>'
+            f'※ 브랜드검색은 고정비 계약 상품으로 CPC 비용이 API에 표시되지 않을 수 있습니다.'
             f'</div>'
         )
 
@@ -730,7 +730,7 @@ def build_monthly_report_v2(
     prev_cpc_val = pco // pc if pc > 0 else 0
     curr_roas_val = cr / cco * 100 if (cco > 0 and cr > 0) else 0
     prev_roas_val = pr / pco * 100 if (pco > 0 and pr > 0) else 0
-    _roas_fmt     = lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "매출 미추적"
+    _roas_fmt     = lambda v: f"{_safe_float(v):.1f}%" if _safe_float(v) > 0 else "-"
 
     comparison_html = f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr>
@@ -746,7 +746,7 @@ def build_monthly_report_v2(
         {cmp_row("평균CPC(원)", curr_cpc_val, prev_cpc_val, lambda v: f"{_safe_int(v):,}원")}
         {cmp_row("총광고비", cco, pco, _fmt_won)}
         {cmp_row("전환수", ccv, pcv, _fmt_num)}
-        {cmp_row("전환매출액", cr, pr, lambda v: _fmt_won(v) if v > 0 else "매출 미추적")}
+        {cmp_row("전환매출액", cr, pr, lambda v: _fmt_won(v) if v > 0 else "-")}
         {cmp_row("광고수익률", curr_roas_val, prev_roas_val, _roas_fmt)}
       </tbody>
     </table>"""
@@ -773,7 +773,7 @@ def build_monthly_report_v2(
             f"{td(_cpc_str(wco,wc),'right')}"
             f"{td(_fmt_won(wco),'right')}"
             f"{td(_fmt_num(wcv),'right')}"
-            f"{td(_fmt_won(wr) if wr > 0 else '미추적','right')}"
+            f"{td(_fmt_won(wr) if wr > 0 else '-','right')}"
             f"{td(_roas_v2(wr,wco),'right')}"
             f"</tr>"
         )
@@ -799,7 +799,7 @@ def build_monthly_report_v2(
         f"{td(_cpc_str(tco,tc),'right',True)}"
         f"{td(_fmt_won(tco),'right',True)}"
         f"{td(_fmt_num(tcv),'right',True)}"
-        f"{td(_fmt_won(tr_) if tr_ > 0 else '미추적','right',True)}"
+        f"{td(_fmt_won(tr_) if tr_ > 0 else '-','right',True)}"
         f"{td(_roas_v2(tr_,tco),'right',True)}"
         f"</tr>"
     )
@@ -827,7 +827,11 @@ def build_monthly_report_v2(
         {weekly_total}
         {weekly_rows if weekly_rows else no_data_row}
       </tbody>
-    </table>"""
+    </table>
+    <div style="font-size:10px;color:#666;padding:4px 8px;line-height:1.8;">
+      ※ 전환매출액은 네이버 전환가치 설정 시에만 표시됩니다.<br>
+      ※ 현재 계정은 전환매출 추적값이 없어 광고수익률은 표시하지 않습니다.
+    </div>"""
 
     # ── 일자별 테이블 (실제 API 데이터 있을 때만 행 표시) ─────────────────────
     _NO_DAILY_MSG = (
