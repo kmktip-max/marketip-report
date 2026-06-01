@@ -84,6 +84,54 @@ def _change_html(curr, prev):
 # ──────────────────────────────────────────────────────────────────────────────
 # V2 추가 데이터 수집 (일자별 + 전월)
 # ──────────────────────────────────────────────────────────────────────────────
+# 네이버 광고 상품 분류
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Naver Search Ad API campaignTp 필드값 → 상품명 매핑
+# GFA/성과형DA 는 별도 API (api.naver.com/admanager) → 미연동
+NAVER_CAMPAIGN_TYPE_LABELS = {
+    "WEB_SITE":          "검색광고",
+    "SHOPPING":          "쇼핑광고",
+    "BRAND":             "브랜드검색",
+    "BRAND_SEARCH":      "브랜드검색",
+    "POWER_CONTENTS":    "파워콘텐츠",
+    "POWERCONTENTS_NCC": "파워콘텐츠",
+    "MOBILE_APP":        "모바일앱",
+    "AD_BOOST":          "애드부스트",
+    "AD_BOOST_CONTENTS": "애드부스트",
+}
+
+# 보고서 표시 순서
+PRODUCT_ORDER = ["검색광고", "쇼핑광고", "브랜드검색", "파워콘텐츠", "모바일앱", "애드부스트", "기타"]
+
+
+def classify_naver_product(campaign_tp: str, campaign_name: str = "") -> str:
+    """
+    Naver 캠페인을 광고 상품별로 분류
+    1순위: campaignTp 필드 (API 공식 타입)
+    2순위: 캠페인 이름 키워드 매핑
+    """
+    tp   = (campaign_tp   or "").upper().replace("-", "_").replace(" ", "_")
+    name = (campaign_name or "").upper()
+
+    for key, label in NAVER_CAMPAIGN_TYPE_LABELS.items():
+        if key in tp:
+            return label
+
+    # 이름 기반 보조 분류
+    if any(k in name for k in ["쇼핑", "SHOPPING"]):
+        return "쇼핑광고"
+    if any(k in name for k in ["브랜드", "BRAND"]):
+        return "브랜드검색"
+    if any(k in name for k in ["애드부스트", "ADBOOST", "AD BOOST", "AD_BOOST"]):
+        return "애드부스트"
+    if any(k in name for k in ["파워콘텐츠", "POWER CONTENTS", "POWERCONTENTS"]):
+        return "파워콘텐츠"
+
+    return "검색광고"  # 기본값: 대부분 파워링크/검색광고
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 
 def fetch_v2_extra(api, since: str, until: str) -> dict:
     """
@@ -126,9 +174,30 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         result["debug"].append("캠페인 없음")
         return result
 
+    # ── 캠페인 → 상품 분류 ───────────────────────────────────────────────────
+    product_camp_map = {}   # {product_name: [camp_id, ...]}
+    for camp in camps:
+        product = classify_naver_product(
+            camp.get("campaignTp", ""),
+            camp.get("name", "")
+        )
+        product_camp_map.setdefault(product, []).append(camp["nccCampaignId"])
+
+    result["product_camp_counts"] = {p: len(ids) for p, ids in product_camp_map.items()}
+    result["debug"].append("상품분류: " + ", ".join(
+        f"{p}({len(ids)}개)" for p, ids in product_camp_map.items()
+    ))
+
     # ── 직접 순차 통계 호출 헬퍼 ─────────────────────────────────────────────
-    def _call(start, end):
-        """ThreadPoolExecutor 없이 순차 HTTP 호출 — 집계 dict 반환"""
+    def _call(start, end, ids=None):
+        """ThreadPoolExecutor 없이 순차 HTTP 호출 — 집계 dict 반환
+        ids: None → 전체 캠페인, list → 지정 캠페인만
+        """
+        _ids = ids if ids is not None else camp_ids
+        if not _ids:
+            return {"impressions": 0, "clicks": 0, "cost": 0,
+                    "conversions": 0, "revenue": 0}
+
         _s = start.isoformat() if hasattr(start, "isoformat") else str(start)
         _e = end.isoformat()   if hasattr(end,   "isoformat") else str(end)
         _tr = json.dumps({"since": _s, "until": _e})
@@ -136,8 +205,8 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         agg = {"impressions": 0, "clicks": 0, "cost": 0,
                "conversions": 0, "revenue": 0}
 
-        for i in range(0, len(camp_ids), 100):
-            batch = camp_ids[i:i + 100]
+        for i in range(0, len(_ids), 100):
+            batch = _ids[i:i + 100]
             path  = "/stats"
             h     = _headers("GET", path, api.api_key, api.secret_key, api.customer_id)
             resp  = requests.get(
@@ -193,6 +262,34 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         )
     except Exception as e:
         result["debug"].append(f"전월 실패: {e}")
+
+    # ── 상품별 당월/전월 통계 ──────────────────────────────────────────────────
+    product_stats      = {}   # 당월 상품별
+    product_prev_stats = {}   # 전월 상품별
+    for product, p_ids in product_camp_map.items():
+        # 당월
+        try:
+            agg = _call(since_dt, until_dt, ids=p_ids)
+            product_stats[product] = agg
+            result["debug"].append(
+                f"[상품/{product}] 노출{agg['impressions']:,} 클릭{agg['clicks']:,} "
+                f"비용{agg['cost']:,} 전환{agg['conversions']:,} 매출{agg['revenue']:,}"
+            )
+        except Exception as e:
+            product_stats[product] = {
+                "impressions": 0, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 0
+            }
+            result["debug"].append(f"[상품/{product}] 실패: {e}")
+        # 전월
+        try:
+            product_prev_stats[product] = _call(prev_since, prev_until, ids=p_ids)
+        except Exception:
+            product_prev_stats[product] = {
+                "impressions": 0, "clicks": 0, "cost": 0, "conversions": 0, "revenue": 0
+            }
+
+    result["product_stats"]      = product_stats
+    result["product_prev_stats"] = product_prev_stats
 
     # ── 일자별 통계 (timeUnit=DAY 시도) ──────────────────────────────────────
     daily_map = {}
@@ -406,6 +503,15 @@ def build_monthly_report_v2(
     prev_since = v2_extra.get("prev_since", "")
     prev_until = v2_extra.get("prev_until", "")
 
+    # 상품별 통계
+    product_stats      = v2_extra.get("product_stats",      {})
+    product_prev_stats = v2_extra.get("product_prev_stats", {})
+    # 데이터가 있는 상품만, PRODUCT_ORDER 순서로 정렬
+    active_products = [p for p in PRODUCT_ORDER
+                       if p in product_stats and
+                       (product_stats[p].get("impressions", 0) > 0 or
+                        product_stats[p].get("clicks", 0) > 0)]
+
     # 일자별/주차별 — 임의 분배 절대 금지, 실제 API 데이터만 사용
     daily_map  = v2_extra.get("daily", {})
     weekly_raw = v2_extra.get("weekly", {})
@@ -502,15 +608,35 @@ def build_monthly_report_v2(
             f'{txt}</td>'
         )
 
-    # ── 매체별 요약 테이블 ─────────────────────────────────────────────────────
-    def media_table(sm):
+    # ── 매체별 요약 테이블 (상품별 다중 행) ───────────────────────────────────
+    def _media_row(product_name, sm, is_total=False, row_class=""):
         ic = _safe_int(sm.get("impressions"))
         ck = _safe_int(sm.get("clicks"))
         co = _safe_int(sm.get("cost"))
         cv = _safe_int(sm.get("conversions"))
         rv = _safe_int(sm.get("revenue"))
-        return f"""<table style="width:100%;border-collapse:collapse;font-size:11px;">
-          <thead><tr>
+        name_cell = ("TOTAL" if is_total else
+                     f'<span style="color:{C_BLUE};font-weight:700;">NAVER</span>')
+        prod_cell = ("전체 합산" if is_total else product_name)
+        bg_s = f"background:{C_HBG};" if is_total else ""
+        attrs = f' class="{row_class}"' if row_class else ""
+        return (
+            f"<tr{attrs} style='{bg_s}'>"
+            f"{td(name_cell,'center',is_total)}"
+            f"{td(prod_cell,'center',is_total)}"
+            f"{td(_fmt_num(ic),'right',is_total)}"
+            f"{td(_fmt_num(ck),'right',is_total)}"
+            f"{td(_ctr(ck,ic),'right',is_total)}"
+            f"{td(_cpc_str(co,ck),'right',is_total)}"
+            f"{td(_fmt_won(co),'right',is_total)}"
+            f"{td(_fmt_num(cv),'right',is_total)}"
+            f"{td(_roas_v2(rv,co),'right',is_total)}"
+            f"</tr>"
+        )
+
+    def media_table(period_product_stats, period_total_sm):
+        """상품별 행 + TOTAL 행 테이블 생성"""
+        _thead = f"""<thead><tr>
             {th("매체","center","50px")}
             {th("상품","center","80px")}
             {th("노출수","right")}
@@ -520,23 +646,29 @@ def build_monthly_report_v2(
             {th("총광고비","right")}
             {th("전환수","right")}
             {th("광고수익률","right")}
-          </tr></thead>
-          <tbody><tr>
-            {td("NAVER","center",True,C_BLUE)}
-            {td("검색광고 통합","center")}
-            {td(_fmt_num(ic),"right")}
-            {td(_fmt_num(ck),"right")}
-            {td(_ctr(ck,ic),"right")}
-            {td(_cpc_str(co,ck),"right")}
-            {td(_fmt_won(co),"right",True)}
-            {td(_fmt_num(cv),"right")}
-            {td(_roas_v2(rv,co),"right")}
-          </tr></tbody>
-        </table>
-        <div style="font-size:10px;color:#888;padding:4px 8px;">
-          ※ 포함: 파워링크·쇼핑검색·브랜드검색 등 Naver 검색광고 계정 전체
-          &nbsp;|&nbsp; 미포함: GFA/성과형DA(별도 API)
-        </div>"""
+          </tr></thead>"""
+
+        product_rows = "".join(
+            _media_row(p, period_product_stats.get(p, {}), row_class=f"prow prow-{p}")
+            for p in PRODUCT_ORDER
+            if p in period_product_stats and
+               (period_product_stats[p].get("impressions", 0) > 0 or
+                period_product_stats[p].get("clicks", 0) > 0)
+        )
+        if not product_rows:
+            # per-product 데이터 없으면 통합 한 줄
+            product_rows = _media_row("검색광고 통합", period_total_sm, row_class="prow prow-all")
+
+        total_row = _media_row("", period_total_sm, is_total=True, row_class="prow prow-all")
+
+        return (
+            f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
+            f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
+            f'<div style="font-size:10px;color:#888;padding:4px 8px;">'
+            f'※ Naver 검색광고 계정 전체 포함 (파워링크·쇼핑검색·브랜드검색 등)'
+            f'&nbsp;|&nbsp; GFA/성과형DA는 별도 API — 미연동'
+            f'</div>'
+        )
 
     # ── 전월대비 비교 테이블 ───────────────────────────────────────────────────
     def cmp_row(label, cv, pv, fmt_fn):
@@ -797,6 +929,33 @@ def build_monthly_report_v2(
         for line in comment_lines
     )
 
+    # ── 상품 필터 탭 HTML + JS 데이터 ─────────────────────────────────────────
+    _tab_buttons = ""
+    _tab_buttons += (
+        '<button class="v2-ptab v2-ptab-active" data-p="all" '
+        'onclick="v2FilterProduct(this)">전체</button>'
+    )
+    for p in PRODUCT_ORDER:
+        if p in product_stats and (product_stats[p].get("impressions", 0) > 0 or
+                                   product_stats[p].get("clicks", 0) > 0):
+            _tab_buttons += (
+                f'<button class="v2-ptab" data-p="{p}" '
+                f'onclick="v2FilterProduct(this)">{p}</button>'
+            )
+    _tab_buttons += (
+        '<span style="font-size:10px;color:#999;margin-left:8px;">'
+        'GFA/성과형DA: 별도 API 미연동</span>'
+    )
+
+    _filter_section_html = (
+        f'<div style="background:#f0f4f8;padding:10px 16px;border-radius:6px;'
+        f'margin-bottom:16px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">'
+        f'<span style="font-size:11px;font-weight:700;color:#0D47A1;margin-right:4px;">'
+        f'광고 상품 선택:</span>'
+        f'{_tab_buttons}'
+        f'</div>'
+    )
+
     # ── 일자별 섹션 HTML (실제 데이터 없으면 완전 비노출) ────────────────────────
     if has_daily:
         _daily_section_html = (
@@ -843,6 +1002,12 @@ html,body{{
 canvas{{width:100%!important;max-width:100%!important;}}
 .v2-footer{{text-align:center;padding:14px;font-size:11px;color:#aaa;
   border-top:1px solid #eee;width:100%;}}
+.v2-ptab{{padding:5px 14px;border:1px solid {C_BLUE};border-radius:20px;
+  background:#fff;color:{C_BLUE};font-size:11px;font-weight:600;cursor:pointer;
+  transition:all .15s;}}
+.v2-ptab:hover{{background:{C_BLUE};color:#fff;}}
+.v2-ptab-active{{background:{C_BLUE}!important;color:#fff!important;}}
+.prow-hidden{{display:none;}}
 @media print{{html,body{{background:#fff;}}.v2-wrap{{box-shadow:none;}}}}
 </style>
 </head>
@@ -875,6 +1040,9 @@ canvas{{width:100%!important;max-width:100%!important;}}
 
 <div class="v2-body">
 
+<!-- ═══ 상품 필터 탭 ════════════════════════════════════════════════════ -->
+{_filter_section_html}
+
 <!-- ═══ COMMENT ════════════════════════════════════════════════════════ -->
 <div class="v2-sec">
   {sec_bar("COMMENT")}
@@ -889,11 +1057,11 @@ canvas{{width:100%!important;max-width:100%!important;}}
   <div class="v2-two">
     <div>
       {sec_bar(f"매체별 전월 광고요약 ({prev_since} ~ {prev_until})", C_SLATE)}
-      <div class="v2-panel" style="padding:0;">{media_table(prev_sm)}</div>
+      <div class="v2-panel" style="padding:0;">{media_table(product_prev_stats, prev_sm)}</div>
     </div>
     <div>
       {sec_bar(f"매체별 당월 누적 광고요약 ({since} ~ {until})", C_BLUE)}
-      <div class="v2-panel" style="padding:0;">{media_table(curr_sm)}</div>
+      <div class="v2-panel" style="padding:0;">{media_table(product_stats, curr_sm)}</div>
     </div>
   </div>
 </div>
@@ -1100,6 +1268,34 @@ function makeHBar(canvasId, labels, vals, barColor) {{
 makeHBar('kwImpChart',  {imp_kw_labels},  {imp_kw_vals},  'rgba(13,71,161,0.7)');
 makeHBar('kwClkChart',  {clk_kw_labels},  {clk_kw_vals},  'rgba(33,150,243,0.7)');
 makeHBar('kwCostChart', {cost_kw_labels}, {cost_kw_vals}, 'rgba(40,180,99,0.7)');
+
+// ── 상품 필터 탭 ──────────────────────────────────────────────────────────
+function v2FilterProduct(btn) {{
+  // 탭 버튼 활성화
+  document.querySelectorAll('.v2-ptab').forEach(function(b) {{
+    b.classList.remove('v2-ptab-active');
+  }});
+  btn.classList.add('v2-ptab-active');
+
+  var selected = btn.getAttribute('data-p');
+
+  // 매체별 테이블 행 필터 (.prow 클래스)
+  document.querySelectorAll('.prow').forEach(function(row) {{
+    var cls = row.className || '';
+    if (selected === 'all') {{
+      row.classList.remove('prow-hidden');
+    }} else {{
+      // prow-all (TOTAL) 은 항상 표시, 나머지는 선택 상품만
+      if (cls.indexOf('prow-all') !== -1) {{
+        row.classList.remove('prow-hidden');
+      }} else if (cls.indexOf('prow-' + selected) !== -1) {{
+        row.classList.remove('prow-hidden');
+      }} else {{
+        row.classList.add('prow-hidden');
+      }}
+    }}
+  }});
+}}
 </script>
 </body>
 </html>"""
