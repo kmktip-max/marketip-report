@@ -202,12 +202,18 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         _e = end.isoformat()   if hasattr(end,   "isoformat") else str(end)
         _tr = json.dumps({"since": _s, "until": _e})
 
+        # ── 필드 정의 ─────────────────────────────────────────────────────────
+        # salesAmt = 소진액(광고비/총비용) — 전환매출액 아님
+        # cpConv   = 전환당비용(CPA) = salesAmt / ccnt
+        # ccnt     = 전환수
+        # ror      = 네이버 자체 계산 ROAS(%) — 전체 전환 포함 여부 불명확
+        # 전환매출액(46,179,174) = API /stats 에서 직접 제공하지 않음
+        # ─────────────────────────────────────────────────────────────────────
         agg = {
-            "impressions": 0, "clicks": 0, "cost": 0,
-            "conversions": 0, "revenue": 0,
-            "_raw_sales": 0,          # salesAmt 원본 합계
-            "_ror_num":   0.0,        # ror × cost 가중합 (가중평균 ROAS 계산용)
-            "_ror_denom": 0,          # cost 합계 (분모)
+            "impressions": 0, "clicks": 0,
+            "cost": 0,        # salesAmt 합산 = 소진액
+            "conversions": 0, # ccnt 합산
+            "cpa_sum": 0.0,   # cpConv 가중합 (CPA 계산용, cpConv*ccnt = cost 와 동일)
         }
 
         for i in range(0, len(_ids), 100):
@@ -228,22 +234,15 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
                 clks   = _safe_int(row.get("clkCnt"))
                 convs  = _safe_int(row.get("ccnt"))
                 cpconv = _safe_float(row.get("cpConv", 0))
-                sales  = _safe_int(row.get("salesAmt"))  # ccnt=0 캠페인도 포함 (브랜드검색 등)
-                cost   = int(cpconv * convs)              if convs > 0 else 0
-                ror    = _safe_float(row.get("ror", 0))   # Naver 직접 계산 ROAS(%)
+                # salesAmt = 소진액(광고비). 전환매출액 아님
+                spend  = _safe_int(row.get("salesAmt"))
 
                 agg["impressions"] += imps
                 agg["clicks"]      += clks
-                agg["cost"]        += cost
+                agg["cost"]        += spend     # 소진액 합산
                 agg["conversions"] += convs
-                agg["revenue"]     += sales
-                agg["_raw_sales"]  += sales
-                # ror은 salesAmt-가중 평균으로 집계 (역산 없음)
-                agg["_ror_num"]    += ror * (sales if sales > 0 else 1)
-                agg["_ror_denom"]  += (sales if sales > 0 else 1)
+                agg["cpa_sum"]     += cpconv * convs  # = spend per campaign
 
-        agg["_ror_avg"] = (agg["_ror_num"] / agg["_ror_denom"]
-                          if agg["_ror_denom"] > 0 else 0.0)
         return agg
 
     # ── 주차별 통계 (5회 개별 호출) ──────────────────────────────────────────
@@ -691,11 +690,11 @@ def build_monthly_report_v2(
                        (product_stats[p].get("impressions", 0) > 0 or
                         product_stats[p].get("clicks", 0) > 0)]
 
-    # ── product_stats 합계로 당월 집계 (ccnt=0 캠페인 salesAmt 포함) ─────────
-    # curr_sm["revenue"] = fetch_report() 의 _parse_row() 에서
-    #   "if convs > 0" 조건 → ccnt=0 캠페인 salesAmt 누락
-    # product_stats는 _call() 수정 후 모든 캠페인 salesAmt 포함
-    _ps_rev  = sum(s.get("revenue",     0) for s in product_stats.values())
+    # ── 당월/전월 집계 ─────────────────────────────────────────────────────────
+    # salesAmt = 소진액(광고비), 전환매출액 아님
+    # product_stats.cost = sum(salesAmt) = 총 소진액
+    # product_stats.conversions = sum(ccnt) = 총 전환수
+    # 전환매출액(총 전환매출액)은 Naver /stats API에서 제공하지 않으므로 표시 불가
     _ps_cost = sum(s.get("cost",        0) for s in product_stats.values())
     _ps_conv = sum(s.get("conversions", 0) for s in product_stats.values())
     _ps_imps = sum(s.get("impressions", 0) for s in product_stats.values())
@@ -705,10 +704,7 @@ def build_monthly_report_v2(
     cc  = _ps_clks if _ps_clks > 0 else _safe_int(curr_sm.get("clicks"))
     cco = _ps_cost if _ps_cost > 0 else _safe_int(curr_sm.get("cost"))
     ccv = _ps_conv if _ps_conv > 0 else _safe_int(curr_sm.get("conversions"))
-    cr  = _ps_rev  if _ps_rev  > 0 else _safe_int(curr_sm.get("revenue"))
 
-    # 전월 집계
-    _pp_rev  = sum(s.get("revenue",     0) for s in product_prev_stats.values())
     _pp_cost = sum(s.get("cost",        0) for s in product_prev_stats.values())
     _pp_conv = sum(s.get("conversions", 0) for s in product_prev_stats.values())
     _pp_imps = sum(s.get("impressions", 0) for s in product_prev_stats.values())
@@ -718,11 +714,6 @@ def build_monthly_report_v2(
     pc  = _pp_clks if _pp_clks > 0 else _safe_int(prev_sm.get("clicks"))
     pco = _pp_cost if _pp_cost > 0 else _safe_int(prev_sm.get("cost"))
     pcv = _pp_conv if _pp_conv > 0 else _safe_int(prev_sm.get("conversions"))
-    pr  = _pp_rev  if _pp_rev  > 0 else _safe_int(prev_sm.get("revenue"))
-
-    # ror은 직접 계산으로 대체 (API ror 가중평균은 일부 캠페인 ror=0 문제로 부정확)
-    _total_ror_pct = 0.0   # _roas_v2가 rev/cost 로 직접 계산
-    _prev_ror_pct  = 0.0
 
     def _roas_v2(rev, cost, ror_pct=0.0):
         """
@@ -831,10 +822,10 @@ def build_monthly_report_v2(
         if not product_rows:
             product_rows = _media_row("검색광고 통합", period_total_sm,
                                       row_class="prow prow-all",
-                                      ror_pct=_total_ror_pct)
+                                      ror_pct=0.0)
 
         total_row = _media_row("", period_total_sm, is_total=True,
-                               row_class="prow prow-all", ror_pct=_total_ror_pct)
+                               row_class="prow prow-all", ror_pct=0.0)
 
         _roas_note = (
             ""
@@ -1212,27 +1203,23 @@ def build_monthly_report_v2(
     import datetime as _dt
     _ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # curr_sm raw (fetch_report() 원본)
-    _raw_sm       = data.get("summary", {})
-    _raw_sm_rev   = _safe_int(_raw_sm.get("revenue"))
-    _raw_sm_cost  = _safe_int(_raw_sm.get("cost"))
-
-    # product_stats raw
-    _ps_rev  = sum(_safe_int(s.get("revenue",    0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
-    _ps_cost = sum(_safe_int(s.get("cost",        0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
-    _ps_raw  = sum(_safe_int(s.get("_raw_sales",  0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+    # 진단 배너
+    _raw_sm      = data.get("summary", {})
+    _raw_sm_cost = _safe_int(_raw_sm.get("cost"))
+    _ps_cost_b   = sum(_safe_int(s.get("cost", 0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+    _ps_conv_b   = sum(_safe_int(s.get("conversions", 0)) for s in (v2_extra.get("product_stats", {}) or {}).values())
+    _cpa_calc    = _ps_cost_b // _ps_conv_b if _ps_conv_b > 0 else 0
 
     _diag_banner = (
         f'<div style="background:#fff3cd;border:2px solid #ffc107;padding:10px 16px;'
         f'font-family:monospace;font-size:11px;margin-bottom:8px;border-radius:4px;">'
-        f'<b>🔍 V2 ROAS FIX ACTIVE [{_ts}]</b><br>'
-        f'curr_sm.revenue (fetch_report) = {_raw_sm_rev:,}<br>'
-        f'curr_sm.cost   (fetch_report) = {_raw_sm_cost:,}<br>'
-        f'product_stats._raw_sales 합 = {_ps_raw:,}<br>'
-        f'product_stats.revenue 합 (필터후) = {_ps_rev:,}<br>'
-        f'product_stats.cost 합 = {_ps_cost:,}<br>'
-        f'v2_extra.revenue_diagnosis = {v2_extra.get("revenue_diagnosis","없음")}<br>'
-        f'cr (HTML에 사용) = {cr:,} | cco = {cco:,}'
+        f'<b>🔍 V2 FIX [{_ts}]</b><br>'
+        f'salesAmt(소진액) = {_raw_sm_cost:,}원 (광고비, 전환매출액 아님)<br>'
+        f'product_stats.cost(소진액합) = {_ps_cost_b:,}원<br>'
+        f'product_stats.conversions = {_ps_conv_b:,}<br>'
+        f'CPA(전환당비용) = {_cpa_calc:,}원<br>'
+        f'전환매출액/ROAS = API /stats 미지원 — ROAS 필드 탐색 중<br>'
+        f'field_debug: {v2_extra.get("revenue_diagnosis","없음")}'
         f'</div>'
     )
 
