@@ -94,7 +94,8 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
     """
     from report_engine.naver_api import _headers, BASE_URL
 
-    since_dt = date.fromisoformat(since) if isinstance(since, str) else since
+    since_dt  = date.fromisoformat(since) if isinstance(since, str) else since
+    until_dt  = date.fromisoformat(until) if isinstance(until, str) else until
     prev_until = since_dt - timedelta(days=1)
     prev_since = prev_until.replace(day=1)
 
@@ -164,6 +165,23 @@ def fetch_v2_extra(api, since: str, until: str) -> dict:
         daily_map = {}
     result["daily"] = daily_map
 
+    # ── 주차별 통계 (주차별 date range로 개별 API 호출) ───────────────────────
+    weekly = {}
+    try:
+        for week_num, ws, we in _get_week_ranges(since_dt, until_dt):
+            wstats = api.get_stats(camp_ids, ws, we)
+            agg = {"impressions": 0, "clicks": 0, "cost": 0,
+                   "conversions": 0, "revenue": 0}
+            for s in wstats:
+                row = api._parse_row(s)
+                for k in agg:
+                    agg[k] += row[k]
+            agg["days"] = (we - ws).days + 1
+            weekly[week_num] = agg
+    except Exception:
+        weekly = {}
+    result["weekly"] = weekly
+
     # ── 전월 통계 ─────────────────────────────────────────────────────────────
     try:
         prev_stats = api.get_stats(camp_ids, prev_since, prev_until)
@@ -205,6 +223,29 @@ def _build_daily_list(daily_map: dict, since_str: str, until_str: str) -> list:
         })
         d += timedelta(days=1)
     return rows
+
+
+def _get_week_ranges(since_dt, until_dt):
+    """월의 주차별 날짜 범위 반환 (1주=1~7일, 2주=8~14일, ...)"""
+    ranges = []
+    for w in range(1, 6):
+        start_day = (w - 1) * 7 + 1
+        end_day   = w * 7
+        try:
+            ws = date(since_dt.year, since_dt.month, start_day)
+        except ValueError:
+            break
+        if start_day > until_dt.day:
+            break
+        try:
+            we = date(since_dt.year, since_dt.month, min(end_day, until_dt.day))
+        except ValueError:
+            we = until_dt
+        ws = max(ws, since_dt)
+        we = min(we, until_dt)
+        if ws <= we:
+            ranges.append((w, ws, we))
+    return ranges
 
 
 def _build_weekly(daily_list: list) -> list:
@@ -324,9 +365,37 @@ def build_monthly_report_v2(
 
     # 일자별/주차별
     daily_map  = v2_extra.get("daily", {})
+    weekly_raw = v2_extra.get("weekly", {})
+
+    # 일자별 API 데이터 없으면 주차 평균으로 근사치 생성 (차트용)
+    if not daily_map and weekly_raw and since and until:
+        _sd = date.fromisoformat(since)
+        _ud = date.fromisoformat(until)
+        for _wn, _ws, _we in _get_week_ranges(_sd, _ud):
+            _wd = weekly_raw.get(_wn, {})
+            _nd = (_we - _ws).days + 1
+            _d  = _ws
+            while _d <= _we:
+                daily_map[_d.isoformat()] = {
+                    k: _wd.get(k, 0) // _nd if _nd > 0 else 0
+                    for k in ["impressions", "clicks", "cost", "conversions", "revenue"]
+                }
+                _d += timedelta(days=1)
+
     has_daily  = bool(daily_map)
     daily_list = _build_daily_list(daily_map, since, until)
-    weekly_list = _build_weekly(daily_list)
+
+    # 주차별: API 직접 호출 결과 우선 사용
+    if weekly_raw:
+        weekly_list = [
+            {"week": w, **weekly_raw.get(w, {
+                "impressions": 0, "clicks": 0, "cost": 0,
+                "conversions": 0, "revenue": 0, "days": 0,
+            })}
+            for w in range(1, 6)
+        ]
+    else:
+        weekly_list = _build_weekly(daily_list)
 
     # 키워드 (빈값·하이픈 제외)
     valid_kws = [
