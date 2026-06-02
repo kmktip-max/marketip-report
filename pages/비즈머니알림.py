@@ -75,18 +75,26 @@ with t_status:
             with st.spinner("잔액 확인 및 알림 발송 중..."):
                 results = run_check(dry_run=False)
             for r in results:
-                cid = r.get("customer_id", "")
-                bal = r.get("balance", 0)
+                cid  = r.get("customer_id", "")
+                bal  = r.get("balance", 0)
                 acts = r.get("actions", [])
-                sent = [a for a in acts if a.get("status") == "success"]
-                skipped = [a for a in acts if a.get("status") == "skipped"]
-                errs = [a for a in acts if a.get("status") not in ("success","skipped","reset","dry_run","")]
+                # balance_check 제외 — 실제 알림 발송 액션만 필터
+                alert_acts = [a for a in acts if a.get("type") not in ("balance_check", "reset")]
+                sent    = [a for a in alert_acts if a.get("status") == "success"]
+                skipped = [a for a in alert_acts if a.get("status") == "skipped"]
+                errs    = [a for a in alert_acts if a.get("status") == "failed"]
                 if sent:
-                    st.success(f"✅ {cid}: 알림톡 {len(sent)}건 발송 완료 (잔액 {bal:,}원)")
+                    detail = sent[0].get("detail", "")
+                    st.success(f"✅ {cid}: 알림톡 발송 완료 (잔액 {bal:,}원) — {detail}")
                 elif errs:
-                    st.error(f"❌ {cid}: 발송 오류 — {errs[0].get('detail','')}")
+                    st.error(f"❌ {cid}: 발송 실패 — {errs[0].get('detail','')}")
+                elif skipped:
+                    st.warning(f"⏭️ {cid}: 오늘 이미 발송됨 (잔액 {bal:,}원)")
                 else:
-                    st.info(f"ℹ️ {cid}: 잔액 {bal:,}원 — 알림 기준 미달 또는 이미 발송됨")
+                    # 알림 조건 미충족 (잔액이 기준치 이상 또는 플래그 설정됨)
+                    reset_act = [a for a in acts if a.get("type") == "reset"]
+                    reset_msg = " (충전 감지 → 플래그 리셋)" if reset_act else ""
+                    st.info(f"ℹ️ {cid}: 잔액 {bal:,}원 — 기준치 이상 또는 이미 발송된 상태{reset_msg}")
     with col_btn:
         if st.button("🔄 전체 잔액 즉시 조회", type="primary", use_container_width=True):
             with st.spinner("잔액 조회 중..."):

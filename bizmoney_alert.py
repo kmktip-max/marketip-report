@@ -559,12 +559,22 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
                              "detail": r.get("error", f"{phone} 발송")})
             _record_history(s, phone, alert_type, balance, threshold, r)
 
+    # notification_config.json 에서 실제 Kakao 템플릿 ID 로드
+    try:
+        from notifications import get_notify_config as _gnc_bm
+        _nc_bm = _gnc_bm()
+        tmpl_first    = _nc_bm.get("bm_template_first",    TEMPLATE_CODE_FIRST)
+        tmpl_depleted = _nc_bm.get("bm_template_depleted", TEMPLATE_CODE_DEPLETED)
+    except Exception:
+        tmpl_first    = TEMPLATE_CODE_FIRST
+        tmpl_depleted = TEMPLATE_CODE_DEPLETED
+
     if balance <= second_amt and not s.get("second_alert_sent"):
-        _send("depleted", TEMPLATE_CODE_DEPLETED, second_amt)
+        _send("depleted", tmpl_depleted, second_amt)
         s["second_alert_sent"] = True
         s["first_alert_sent"]  = True
     elif balance <= first_amt and not s.get("first_alert_sent"):
-        _send("first", TEMPLATE_CODE_FIRST, first_amt)
+        _send("first", tmpl_first, first_amt)
         s["first_alert_sent"] = True
 
     s["last_bizmoney_balance"] = balance
