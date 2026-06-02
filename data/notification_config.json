@@ -1,4 +1,9 @@
 {
   "admin_phone": "010-2797-3164",
-  "monthly_report_test_phone": "01027973164"
+  "monthly_report_test_phone": "01027973164",
+  "monthly_report_alimtalk_enabled": true,
+  "monthly_report_template_id": "KA01TP260601070439564Iu9KuCizJhc",
+  "monthly_report_pf_id": "KA01PF260527054123117KJ6LgkWd6Dh",
+  "bm_template_first": "KA01TP260601070654637d6x15tzgXsy",
+  "bm_template_depleted": "KA01TP260601101107811ShKc3uooDDk"
 }
