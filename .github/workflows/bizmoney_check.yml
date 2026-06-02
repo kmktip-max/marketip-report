@@ -1,0 +1,34 @@
+name: 비즈머니 잔액 자동 체크
+
+on:
+  schedule:
+    # 매일 한국시간 09:00, 13:00, 17:00 실행 (UTC 기준 00:00, 04:00, 08:00)
+    - cron: '0 0 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 8 * * *'
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  check-bizmoney:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 패키지 설치
+        run: pip install requests
+
+      - name: 비즈머니 잔액 체크 및 알림 발송
+        env:
+          SOLAPI_API_KEY:        ${{ secrets.SOLAPI_API_KEY }}
+          SOLAPI_API_SECRET:     ${{ secrets.SOLAPI_API_SECRET }}
+          SOLAPI_SENDER_ID:      ${{ secrets.SOLAPI_SENDER_ID }}
+          SOLAPI_KAKAO_PF_ID:    ${{ secrets.SOLAPI_KAKAO_PF_ID }}
+        run: |
+          python scripts/check_bizmoney_alerts.py --send

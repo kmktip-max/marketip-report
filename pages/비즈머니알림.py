@@ -68,7 +68,25 @@ t_status, t_alert_cfg, t_history, t_test = st.tabs([
 
 # ─── [탭1] 잔액 현황 ─────────────────────────────────────────────────────────
 with t_status:
-    col_btn, col_info = st.columns([2, 5])
+    col_btn, col_btn2, col_info = st.columns([2, 2, 3])
+    with col_btn2:
+        if st.button("📣 수동 알림 체크 실행", use_container_width=True,
+                     help="잔액 조회 + 기준 미달 시 알림톡 실제 발송"):
+            with st.spinner("잔액 확인 및 알림 발송 중..."):
+                results = run_check(dry_run=False)
+            for r in results:
+                cid = r.get("customer_id", "")
+                bal = r.get("balance", 0)
+                acts = r.get("actions", [])
+                sent = [a for a in acts if a.get("status") == "success"]
+                skipped = [a for a in acts if a.get("status") == "skipped"]
+                errs = [a for a in acts if a.get("status") not in ("success","skipped","reset","dry_run","")]
+                if sent:
+                    st.success(f"✅ {cid}: 알림톡 {len(sent)}건 발송 완료 (잔액 {bal:,}원)")
+                elif errs:
+                    st.error(f"❌ {cid}: 발송 오류 — {errs[0].get('detail','')}")
+                else:
+                    st.info(f"ℹ️ {cid}: 잔액 {bal:,}원 — 알림 기준 미달 또는 이미 발송됨")
     with col_btn:
         if st.button("🔄 전체 잔액 즉시 조회", type="primary", use_container_width=True):
             with st.spinner("잔액 조회 중..."):
