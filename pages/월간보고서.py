@@ -1152,16 +1152,79 @@ with tab5:
     st.subheader("📅 예약발송 관리")
     _t5_sched   = load_schedule()
     _t5_items   = _t5_sched.get("scheduled", [])
+    _t5_now     = datetime.now()
     _t5_pending = [i for i in _t5_items if i.get("status") == "pending"]
+    _t5_overdue = [i for i in _t5_pending
+                   if i.get("scheduled_at", "") <= _t5_now.strftime("%Y-%m-%dT%H:%M:%S")]
     _t5_done    = [i for i in _t5_items if i.get("status") != "pending"]
 
     if _t5_pending:
         st.markdown("**⏳ 대기 중인 예약**")
+        if _t5_overdue:
+            st.warning(f"⚠️ {len(_t5_overdue)}건의 예약 발송 시간이 지났습니다. "
+                       f"Streamlit Cloud는 백그라운드 자동 실행을 지원하지 않아 수동 발송이 필요합니다.")
+            if st.button(f"▶️ 기한 지난 예약 지금 발송 ({len(_t5_overdue)}건)",
+                         type="primary", key="t5_run_overdue"):
+                _smtp_cfg5 = {
+                    "smtp_user":     get_secret("SMTP_USER", ""),
+                    "smtp_password": get_secret("SMTP_PASSWORD", ""),
+                    "smtp_host":     get_secret("SMTP_HOST", "smtp.naver.com"),
+                    "smtp_port":     int(get_secret("SMTP_PORT", "465")),
+                }
+                _clients5   = load_clients()
+                _history5   = load_history()
+                _report_fmt5 = st.session_state.get("report_fmt_single", "기존 보고서")
+
+                for _ov in _t5_overdue:
+                    _names5 = _ov.get("client_names", [])
+                    _since5 = _ov.get("since", "")
+                    _until5 = _ov.get("until", "")
+                    _pkey5  = _ov.get("period_key", "monthly")
+                    for _cn5 in _names5:
+                        _cl5 = next((c for c in _clients5 if c["name"] == _cn5), None)
+                        if not _cl5:
+                            st.error(f"❌ {_cn5}: 광고주 정보 없음")
+                            continue
+                        try:
+                            with st.status(f"📡 {_cn5} 발송 중...", expanded=False):
+                                _api5  = NaverAdAPI(_cl5["api_key"], _cl5["secret_key"], _cl5["customer_id"])
+                                _data5 = _api5.fetch_report(_pkey5)
+                                _rdate5 = datetime.now().strftime("%Y-%m-%d")
+                                if _report_fmt5 == "월간보고서 V2":
+                                    _v2e5 = fetch_v2_extra(_api5, _data5["since"], _data5["until"])
+                                    _html5 = build_monthly_report_v2(_data5, _cn5, _rdate5, v2_extra=_v2e5)
+                                else:
+                                    _html5 = generate_html(_data5, _cn5, _rdate5)
+                                send_report(
+                                    to_email=_cl5["email"], client_name=_cn5,
+                                    period=_pkey5, since=_since5, until=_until5,
+                                    html_body=_html5, **_smtp_cfg5,
+                                )
+                            st.success(f"✅ {_cn5} → {_cl5['email']} 발송 완료")
+                            _history5.append({
+                                "client": _cn5, "email": _cl5["email"], "period": _pkey5,
+                                "since": _since5, "until": _until5,
+                                "keywords": _data5.get("total_keywords", 0),
+                                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "status": "성공", "send_mode": "scheduled",
+                            })
+                        except Exception as _e5:
+                            st.error(f"❌ {_cn5} 발송 실패: {_e5}")
+                            _ov["error"] = str(_e5)[:200]
+
+                    _ov["status"] = "completed"
+                    _ov["sent_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+                save_schedule(_t5_sched)
+                save_history(_history5)
+                st.rerun()
+
         for _ti in sorted(_t5_pending, key=lambda x: x.get("scheduled_at", "")):
             _tia, _tib, _tic, _tid = st.columns([2.5, 2.5, 2, 1])
             _tia.write(", ".join(_ti.get("client_names", _ti.get("client_ids", []))))
             _tib.caption(f"{_ti.get('since','')} ~ {_ti.get('until','')}")
-            _tic.caption(f"📅 {_ti.get('scheduled_at','')[:16]}")
+            _overdue_mark = " ⚠️ 기한초과" if _ti.get("scheduled_at","") <= _t5_now.strftime("%Y-%m-%dT%H:%M:%S") else ""
+            _tic.caption(f"📅 {_ti.get('scheduled_at','')[:16]}{_overdue_mark}")
             if _tid.button("취소", key=f"cancel_{_ti['id']}"):
                 _ti["status"] = "cancelled"
                 save_schedule(_t5_sched)
