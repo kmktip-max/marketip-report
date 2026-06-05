@@ -10,8 +10,16 @@ def calc_bid(current_rank, target_rank, current_bid, bid_unit, min_bid, max_bid)
     - 목표 근접 (±0.5 이내): 유지
     """
     MAX_SINGLE = 500
-    if current_rank is None or current_bid is None:
+    if current_bid is None:
         return current_bid, "데이터 부족"
+
+    # 순위 데이터 없음 = 노출 안 됨 → 최대입찰까지 증액 시도
+    if current_rank is None:
+        if current_bid < max_bid:
+            new_bid = min(round((current_bid + bid_unit) / 10) * 10, max_bid)
+            return new_bid, "증액중(노출없음)"
+        else:
+            return current_bid, "최대입찰(노출없음)"
     diff = current_rank - target_rank
     if diff > 0.5:
         delta   = min(bid_unit, MAX_SINGLE)
