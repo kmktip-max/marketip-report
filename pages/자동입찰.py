@@ -769,25 +769,27 @@ with tab1:
                     # 스케줄러가 없으면 새로 시작
                     from pathlib import Path as _PL2
                     _pr2 = _PL2(__file__).resolve().parents[1]
-                    _bp2 = _pr2 / "run_scheduler.bat"
-                    if not _bp2.exists():
-                        st.error(f"BAT 파일 없음: {_bp2}")
-                    else:
-                        try:
-                            _cmd2 = f'start "마케팁 자동입찰" cmd.exe /k "{_bp2}"'
-                            _proc2 = subprocess.Popen(_cmd2, shell=True, cwd=str(_pr2))
-                            data["state"] = {
-                                **bid_state,
-                                "running":       True,
-                                "started_at":    _now_ts,
-                                "activated_at":  _now_ts,   # 8시간 만료 기준
-                                "scheduler_pid": _proc2.pid,
-                            }
-                            save_data(data)
-                            st.success("✅ 자동입찰 스케줄러가 시작됐습니다.")
-                        except Exception as _e2:
-                            st.error("[자동입찰] CMD 실행 실패")
-                            st.exception(_e2)
+                    _sp2 = _pr2 / "scheduler.py"
+                    try:
+                        # Windows: CREATE_NEW_CONSOLE 로 새 콘솔 창에서 실행
+                        _proc2 = subprocess.Popen(
+                            [sys.executable, "-X", "utf8", str(_sp2)],
+                            cwd=str(_pr2),
+                            creationflags=subprocess.CREATE_NEW_CONSOLE,
+                        )
+                        data["state"] = {
+                            **bid_state,
+                            "running":       True,
+                            "started_at":    _now_ts,
+                            "activated_at":  _now_ts,
+                            "scheduler_pid": _proc2.pid,
+                        }
+                        save_data(data)
+                        st.success(f"✅ 자동입찰 스케줄러가 시작됐습니다. (PID {_proc2.pid})")
+                        st.rerun()
+                    except Exception as _e2:
+                        st.error("[자동입찰] 스케줄러 실행 실패")
+                        st.exception(_e2)
         with b2:
             if st.button("⏹ 자동입찰 중지", use_container_width=True,
                          disabled=not is_running):
