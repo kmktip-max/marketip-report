@@ -1058,26 +1058,30 @@ with tab1:
 
         st.divider()
 
-        # ── 키워드 목표달성 요약 메트릭 ────────────────────────────────
-        _total_kw  = sum(len(g.get("keywords", [])) for g in groups)
-        _at_target = _above = _below = _nodata = 0
+        # ── 키워드 입찰 현황 요약 메트릭 ───────────────────────────────
+        _total_kw = _at_target = _bidding = _at_max_no_imp = _no_bid = 0
         for g in groups:
             for kw in g.get("keywords", []):
+                _total_kw += 1
                 r = kw.get("current_rank")
-                if r is None:
-                    _nodata += 1
+                b = kw.get("current_bid")
+                if not b:
+                    _no_bid += 1
+                elif r is None:
+                    if b >= g["max_bid"]:
+                        _at_max_no_imp += 1   # 최대입찰까지 올렸지만 노출 없음
+                    else:
+                        _bidding += 1         # 노출 위해 입찰가 올리는 중
                 elif abs(r - g["target_rank"]) <= 0.5:
-                    _at_target += 1
-                elif r < g["target_rank"]:
-                    _above += 1   # 목표보다 높은 순위 → 감액 가능
+                    _at_target += 1           # 목표순위 도달
                 else:
-                    _below += 1   # 목표보다 낮은 순위 → 증액 필요
+                    _bidding += 1             # 순위 조정 중
         _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
         _mc1.metric("전체 키워드",    f"{_total_kw}개")
-        _mc2.metric("🟢 목표달성",   f"{_at_target}개")
-        _mc3.metric("🔵 감액가능",   f"{_above}개",  help="현재순위 > 목표순위")
-        _mc4.metric("🔴 증액필요",   f"{_below}개",  help="현재순위 < 목표순위")
-        _mc5.metric("⚪ 데이터없음", f"{_nodata}개")
+        _mc2.metric("🟢 목표달성",    f"{_at_target}개", help="목표순위 ±0.5 이내")
+        _mc3.metric("🔴 입찰중",      f"{_bidding}개",   help="순위 조정 또는 노출 확보 위해 입찰가 변경 중")
+        _mc4.metric("🟠 최대도달",    f"{_at_max_no_imp}개", help=f"최대입찰가 도달했으나 노출 없음 — 세팅값 재검토 필요")
+        _mc5.metric("⚪ 입찰가없음",  f"{_no_bid}개",    help="current_bid 미설정 — 키워드 관리 탭에서 불러오기 필요")
 
         st.divider()
 
