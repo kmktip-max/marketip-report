@@ -39,7 +39,7 @@ else:
 SB_KEY             = f"bidding_{client_id}"
 FALLBACK_JSON      = os.path.join(ROOT, f"bidding_{client_id}.json")
 MAX_GROUPS         = 5
-MAX_KEYWORDS       = 30
+MAX_KEYWORDS       = 9999  # 사실상 무제한
 DEFAULT_INTERVAL_MIN = 15  # 그룹 check_interval 기본값 (분)
 
 STATUS_ICON = {
@@ -162,6 +162,7 @@ def new_kw_obj(keyword, current_bid=None, ncc_keyword_id=None):
         "recommended_bid": None,
         "status":          "데이터 부족",
         "last_checked":    None,
+        "enabled":         True,
     }
 
 
@@ -1639,37 +1640,73 @@ with tab3:
     st.divider()
 
     # 현재 키워드 목록
-    st.markdown("**등록 키워드**")
+    _on_cnt  = sum(1 for k in kw_list if k.get("enabled", True))
+    _off_cnt = len(kw_list) - _on_cnt
+    st.markdown(f"**등록 키워드** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
     if not kw_list:
         st.info("등록된 키워드가 없습니다.")
     else:
-        del_check = {}
-        h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
-        h1.markdown("**키워드**")
-        h2.markdown("**현재입찰가**")
-        h3.markdown("**상태**")
-        h4.markdown("**삭제**")
+        _en_checks  = {}
+        _del_checks = {}
+
+        # 헤더
+        _hh0, _hh1, _hh2, _hh3, _hh4 = st.columns([1, 3, 2, 2, 1])
+        _hh0.markdown("**ON**")
+        _hh1.markdown("**키워드**")
+        _hh2.markdown("**현재입찰가**")
+        _hh3.markdown("**상태**")
+        _hh4.markdown("**제거**")
 
         for kw_obj in kw_list:
             kw = kw_obj["keyword"]
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-            c1.write(kw)
-            c2.write(f"{kw_obj['current_bid']:,}" if kw_obj.get("current_bid") else "—")
-            c3.write(
-                STATUS_ICON.get(kw_obj.get("status","데이터 부족"),"⚪")
-                + " " + kw_obj.get("status","데이터 부족")
+            _c0, _c1, _c2, _c3, _c4 = st.columns([1, 3, 2, 2, 1])
+            _en_checks[kw] = _c0.checkbox(
+                "", key=f"en_{sel_g['id']}_{kw}",
+                value=kw_obj.get("enabled", True),
+                label_visibility="collapsed",
             )
-            del_check[kw] = c4.checkbox(
-                "삭제", key=f"del_{sel_g['id']}_{kw}",
+            _c1.write(kw)
+            _c2.write(f"{kw_obj['current_bid']:,}원" if kw_obj.get("current_bid") else "—")
+            _c3.write(
+                STATUS_ICON.get(kw_obj.get("status", "데이터 부족"), "⚪")
+                + " " + kw_obj.get("status", "데이터 부족")
+            )
+            _del_checks[kw] = _c4.checkbox(
+                "", key=f"del_{sel_g['id']}_{kw}",
                 label_visibility="collapsed",
             )
 
-        if st.button("선택 삭제", key="kw_del_btn"):
-            to_del = {k for k, v in del_check.items() if v}
+        # 일괄 버튼 + 저장
+        _ba, _bb, _bc, _ = st.columns([1, 1, 1, 3])
+        _all_on  = _ba.button("전체 ON",  key="kw_all_on")
+        _all_off = _bb.button("전체 OFF", key="kw_all_off")
+        _del_btn = _bc.button("선택 제거", key="kw_del_btn", type="secondary")
+
+        if _all_on:
+            for k in kw_list: k["enabled"] = True
+            save_data(data); st.rerun()
+        if _all_off:
+            for k in kw_list: k["enabled"] = False
+            save_data(data); st.rerun()
+        if _del_btn:
+            to_del = {k for k, v in _del_checks.items() if v}
             if not to_del:
-                st.warning("삭제할 항목을 선택하세요.")
+                st.warning("제거할 항목을 체크하세요.")
             else:
                 sel_g["keywords"] = [k for k in kw_list if k["keyword"] not in to_del]
                 save_data(data)
-                st.success(f"{len(to_del)}개 삭제 완료")
+                st.success(f"{len(to_del)}개 제거 완료")
+                st.rerun()
+
+        # ON/OFF 변경 저장
+        _changed = any(
+            kw_obj.get("enabled", True) != _en_checks.get(kw_obj["keyword"], True)
+            for kw_obj in kw_list
+        )
+        if _changed:
+            if st.button("💾 ON/OFF 변경 저장", type="primary", key="kw_en_save"):
+                for kw_obj in kw_list:
+                    kw_obj["enabled"] = _en_checks.get(kw_obj["keyword"], True)
+                save_data(data)
+                st.success("저장됐습니다.")
                 st.rerun()

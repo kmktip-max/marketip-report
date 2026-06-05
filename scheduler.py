@@ -431,6 +431,8 @@ def run_cycle(client_id: str) -> list:
         # 전일 평균순위 조회
         kid_list = []
         for kw in g.get("keywords", []):
+            if not kw.get("enabled", True):
+                continue  # 비활성 키워드 스킵
             api_kw = api_map.get(kw["keyword"])
             if api_kw:
                 kid_ = api_kw.get("nccKeywordId") or api_kw.get("keywordId") or ""
@@ -444,6 +446,8 @@ def run_cycle(client_id: str) -> list:
         stats = get_keyword_stats(ak, sk, ci, kid_list) if kid_list else {}
 
         for kw in g.get("keywords", []):
+            if not kw.get("enabled", True):
+                continue  # 비활성 키워드 스킵
             kid = (kw.get("ncc_keyword_id") or "").strip()
             cur_bid = kw.get("current_bid")
 
