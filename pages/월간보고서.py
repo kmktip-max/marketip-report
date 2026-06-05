@@ -165,15 +165,20 @@ def _get_last_sent(history, client_name):
 
 st.session_state.report_admin_auth = True
 
+# ── 권한 분기 ─────────────────────────────────────────────────────────
+_is_admin = st.session_state.get("auth_type", "") == "admin"
+_username = st.session_state.get("auth_username", "")
 
 # ── 헤더 ──────────────────────────────────────────────────────────────
 st.title("📊 광고 보고서 관리")
+if not _is_admin:
+    st.caption(f"👤 {_username} 님 | 본인 데이터만 열람 가능합니다.")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "📜 발송 이력", "⚙️ 설정", "📅 예약관리"])
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 탭1: 광고주 관리
+# 탭1: 광고주 관리 (owner 기반 필터링)
 # ═══════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader("새 광고주 추가")
@@ -194,30 +199,64 @@ with tab1:
             if not all([name, cust_id, email, api_key, secret_key]):
                 st.error("* 항목을 모두 입력해주세요.")
             else:
-                clients = load_clients()
-                clients.append({
-                    "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-                    "name": name.strip(),
-                    "customer_id": cust_id.strip(),
-                    "email": email.strip(),
-                    "phone": _fmt_phone(phone),
-                    "api_key": api_key.strip(),
-                    "secret_key": secret_key.strip(),
-                    "memo": memo,
-                    "created_at": datetime.now().strftime("%Y-%m-%d"),
+                _all_c = load_clients()
+                _all_c.append({
+                    "id":           datetime.now().strftime("%Y%m%d%H%M%S"),
+                    "name":         name.strip(),
+                    "customer_id":  cust_id.strip(),
+                    "email":        email.strip(),
+                    "phone":        _fmt_phone(phone),
+                    "api_key":      api_key.strip(),
+                    "secret_key":   secret_key.strip(),
+                    "memo":         memo,
+                    "created_at":   datetime.now().strftime("%Y-%m-%d"),
+                    "owner":        _username,
+                    "approved":     _is_admin,  # 관리자 추가 시 즉시 승인
                 })
-                save_clients(clients)
-                st.success(f"✅ {name} 추가 완료!")
+                save_clients(_all_c)
+                if _is_admin:
+                    st.success(f"✅ {name} 추가 완료!")
+                else:
+                    st.success(f"✅ {name} 등록 요청 완료! 관리자 승인 후 활성화됩니다.")
                 st.rerun()
 
     st.divider()
+
+    # ── 승인 대기 (관리자 전용) ───────────────────────────────────────
+    if _is_admin:
+        _all_clients_raw = load_clients()
+        _pending_list = [c for c in _all_clients_raw if not c.get("approved", True)]
+        if _pending_list:
+            st.warning(f"⏳ 승인 대기 중인 광고주 {len(_pending_list)}명")
+            for _pc in _pending_list:
+                _pa, _pb, _pc2 = st.columns([5, 1, 1])
+                _pa.write(f"**{_pc['name']}** | {_pc['email']} | 등록자: **{_pc.get('owner','-')}**")
+                if _pb.button("✅ 승인", key=f"approve_{_pc['id']}"):
+                    for _cc in _all_clients_raw:
+                        if _cc["id"] == _pc["id"]:
+                            _cc["approved"] = True
+                    save_clients(_all_clients_raw)
+                    st.rerun()
+                if _pc2.button("❌ 거부", key=f"reject_{_pc['id']}"):
+                    save_clients([c for c in _all_clients_raw if c["id"] != _pc["id"]])
+                    st.rerun()
+            st.divider()
+
     st.subheader("등록된 광고주")
-    clients = load_clients()
+    _all_c2 = load_clients()
+    # 관리자: 승인된 것 전체 / 비관리자: 본인 등록 + 승인된 것만
+    if _is_admin:
+        clients = [c for c in _all_c2 if c.get("approved", True)]
+    else:
+        clients = [c for c in _all_c2
+                   if c.get("owner", "") == _username and c.get("approved", True)]
+
     if not clients:
         st.info("등록된 광고주가 없습니다.")
     else:
         for i, cl in enumerate(clients):
-            with st.expander(f"**{cl['name']}** | {cl['email']} | ID: {cl['customer_id']}"):
+            _owner_tag = f" | 등록자: {cl.get('owner','-')}" if _is_admin else ""
+            with st.expander(f"**{cl['name']}** | {cl['email']} | ID: {cl['customer_id']}{_owner_tag}"):
                 ec1, ec2, ec3, ec4 = st.columns([4, 1, 1, 1])
                 with ec1:
                     st.caption(
@@ -240,8 +279,7 @@ with tab1:
                         st.session_state[f"editing_{i}"] = True
                 with ec4:
                     if st.button("🗑️ 삭제", key=f"del_{i}"):
-                        clients.pop(i)
-                        save_clients(clients)
+                        save_clients([c for c in _all_c2 if c["id"] != cl["id"]])
                         st.rerun()
 
                 if st.session_state.get(f"editing_{i}"):
@@ -249,30 +287,32 @@ with tab1:
                     with st.form(key=f"edit_form_{i}"):
                         ef1, ef2 = st.columns(2)
                         with ef1:
-                            e_name   = st.text_input("광고주명",   value=cl.get("name", ""),        key=f"e_name_{i}")
-                            e_email  = st.text_input("수신 이메일", value=cl.get("email", ""),       key=f"e_email_{i}")
+                            e_name   = st.text_input("광고주명",   value=cl.get("name", ""),     key=f"e_name_{i}")
+                            e_email  = st.text_input("수신 이메일", value=cl.get("email", ""),    key=f"e_email_{i}")
                             e_phone  = st.text_input("카카오 알림 전화번호", value=cl.get("phone", ""),
                                                      placeholder="010-0000-0000", key=f"e_phone_{i}")
                         with ef2:
-                            e_apikey = st.text_input("API Access License", value=cl.get("api_key", ""),    key=f"e_api_{i}")
+                            e_apikey = st.text_input("API Access License", value=cl.get("api_key", ""), key=f"e_api_{i}")
                             e_secret = st.text_input("Secret Key", value=cl.get("secret_key", ""),
                                                      type="password", key=f"e_secret_{i}")
-                            e_memo   = st.text_input("메모", value=cl.get("memo", ""),               key=f"e_memo_{i}")
+                            e_memo   = st.text_input("메모", value=cl.get("memo", ""),            key=f"e_memo_{i}")
 
                         esub1, esub2 = st.columns(2)
-                        _save = esub1.form_submit_button("💾 저장", type="primary", use_container_width=True)
+                        _save   = esub1.form_submit_button("💾 저장", type="primary", use_container_width=True)
                         _cancel = esub2.form_submit_button("취소", use_container_width=True)
 
                         if _save:
-                            clients[i].update({
-                                "name":       e_name.strip(),
-                                "email":      e_email.strip(),
-                                "phone":      _fmt_phone(e_phone),
-                                "api_key":    e_apikey.strip(),
-                                "secret_key": e_secret.strip(),
-                                "memo":       e_memo,
-                            })
-                            save_clients(clients)
+                            for _cc2 in _all_c2:
+                                if _cc2["id"] == cl["id"]:
+                                    _cc2.update({
+                                        "name":       e_name.strip(),
+                                        "email":      e_email.strip(),
+                                        "phone":      _fmt_phone(e_phone),
+                                        "api_key":    e_apikey.strip(),
+                                        "secret_key": e_secret.strip(),
+                                        "memo":       e_memo,
+                                    })
+                            save_clients(_all_c2)
                             st.session_state.pop(f"editing_{i}", None)
                             st.rerun()
                         if _cancel:
@@ -284,9 +324,15 @@ with tab1:
 # 탭2: 보고서 발송
 # ═══════════════════════════════════════════════════════════════════════
 with tab2:
-    clients = load_clients()
+    _all_clients_t2 = load_clients()
+    # 비관리자: 본인 등록 + 승인된 광고주만
+    if _is_admin:
+        clients = [c for c in _all_clients_t2 if c.get("approved", True)]
+    else:
+        clients = [c for c in _all_clients_t2
+                   if c.get("owner", "") == _username and c.get("approved", True)]
     if not clients:
-        st.warning("먼저 광고주를 등록해주세요.")
+        st.warning("등록된 광고주가 없습니다. 광고주 관리 탭에서 추가하세요.")
         st.stop()
 
     send_mode = st.radio(
@@ -906,13 +952,18 @@ with tab2:
 # ═══════════════════════════════════════════════════════════════════════
 with tab3:
     history = load_history()
+    # 비관리자: 본인 광고주 이력만
+    if not _is_admin:
+        _my_clients = {c["name"] for c in load_clients()
+                       if c.get("owner","") == _username and c.get("approved", True)}
+        history = [h for h in history if h.get("client","") in _my_clients]
     if not history:
         st.info("발송 이력이 없습니다.")
     else:
         import pandas as pd
         df = pd.DataFrame(list(reversed(history)))
         st.dataframe(df, use_container_width=True, hide_index=True)
-        if st.button("🗑️ 이력 초기화"):
+        if _is_admin and st.button("🗑️ 이력 초기화"):
             save_history([])
             st.rerun()
 
@@ -921,6 +972,11 @@ with tab3:
 # 탭4: 설정
 # ═══════════════════════════════════════════════════════════════════════
 with tab4:
+    if not _is_admin:
+        st.info("🔒 설정은 관리자만 접근할 수 있습니다.")
+
+if _is_admin:
+ with tab4:
     st.success("✅ 월간보고서 알림톡 설정 UI v1 적용됨")
     st.subheader("이메일 발송 설정")
     smtp_user = get_secret("SMTP_USER", "")
@@ -1121,6 +1177,11 @@ ADMIN_PASSWORD = "관리자비밀번호"
 # 탭5: 예약관리
 # ═══════════════════════════════════════════════════════════════════════
 with tab5:
+    if not _is_admin:
+        st.info("🔒 예약관리는 관리자만 접근할 수 있습니다.")
+
+if _is_admin:
+ with tab5:
     st.subheader("📅 예약발송 관리")
     _t5_sched   = load_schedule()
     _t5_items   = _t5_sched.get("scheduled", [])
