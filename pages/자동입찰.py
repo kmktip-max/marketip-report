@@ -1,6 +1,6 @@
 """광고 운영 — 목표순위 자동입찰 보조 시스템"""
 import streamlit as st
-import os, sys, uuid, hmac, hashlib, base64, time, re, subprocess, json
+import os, sys, uuid, hmac, hashlib, base64, time, subprocess, json
 import requests
 
 try:
@@ -1481,40 +1481,30 @@ with tab3:
         kw_list   = sel_g.get("keywords", [])
         existing  = {k["keyword"] for k in kw_list}
 
-        st.markdown(f"**{sel_name}** — {len(kw_list)} / {MAX_KEYWORDS}개")
-
-        # 키워드 추가
-        if len(kw_list) < MAX_KEYWORDS:
-            kw_text = st.text_area(
-                "키워드 추가 (줄바꿈 또는 쉼표로 구분)",
-                placeholder="이혼변호사\n이혼전문변호사",
-                height=120,
-                key="kw_tab_input",
-            )
-            if st.button("추가", type="primary", key="kw_tab_add"):
-                raw = re.split(r"[\n,]+", kw_text or "")
-                new = [k.strip() for k in raw if k.strip() and k.strip() not in existing]
-                new = new[:MAX_KEYWORDS - len(kw_list)]
-                if not new:
-                    st.warning("추가할 새 키워드가 없습니다.")
-                else:
-                    for k in new:
-                        sel_g["keywords"].append(new_kw_obj(k))
-                    save_data(data)
-                    st.success(f"{len(new)}개 추가 완료")
-                    st.rerun()
-        else:
-            st.warning(f"키워드 최대 {MAX_KEYWORDS}개 도달")
-
-        st.divider()
-
-        # 현재 키워드 목록
+        # ── 키워드 목록 (페이지네이션) ──────────────────────────────────
+        _KW_PER_PAGE = 50
         _on_cnt  = sum(1 for k in kw_list if k.get("enabled", True))
         _off_cnt = len(kw_list) - _on_cnt
-        st.markdown(f"**등록 키워드** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
+        _total_pages = max(1, -(-len(kw_list) // _KW_PER_PAGE))  # ceil
+
+        _ph, _pp = st.columns([4, 1])
+        _ph.markdown(f"**{sel_name}** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
+        _cur_page = _pp.number_input(
+            "페이지", min_value=1, max_value=_total_pages, value=1,
+            step=1, key=f"kw_page_{sel_g['id']}",
+            label_visibility="collapsed",
+        ) if _total_pages > 1 else 1
+
         if not kw_list:
             st.info("등록된 키워드가 없습니다.")
         else:
+            _page_start = (_cur_page - 1) * _KW_PER_PAGE
+            _page_end   = _page_start + _KW_PER_PAGE
+            _page_kws   = kw_list[_page_start:_page_end]
+
+            if _total_pages > 1:
+                st.caption(f"{_cur_page} / {_total_pages} 페이지 (페이지당 {_KW_PER_PAGE}개)")
+
             _en_checks  = {}
             _del_checks = {}
 
@@ -1526,7 +1516,7 @@ with tab3:
             _hh3.markdown("**상태**")
             _hh4.markdown("**제거**")
 
-            for kw_obj in kw_list:
+            for kw_obj in _page_kws:
                 kw = kw_obj["keyword"]
                 _c0, _c1, _c2, _c3, _c4 = st.columns([1, 3, 2, 2, 1])
                 _en_checks[kw] = _c0.checkbox(
@@ -1546,10 +1536,11 @@ with tab3:
                 )
 
             # 일괄 버튼 + 저장
-            _ba, _bb, _bc, _ = st.columns([1, 1, 1, 3])
+            _ba, _bb, _bc, _bd, _ = st.columns([1, 1, 1, 1, 2])
             _all_on  = _ba.button("전체 ON",  key="kw_all_on")
             _all_off = _bb.button("전체 OFF", key="kw_all_off")
             _del_btn = _bc.button("선택 제거", key="kw_del_btn", type="secondary")
+            _save_btn = _bd.button("💾 저장",  key="kw_en_save", type="primary")
 
             if _all_on:
                 for k in kw_list: k["enabled"] = True
@@ -1566,19 +1557,12 @@ with tab3:
                     save_data(data)
                     st.success(f"{len(to_del)}개 제거 완료")
                     st.rerun()
-
-            # ON/OFF 변경 저장
-            _changed = any(
-                kw_obj.get("enabled", True) != _en_checks.get(kw_obj["keyword"], True)
-                for kw_obj in kw_list
-            )
-            if _changed:
-                if st.button("💾 ON/OFF 변경 저장", type="primary", key="kw_en_save"):
-                    for kw_obj in kw_list:
-                        kw_obj["enabled"] = _en_checks.get(kw_obj["keyword"], True)
-                    save_data(data)
-                    st.success("저장됐습니다.")
-                    st.rerun()
+            if _save_btn:
+                for kw_obj in _page_kws:
+                    kw_obj["enabled"] = _en_checks.get(kw_obj["keyword"], True)
+                save_data(data)
+                st.success("저장됐습니다.")
+                st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 탭4: 계정 관리
