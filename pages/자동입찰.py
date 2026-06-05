@@ -106,7 +106,8 @@ def _sched_status() -> tuple:
     try:
         ts   = datetime.fromisoformat(ts_str)
         diff = (datetime.now() - ts).total_seconds()
-        return (0 <= diff <= 120), diff, hb
+        diff = max(diff, 0)   # 클럭 오차로 인한 음수 방지
+        return (diff <= 120), diff, hb
     except Exception:
         return False, None, hb
 
@@ -656,8 +657,6 @@ with tab1:
     # heartbeat 경과 표시 문자열
     if _diff is None:
         _hb_str = " | ⚪ heartbeat 없음"
-    elif _diff < 0:
-        _hb_str = " | ⚠️ 시간 계산 오류 (클럭 불일치 — 중지 후 재시작 권장)"
     elif _diff < 60:
         _hb_str = f" | 🟢 {int(_diff)}초 전 확인"
     elif _diff < 120:
@@ -1052,39 +1051,84 @@ with tab1:
 
         st.divider()
 
+        # ── 키워드 목표달성 요약 메트릭 ────────────────────────────────
+        _total_kw  = sum(len(g.get("keywords", [])) for g in groups)
+        _at_target = _above = _below = _nodata = 0
+        for g in groups:
+            for kw in g.get("keywords", []):
+                r = kw.get("current_rank")
+                if r is None:
+                    _nodata += 1
+                elif abs(r - g["target_rank"]) <= 0.5:
+                    _at_target += 1
+                elif r < g["target_rank"]:
+                    _above += 1   # 목표보다 높은 순위 → 감액 가능
+                else:
+                    _below += 1   # 목표보다 낮은 순위 → 증액 필요
+        _mc1, _mc2, _mc3, _mc4, _mc5 = st.columns(5)
+        _mc1.metric("전체 키워드",    f"{_total_kw}개")
+        _mc2.metric("🟢 목표달성",   f"{_at_target}개")
+        _mc3.metric("🔵 감액가능",   f"{_above}개",  help="현재순위 > 목표순위")
+        _mc4.metric("🔴 증액필요",   f"{_below}개",  help="현재순위 < 목표순위")
+        _mc5.metric("⚪ 데이터없음", f"{_nodata}개")
+
+        st.divider()
+
         # ── 키워드 현황 테이블 ──────────────────────────────────────────
         rows = []
         for g in groups:
             for kw in g.get("keywords", []):
                 s = kw.get("status", "데이터없음")
+                _rank = kw.get("current_rank")
+                _tgt  = g["target_rank"]
+                _delta = round(_rank - _tgt, 1) if _rank is not None else None
                 rows.append({
                     "그룹명":      g["name"],
                     "키워드":      kw["keyword"],
-                    "현재순위":    kw.get("current_rank"),
-                    "목표순위":    g["target_rank"],
+                    "현재순위":    _rank,
+                    "목표순위":    _tgt,
+                    "순위차":      _delta,   # +: 목표보다 낮음(증액필요), -: 목표보다 높음(감액가능)
                     "현재입찰가":  kw.get("current_bid"),
-                    "추천입찰가":  kw.get("recommended_bid") if kw.get("current_rank") else None,
                     "상태":        STATUS_ICON.get(s, "⚪") + " " + s,
                     "마지막 실행": kw.get("last_checked", "") or "",
                 })
         st.dataframe(
             pd.DataFrame(rows), use_container_width=True, hide_index=True,
             column_config={
-                "현재순위":   st.column_config.NumberColumn(format="%.1f"),
+                "현재순위":   st.column_config.NumberColumn(format="%.1f위"),
+                "목표순위":   st.column_config.NumberColumn(format="%d위"),
+                "순위차":     st.column_config.NumberColumn(
+                    format="%.1f",
+                    help="양수: 목표보다 낮은 순위(증액필요) / 음수: 목표보다 높은 순위(감액가능)"
+                ),
                 "현재입찰가": st.column_config.NumberColumn(format="%d원"),
-                "추천입찰가": st.column_config.NumberColumn(format="%d원"),
             },
         )
         st.caption("🔴 증액중  🔵 감액중  🟢 목표도달  ⚪ 데이터없음  🟠 최대입찰  🟡 최소입찰")
 
         st.divider()
 
-        # ── 실행 이력 ───────────────────────────────────────────────────
+        # ── 실행 이력 차트 ──────────────────────────────────────────────
         st.markdown("##### 실행 이력")
         logs_all = load_log()
         if not logs_all:
             st.caption("아직 실행 이력이 없습니다.")
         else:
+            # 최근 20회 차트
+            _chart_data = []
+            for run in logs_all[-20:]:
+                s = run.get("summary", {})
+                _chart_data.append({
+                    "시각":     run.get("run_time", "")[:16].replace("T", " "),
+                    "변경":     s.get("changed", 0),
+                    "유지":     s.get("kept", 0),
+                    "데이터없음": s.get("no_data", 0),
+                })
+            if _chart_data:
+                import pandas as _pd_chart
+                _df_chart = _pd_chart.DataFrame(_chart_data).set_index("시각")
+                st.bar_chart(_df_chart[["변경", "유지"]], height=180)
+
             for run in reversed(logs_all[-15:]):
                 s   = run.get("summary", {})
                 cyc = run.get("cycle", "")
