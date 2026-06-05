@@ -541,6 +541,9 @@ def main():
     print("  종료: Ctrl+C")
     print("=" * 60)
 
+    # ── 이 스케줄러 인스턴스 시작 시각 (activated_at 유효성 기준) ──────────────
+    _session_start = datetime.now()
+
     # ── 시작 시 자동입찰 running 상태 초기화 (수동 클릭 없이 재개 방지) ─────
     print("  [시작] 자동입찰 상태 초기화 — 수동으로 '자동입찰 시작' 버튼을 눌러야 작동합니다.")
     try:
@@ -595,7 +598,10 @@ def main():
             if not running and not trigger:
                 continue
 
-            # activated_at 만료 체크 (8시간 이상 경과 시 자동 비활성화)
+            # activated_at 만료 체크
+            # ① 8시간 초과 → 만료
+            # ② 이번 스케줄러 세션(_session_start) 이전 활성화 → 만료
+            #    (재부팅/재시작 후 이전 세션 activated_at으로 자동 재개 방지)
             if running and not trigger:
                 _activated = state.get("activated_at", "")
                 _expired = True
@@ -603,12 +609,12 @@ def main():
                     try:
                         _act_dt = datetime.fromisoformat(_activated)
                         _elapsed = (datetime.now() - _act_dt).total_seconds()
-                        if _elapsed <= 8 * 3600:  # 8시간 이내면 유효
+                        if _elapsed <= 8 * 3600 and _act_dt >= _session_start:
                             _expired = False
                     except Exception:
                         pass
                 if _expired:
-                    print(f"  [{cid}] activated_at 만료 — running 초기화 (수동 재시작 필요)")
+                    print(f"  [{cid}] activated_at 만료/이전세션 — running 초기화 (수동 재시작 필요)")
                     state["running"] = False
                     bdata["state"] = state
                     sb_save(f"bidding_{cid}", bdata)
