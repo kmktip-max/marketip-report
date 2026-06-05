@@ -1120,7 +1120,11 @@ with tab1:
         st.divider()
 
         # ── 실행 이력 차트 ──────────────────────────────────────────────
-        st.markdown("##### 실행 이력")
+        _log_h1, _log_h2 = st.columns([5, 1])
+        _log_h1.markdown("##### 실행 이력")
+        if _log_h2.button("🗑️ 이력 삭제", key="clear_log", use_container_width=True):
+            save_log([])
+            st.rerun()
         logs_all = load_log()
         if not logs_all:
             st.caption("아직 실행 이력이 없습니다.")
