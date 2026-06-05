@@ -771,11 +771,13 @@ with tab1:
                     _pr2 = _PL2(__file__).resolve().parents[1]
                     _sp2 = _pr2 / "scheduler.py"
                     try:
-                        # Windows: CREATE_NEW_CONSOLE 로 새 콘솔 창에서 실행
+                        # Windows: 새 콘솔 창, Linux/Mac: 백그라운드 실행
+                        _popen_kwargs = {"cwd": str(_pr2)}
+                        if sys.platform == "win32":
+                            _popen_kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
                         _proc2 = subprocess.Popen(
                             [sys.executable, "-X", "utf8", str(_sp2)],
-                            cwd=str(_pr2),
-                            creationflags=subprocess.CREATE_NEW_CONSOLE,
+                            **_popen_kwargs,
                         )
                         data["state"] = {
                             **bid_state,
