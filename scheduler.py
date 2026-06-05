@@ -412,6 +412,9 @@ def run_cycle(client_id: str) -> list:
     changed  = False
 
     for g in groups:
+        if not g.get("bidding_enabled", True):
+            print(f"  [{g['name']}] 자동입찰 비활성화 — 스킵")
+            continue
         acct = acct_map.get(g.get("ad_account_id",""))
         if not acct:
             print(f"  [{g['name']}] 광고계정 미연결 — 스킵")

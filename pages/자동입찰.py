@@ -708,9 +708,10 @@ with tab1:
     if not groups:
         st.info("등록된 그룹이 없습니다. [그룹 관리] 탭에서 그룹을 추가하세요.")
     else:
-        # ── 자동입찰 대상 그룹 요약 ─────────────────────────────────────
-        st.markdown("**자동입찰 대상 그룹**")
+        # ── 자동입찰 대상 그룹 — 개별 ON/OFF 선택 ──────────────────────
+        st.markdown("**자동입찰 대상 그룹** <span style='font-size:12px;color:#64748B;'>— 토글로 포함 여부 선택</span>", unsafe_allow_html=True)
         _gcols = st.columns(len(groups)) if len(groups) <= 4 else st.columns(4)
+        _grp_changed = False
         for _gi, _g in enumerate(groups):
             _kws     = _g.get("keywords", [])
             _on_kws  = sum(1 for _k in _kws if _k.get("enabled", True))
@@ -719,10 +720,13 @@ with tab1:
             _trank   = _g.get("target_rank", "-")
             _minb    = _g.get("min_bid", 0)
             _maxb    = _g.get("max_bid", 0)
+            _bid_on  = _g.get("bidding_enabled", True)
+            _border  = "#6366F1" if _bid_on else "#E2E8F0"
+            _bg      = "#F5F3FF" if _bid_on else "#F8FAFC"
             with _gcols[_gi % 4]:
                 st.markdown(
-                    f"<div style='border:1px solid #E2E8F0;border-radius:8px;"
-                    f"padding:10px 14px;background:#F8FAFC;font-size:13px;'>"
+                    f"<div style='border:2px solid {_border};border-radius:8px;"
+                    f"padding:10px 14px;background:{_bg};font-size:13px;'>"
                     f"<div style='font-weight:700;color:#1E293B;margin-bottom:4px;'>{_g['name']}</div>"
                     f"<div style='color:#475569;'>목표순위 <b>{_trank}위</b></div>"
                     f"<div style='color:#475569;'>입찰 {_minb:,}~{_maxb:,}원</div>"
@@ -731,7 +735,18 @@ with tab1:
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+                _new_val = st.toggle(
+                    "자동입찰 포함",
+                    value=_bid_on,
+                    key=f"bid_grp_toggle_{_g['id']}",
+                )
+                if _new_val != _bid_on:
+                    _g["bidding_enabled"] = _new_val
+                    _grp_changed = True
+        if _grp_changed:
+            save_data(data)
+            st.rerun()
+        st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
 
         # ── 제어 버튼 4개 ───────────────────────────────────────────────
         b1, b2, b3, b4 = st.columns(4)
