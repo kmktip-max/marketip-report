@@ -1114,20 +1114,36 @@ with tab1:
         if not logs_all:
             st.caption("아직 실행 이력이 없습니다.")
         else:
-            # 최근 20회 차트
+            # 최근 15회 차트 (altair — 레이블 가로 유지)
             _chart_data = []
-            for run in logs_all[-20:]:
+            for i, run in enumerate(logs_all[-15:]):
                 s = run.get("summary", {})
-                _chart_data.append({
-                    "시각":     run.get("run_time", "")[:16].replace("T", " "),
-                    "변경":     s.get("changed", 0),
-                    "유지":     s.get("kept", 0),
-                    "데이터없음": s.get("no_data", 0),
-                })
+                _t = run.get("run_time", "")
+                _label = _t[5:16].replace("T", " ") if len(_t) >= 16 else str(i+1)
+                _chart_data.append({"회차": _label, "항목": "변경", "수": s.get("changed", 0)})
+                _chart_data.append({"회차": _label, "항목": "유지",  "수": s.get("kept", 0)})
             if _chart_data:
-                import pandas as _pd_chart
-                _df_chart = _pd_chart.DataFrame(_chart_data).set_index("시각")
-                st.bar_chart(_df_chart[["변경", "유지"]], height=180)
+                try:
+                    import altair as alt
+                    import pandas as _pd_chart
+                    _df_c = _pd_chart.DataFrame(_chart_data)
+                    _ch = (
+                        alt.Chart(_df_c)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("회차:N", sort=None, axis=alt.Axis(labelAngle=0, labelFontSize=10)),
+                            y=alt.Y("수:Q"),
+                            color=alt.Color("항목:N", scale=alt.Scale(
+                                domain=["변경", "유지"], range=["#3B82F6", "#93C5FD"]
+                            )),
+                            xOffset="항목:N",
+                            tooltip=["회차", "항목", "수"],
+                        )
+                        .properties(height=180)
+                    )
+                    st.altair_chart(_ch, use_container_width=True)
+                except Exception:
+                    pass
 
             for run in reversed(logs_all[-15:]):
                 s   = run.get("summary", {})
