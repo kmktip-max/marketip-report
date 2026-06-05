@@ -163,39 +163,11 @@ def _get_last_sent(history, client_name):
     return "-"
 
 
-# ── 인증 ──────────────────────────────────────────────────────────────
-ADMIN_PW = get_secret("ADMIN_PASSWORD", "mktip")
-
-
-def check_admin():
-    if st.session_state.get("report_admin_auth"):
-        return True
-    _, col, _ = st.columns([1, 2, 1])
-    with col:
-        st.markdown("## 🔐 관리자 전용")
-        pw = st.text_input("비밀번호", type="password")
-        if st.button("로그인", type="primary", use_container_width=True):
-            if pw == ADMIN_PW:
-                st.session_state.report_admin_auth = True
-                st.rerun()
-            else:
-                st.error("비밀번호가 틀렸습니다.")
-    return False
-
-
-if not check_admin():
-    st.stop()
+st.session_state.report_admin_auth = True
 
 
 # ── 헤더 ──────────────────────────────────────────────────────────────
-_hc1, _hc2 = st.columns([5, 1])
-with _hc1:
-    st.title("📊 광고 보고서 관리")
-with _hc2:
-    if st.button("로그아웃"):
-        st.session_state.report_admin_auth = False
-        st.session_state.pop("preview_results", None)
-        st.rerun()
+st.title("📊 광고 보고서 관리")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "📜 발송 이력", "⚙️ 설정", "📅 예약관리"])
 
