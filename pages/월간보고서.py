@@ -174,7 +174,7 @@ st.title("📊 광고 보고서 관리")
 if not _is_admin:
     st.caption(f"👤 {_username} 님 | 본인 데이터만 열람 가능합니다.")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "📜 발송 이력", "⚙️ 설정", "📅 예약관리"])
+tab1, tab2, tab_auto, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋 보고서 발송", "🔄 자동발송", "📜 발송 이력", "⚙️ 설정", "📅 예약관리"])
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1116,9 +1116,18 @@ ADMIN_PASSWORD = "관리자비밀번호"
             except Exception as e:
                 st.error(f"❌ 실패: {e}")
 
-    # ── 자동 정기발송 설정 ────────────────────────────────────────────
-    st.divider()
-    st.subheader("📅 자동 정기발송")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 탭 자동발송: 자동 정기발송 설정
+# ═══════════════════════════════════════════════════════════════════════
+with tab_auto:
+    if not _is_admin:
+        st.info("🔒 자동발송 설정은 관리자만 접근할 수 있습니다.")
+
+if _is_admin:
+ with tab_auto:
+    st.subheader("🔄 자동 정기발송")
     st.caption("매월 특정일에 지난달 보고서를 자동으로 발송합니다. (scheduler.py 실행 중일 때 동작)")
     _auto_clients = load_clients()
     _auto_sched   = load_schedule()
@@ -1129,8 +1138,8 @@ ADMIN_PASSWORD = "관리자비밀번호"
     else:
         with st.form("auto_monthly_cfg"):
             _gcol1, _gcol2 = st.columns(2)
-            _g_day  = _gcol1.number_input("매월 발송일",    1, 31, int(_auto_cfg.get("_global_day",  5)))
-            _g_hour = _gcol2.number_input("발송 시각(시)",  0, 23, int(_auto_cfg.get("_global_hour", 9)))
+            _g_day  = _gcol1.number_input("매월 발송일",   1, 31, int(_auto_cfg.get("_global_day",  5)))
+            _g_hour = _gcol2.number_input("발송 시각(시)", 0, 23, int(_auto_cfg.get("_global_hour", 9)))
             st.markdown("**광고주별 자동발송 활성화:**")
             _toggles = {}
             for _ac in _auto_clients:
@@ -1141,7 +1150,6 @@ ADMIN_PASSWORD = "관리자비밀번호"
                     key=f"auto_tog_{_acid}",
                 )
             if st.form_submit_button("💾 저장", type="primary"):
-                # 기존 ID 기반 키를 이름 기반으로 마이그레이션
                 _migrated = {}
                 for _k, _v in _auto_cfg.items():
                     if _k.startswith("_"):
@@ -1150,9 +1158,8 @@ ADMIN_PASSWORD = "관리자비밀번호"
                     _cname = _v.get("client_name") or _k
                     _migrated[_cname] = _v
                 _auto_cfg = _migrated
-
                 for _ac in _auto_clients:
-                    _acid = _ac.get("name", "")   # 이름을 키로 사용
+                    _acid = _ac.get("name", "")
                     _prev = _auto_cfg.get(_acid, {})
                     _auto_cfg[_acid] = {
                         "enabled":         _toggles.get(_ac.get("id") or _ac.get("name",""), False),
@@ -1302,4 +1309,4 @@ if _is_admin:
         import pandas as _pd5b
         st.dataframe(_pd5b.DataFrame(_t5_on), use_container_width=True, hide_index=True)
     else:
-        st.info("자동 정기발송 설정된 광고주가 없습니다. ⚙️ 설정 탭에서 활성화하세요.")
+        st.info("자동 정기발송 설정된 광고주가 없습니다. 🔄 자동발송 탭에서 활성화하세요.")
