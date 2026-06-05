@@ -1500,7 +1500,7 @@ with tab3:
                 st.session_state[_page_key] = _cur_page - 1
                 st.rerun()
             _pn2.markdown(
-                f"<div style='text-align:center;padding-top:6px;font-size:13px;'>"
+                f"<div style='text-align:center;line-height:38px;font-size:17px;font-weight:600;color:#1E293B;'>"
                 f"{_cur_page} / {_total_pages}</div>",
                 unsafe_allow_html=True,
             )
