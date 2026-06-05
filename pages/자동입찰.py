@@ -1487,13 +1487,27 @@ with tab3:
         _off_cnt = len(kw_list) - _on_cnt
         _total_pages = max(1, -(-len(kw_list) // _KW_PER_PAGE))  # ceil
 
-        _ph, _pp = st.columns([4, 1])
+        _page_key = f"kw_page_{sel_g['id']}"
+        if _page_key not in st.session_state:
+            st.session_state[_page_key] = 1
+        _cur_page = st.session_state[_page_key]
+
+        _ph, _pnav = st.columns([4, 2])
         _ph.markdown(f"**{sel_name}** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
-        _cur_page = _pp.number_input(
-            "페이지", min_value=1, max_value=_total_pages, value=1,
-            step=1, key=f"kw_page_{sel_g['id']}",
-            label_visibility="collapsed",
-        ) if _total_pages > 1 else 1
+        if _total_pages > 1:
+            _pn1, _pn2, _pn3 = _pnav.columns([1, 2, 1])
+            if _pn1.button("◀", key="kw_pg_prev", disabled=_cur_page <= 1):
+                st.session_state[_page_key] = _cur_page - 1
+                st.rerun()
+            _pn2.markdown(
+                f"<div style='text-align:center;padding-top:6px;font-size:13px;'>"
+                f"{_cur_page} / {_total_pages}</div>",
+                unsafe_allow_html=True,
+            )
+            if _pn3.button("▶", key="kw_pg_next", disabled=_cur_page >= _total_pages):
+                st.session_state[_page_key] = _cur_page + 1
+                st.rerun()
+            _cur_page = st.session_state[_page_key]
 
         if not kw_list:
             st.info("등록된 키워드가 없습니다.")
@@ -1501,9 +1515,6 @@ with tab3:
             _page_start = (_cur_page - 1) * _KW_PER_PAGE
             _page_end   = _page_start + _KW_PER_PAGE
             _page_kws   = kw_list[_page_start:_page_end]
-
-            if _total_pages > 1:
-                st.caption(f"{_cur_page} / {_total_pages} 페이지 (페이지당 {_KW_PER_PAGE}개)")
 
             _en_checks  = {}
             _del_checks = {}
