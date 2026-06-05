@@ -1490,7 +1490,9 @@ with tab3:
         _page_key = f"kw_page_{sel_g['id']}"
         if _page_key not in st.session_state:
             st.session_state[_page_key] = 1
-        _cur_page = st.session_state[_page_key]
+        # 항상 1~_total_pages 범위로 보정
+        _cur_page = max(1, min(st.session_state[_page_key], _total_pages))
+        st.session_state[_page_key] = _cur_page
 
         _ph, _pnav = st.columns([4, 2])
         _ph.markdown(f"**{sel_name}** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
