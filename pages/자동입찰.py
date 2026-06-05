@@ -1306,176 +1306,167 @@ with tab2:
                 st.session_state.pop(_k, None)
             st.session_state["_n_acct_id"] = _acct_id
 
-        if not sel_acct:
-            st.stop()
+        if sel_acct:
+            api_key    = sel_acct["api_key"]
+            secret_key = sel_acct["secret_key"]
+            cid        = sel_acct["customer_id"]
 
-        api_key    = sel_acct["api_key"]
-        secret_key = sel_acct["secret_key"]
-        cid        = sel_acct["customer_id"]
+            st.divider()
 
-        st.divider()
+            # ── 캠페인 ────────────────────────────────────────────────
+            if st.button("📥 캠페인 목록 불러오기", key="load_camps"):
+                with st.spinner("캠페인 조회 중..."):
+                    try:
+                        st.session_state["n_camps"] = naver_campaigns(api_key, secret_key, cid)
+                        for _k in ("n_ags","n_ags_camp_id","n_kws","n_kws_ag_id"):
+                            st.session_state.pop(_k, None)
+                    except Exception as e:
+                        st.error(f"API 오류: {e}")
 
-        # ── 캠페인 ────────────────────────────────────────────────
-        if st.button("📥 캠페인 목록 불러오기", key="load_camps"):
-            with st.spinner("캠페인 조회 중..."):
-                try:
-                    st.session_state["n_camps"] = naver_campaigns(api_key, secret_key, cid)
-                    for _k in ("n_ags","n_ags_camp_id","n_kws","n_kws_ag_id"):
-                        st.session_state.pop(_k, None)
-                except Exception as e:
-                    st.error(f"API 오류: {e}")
+            camps = st.session_state.get("n_camps", [])
+            if camps:
+                camp_map = {f"{c.get('name','(이름없음)')}": c for c in camps}
+                sel_camp = camp_map[
+                    st.selectbox("캠페인 선택", list(camp_map.keys()), key="n_sel_camp")
+                ]
+                camp_id = _get_id(sel_camp, "nccCampaignId", "campaignId", "id")
 
-        camps = st.session_state.get("n_camps", [])
-        if not camps:
-            st.stop()
+                # 광고그룹 — 캠페인 변경 시 자동 로드
+                if camp_id and st.session_state.get("n_ags_camp_id") != camp_id:
+                    with st.spinner("광고그룹 조회 중..."):
+                        try:
+                            st.session_state["n_ags"] = naver_adgroups(
+                                api_key, secret_key, cid, camp_id
+                            )
+                            st.session_state["n_ags_camp_id"] = camp_id
+                            st.session_state.pop("n_kws", None)
+                            st.session_state.pop("n_kws_ag_id", None)
+                        except Exception as e:
+                            st.error(f"API 오류: {e}")
 
-        camp_map = {f"{c.get('name','(이름없음)')}": c for c in camps}
-        sel_camp = camp_map[
-            st.selectbox("캠페인 선택", list(camp_map.keys()), key="n_sel_camp")
-        ]
-        camp_id = _get_id(sel_camp, "nccCampaignId", "campaignId", "id")
+                ags = st.session_state.get("n_ags", [])
+                if ags:
+                    ag_map = {f"{a.get('name','(이름없음)')}": a for a in ags}
+                    sel_ag  = ag_map[
+                        st.selectbox("광고그룹 선택", list(ag_map.keys()), key="n_sel_ag")
+                    ]
+                    ag_id = _get_id(sel_ag, "nccAdgroupId", "adgroupId", "adGroupId", "id")
 
-        # 광고그룹 — 캠페인 변경 시 자동 로드
-        if camp_id and st.session_state.get("n_ags_camp_id") != camp_id:
-            with st.spinner("광고그룹 조회 중..."):
-                try:
-                    st.session_state["n_ags"] = naver_adgroups(
-                        api_key, secret_key, cid, camp_id
-                    )
-                    st.session_state["n_ags_camp_id"] = camp_id
-                    st.session_state.pop("n_kws", None)
-                    st.session_state.pop("n_kws_ag_id", None)
-                except Exception as e:
-                    st.error(f"API 오류: {e}")
+                    if not ag_id:
+                        st.warning(f"광고그룹 ID를 찾을 수 없습니다. 키: {list(sel_ag.keys())}")
+                    else:
+                        # 키워드 — 광고그룹 변경 시 자동 로드
+                        if st.session_state.get("n_kws_ag_id") != ag_id:
+                            with st.spinner("키워드 조회 중..."):
+                                try:
+                                    st.session_state["n_kws"] = naver_keywords(
+                                        api_key, secret_key, cid, ag_id
+                                    )
+                                    st.session_state["n_kws_ag_id"] = ag_id
+                                except Exception as e:
+                                    st.error(f"API 오류: {e}")
 
-        ags = st.session_state.get("n_ags", [])
-        if not ags:
-            st.stop()
+                        n_kws = st.session_state.get("n_kws", [])
+                        if not n_kws:
+                            st.info("키워드가 없는 광고그룹입니다.")
+                        else:
+                            # 광고그룹 기본 입찰가 (키워드 "기본" 설정 시 fallback)
+                            ag_default_bid = sel_ag.get("bidAmt") or 0
 
-        ag_map = {f"{a.get('name','(이름없음)')}": a for a in ags}
-        sel_ag  = ag_map[
-            st.selectbox("광고그룹 선택", list(ag_map.keys()), key="n_sel_ag")
-        ]
-        ag_id = _get_id(sel_ag, "nccAdgroupId", "adgroupId", "adGroupId", "id")
+                            def _resolve_bid(k):
+                                raw = k.get("bidAmt") or k.get("bid") or 0
+                                try:
+                                    raw = int(raw)
+                                except (TypeError, ValueError):
+                                    raw = 0
+                                return ag_default_bid if raw <= 70 and ag_default_bid > 70 else raw or None
 
-        if not ag_id:
-            st.warning(f"광고그룹 ID를 찾을 수 없습니다. 키: {list(sel_ag.keys())}")
-            st.stop()
+                            # 불러온 키워드 미리보기
+                            kw_texts = []
+                            for k in n_kws:
+                                t = k.get("keyword") or k.get("keywordText") or k.get("text","")
+                                if t:
+                                    kw_texts.append(t)
 
-        # 키워드 — 광고그룹 변경 시 자동 로드
-        if ag_id and st.session_state.get("n_kws_ag_id") != ag_id:
-            with st.spinner("키워드 조회 중..."):
-                try:
-                    st.session_state["n_kws"] = naver_keywords(
-                        api_key, secret_key, cid, ag_id
-                    )
-                    st.session_state["n_kws_ag_id"] = ag_id
-                except Exception as e:
-                    st.error(f"API 오류: {e}")
+                            _KW_STATUS = {
+                                "ELIGIBLE":   "노출가능",
+                                "PAUSED":     "일시중지",
+                                "SUSPENDED":  "중지",
+                                "UNAPPROVED": "미승인",
+                                "DELETED":    "삭제됨",
+                            }
 
-        n_kws = st.session_state.get("n_kws", [])
-        if not n_kws:
-            st.info("키워드가 없는 광고그룹입니다.")
-            st.stop()
+                            st.markdown(f"**불러온 키워드 {len(kw_texts)}개**")
+                            import pandas as pd
+                            preview = pd.DataFrame([{
+                                "키워드":    k.get("keyword") or k.get("keywordText",""),
+                                "현재입찰가": _resolve_bid(k) or "",
+                                "상태":      _KW_STATUS.get(k.get("status",""), k.get("status","") or "-"),
+                            } for k in n_kws])
+                            st.dataframe(preview, use_container_width=True, hide_index=True)
 
-        # 광고그룹 기본 입찰가 (키워드 "기본" 설정 시 fallback)
-        ag_default_bid = sel_ag.get("bidAmt") or 0
+                            # 그룹 설정 후 등록
+                            st.markdown("**그룹 설정**")
+                            with st.form("add_group_naver", clear_on_submit=True):
+                                default_name = sel_ag.get("name","")
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    n_name  = st.text_input("그룹명 *", value=default_name)
+                                    n_rank  = st.number_input("목표순위", value=3, min_value=1, max_value=15)
+                                    n_min   = st.number_input("최소입찰가", value=10000, min_value=10, step=10)
+                                    n_max   = st.number_input("최대입찰가", value=35000, min_value=10, step=10)
+                                with c2:
+                                    n_unit  = st.number_input("증감단위(원)", value=100, min_value=10, step=10)
+                                    n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
 
-        def _resolve_bid(k):
-            raw = k.get("bidAmt") or k.get("bid") or 0
-            try:
-                raw = int(raw)
-            except (TypeError, ValueError):
-                raw = 0
-            return ag_default_bid if raw <= 70 and ag_default_bid > 70 else raw or None
+                                n_domain = st.text_input(
+                                    "검색 도메인 (순위 자동조회용)",
+                                    placeholder="예: www.example.com",
+                                    help="run_rank_checker.bat 실행 시 이 도메인의 광고 순위를 자동 조회합니다.",
+                                )
 
-        # 불러온 키워드 미리보기
-        kw_texts = []
-        for k in n_kws:
-            t = k.get("keyword") or k.get("keywordText") or k.get("text","")
-            if t:
-                kw_texts.append(t)
+                                if st.form_submit_button(
+                                    f"✅ 그룹 생성 (키워드 {len(kw_texts)}개 포함)",
+                                    type="primary", use_container_width=True,
+                                ):
+                                    if not n_name.strip():
+                                        st.error("그룹명 필수")
+                                    elif n_min >= n_max:
+                                        st.error("최소입찰가 < 최대입찰가")
+                                    else:
+                                        existing_kws = {kw["keyword"] for g in groups for kw in g.get("keywords",[])}
+                                        kw_objs = []
+                                        for k in n_kws:
+                                            t    = k.get("keyword") or k.get("keywordText","")
+                                            bid  = _resolve_bid(k)
+                                            kid  = _get_id(k, "nccKeywordId", "keywordId", "id")
+                                            if t and t not in existing_kws:
+                                                kw_objs.append(new_kw_obj(t, bid, kid))
+                                                if len(kw_objs) >= MAX_KEYWORDS:
+                                                    break
 
-        _KW_STATUS = {
-            "ELIGIBLE":   "노출가능",
-            "PAUSED":     "일시중지",
-            "SUSPENDED":  "중지",
-            "UNAPPROVED": "미승인",
-            "DELETED":    "삭제됨",
-        }
-
-        st.markdown(f"**불러온 키워드 {len(kw_texts)}개**")
-        import pandas as pd
-        preview = pd.DataFrame([{
-            "키워드":    k.get("keyword") or k.get("keywordText",""),
-            "현재입찰가": _resolve_bid(k) or "",
-            "상태":      _KW_STATUS.get(k.get("status",""), k.get("status","") or "-"),
-        } for k in n_kws])
-        st.dataframe(preview, use_container_width=True, hide_index=True)
-
-        # 그룹 설정 후 등록
-        st.markdown("**그룹 설정**")
-        with st.form("add_group_naver", clear_on_submit=True):
-            default_name = sel_ag.get("name","")
-            c1, c2 = st.columns(2)
-            with c1:
-                n_name  = st.text_input("그룹명 *", value=default_name)
-                n_rank  = st.number_input("목표순위", value=3, min_value=1, max_value=15)
-                n_min   = st.number_input("최소입찰가", value=10000, min_value=10, step=10)
-                n_max   = st.number_input("최대입찰가", value=35000, min_value=10, step=10)
-            with c2:
-                n_unit  = st.number_input("증감단위(원)", value=100, min_value=10, step=10)
-                n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
-
-
-            n_domain = st.text_input(
-                "검색 도메인 (순위 자동조회용)",
-                placeholder="예: www.example.com",
-                help="run_rank_checker.bat 실행 시 이 도메인의 광고 순위를 자동 조회합니다.",
-            )
-
-            if st.form_submit_button(
-                f"✅ 그룹 생성 (키워드 {len(kw_texts)}개 포함)",
-                type="primary", use_container_width=True,
-            ):
-                if not n_name.strip():
-                    st.error("그룹명 필수")
-                elif n_min >= n_max:
-                    st.error("최소입찰가 < 최대입찰가")
-                else:
-                    existing_kws = {kw["keyword"] for g in groups for kw in g.get("keywords",[])}
-                    kw_objs = []
-                    for k in n_kws:
-                        t    = k.get("keyword") or k.get("keywordText","")
-                        bid  = _resolve_bid(k)
-                        kid  = _get_id(k, "nccKeywordId", "keywordId", "id")
-                        if t and t not in existing_kws:
-                            kw_objs.append(new_kw_obj(t, bid, kid))
-                            if len(kw_objs) >= MAX_KEYWORDS:
-                                break
-
-                    data["groups"].append({
-                        "id":               str(uuid.uuid4()),
-                        "name":             n_name.strip(),
-                        "target_rank":      int(n_rank),
-                        "min_bid":          int(n_min),
-                        "max_bid":          int(n_max),
-                        "bid_unit":         int(n_unit),
-                        "check_interval":   int(n_intvl),
-                        "check_domain":      n_domain.strip(),
-                        "keywords":          kw_objs,
-                        "naver_campaign_id": camp_id,
-                        "naver_adgroup_id":  ag_id,
-                        "ad_account_id":     sel_acct.get("id",""),
-                    })
-                    save_data(data)
-                    for k in ["n_camps","n_ags","n_kws"]:
-                        st.session_state.pop(k, None)
-                    st.success(
-                        f"그룹 **{n_name.strip()}** 생성 완료 "
-                        f"(키워드 {len(kw_objs)}개)"
-                    )
-                    st.rerun()
+                                        data["groups"].append({
+                                            "id":               str(uuid.uuid4()),
+                                            "name":             n_name.strip(),
+                                            "target_rank":      int(n_rank),
+                                            "min_bid":          int(n_min),
+                                            "max_bid":          int(n_max),
+                                            "bid_unit":         int(n_unit),
+                                            "check_interval":   int(n_intvl),
+                                            "check_domain":      n_domain.strip(),
+                                            "keywords":          kw_objs,
+                                            "naver_campaign_id": camp_id,
+                                            "naver_adgroup_id":  ag_id,
+                                            "ad_account_id":     sel_acct.get("id",""),
+                                        })
+                                        save_data(data)
+                                        for k in ["n_camps","n_ags","n_kws"]:
+                                            st.session_state.pop(k, None)
+                                        st.success(
+                                            f"그룹 **{n_name.strip()}** 생성 완료 "
+                                            f"(키워드 {len(kw_objs)}개)"
+                                        )
+                                        st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 탭3: 키워드 관리 (그룹 선택 후 키워드 추가/삭제)
@@ -1483,112 +1474,111 @@ with tab2:
 with tab3:
     if not groups:
         st.info("그룹을 먼저 추가하세요. ([그룹 관리] 탭)")
-        st.stop()
-
-    group_map = {g["name"]: g for g in groups}
-    sel_name  = st.selectbox("그룹 선택", list(group_map.keys()), key="kw_tab_grp")
-    sel_g     = group_map[sel_name]
-    kw_list   = sel_g.get("keywords", [])
-    existing  = {k["keyword"] for k in kw_list}
-
-    st.markdown(f"**{sel_name}** — {len(kw_list)} / {MAX_KEYWORDS}개")
-
-    # 키워드 추가
-    if len(kw_list) < MAX_KEYWORDS:
-        kw_text = st.text_area(
-            "키워드 추가 (줄바꿈 또는 쉼표로 구분)",
-            placeholder="이혼변호사\n이혼전문변호사",
-            height=120,
-            key="kw_tab_input",
-        )
-        if st.button("추가", type="primary", key="kw_tab_add"):
-            raw = re.split(r"[\n,]+", kw_text or "")
-            new = [k.strip() for k in raw if k.strip() and k.strip() not in existing]
-            new = new[:MAX_KEYWORDS - len(kw_list)]
-            if not new:
-                st.warning("추가할 새 키워드가 없습니다.")
-            else:
-                for k in new:
-                    sel_g["keywords"].append(new_kw_obj(k))
-                save_data(data)
-                st.success(f"{len(new)}개 추가 완료")
-                st.rerun()
     else:
-        st.warning(f"키워드 최대 {MAX_KEYWORDS}개 도달")
+        group_map = {g["name"]: g for g in groups}
+        sel_name  = st.selectbox("그룹 선택", list(group_map.keys()), key="kw_tab_grp")
+        sel_g     = group_map[sel_name]
+        kw_list   = sel_g.get("keywords", [])
+        existing  = {k["keyword"] for k in kw_list}
 
-    st.divider()
+        st.markdown(f"**{sel_name}** — {len(kw_list)} / {MAX_KEYWORDS}개")
 
-    # 현재 키워드 목록
-    _on_cnt  = sum(1 for k in kw_list if k.get("enabled", True))
-    _off_cnt = len(kw_list) - _on_cnt
-    st.markdown(f"**등록 키워드** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
-    if not kw_list:
-        st.info("등록된 키워드가 없습니다.")
-    else:
-        _en_checks  = {}
-        _del_checks = {}
-
-        # 헤더
-        _hh0, _hh1, _hh2, _hh3, _hh4 = st.columns([1, 3, 2, 2, 1])
-        _hh0.markdown("**ON**")
-        _hh1.markdown("**키워드**")
-        _hh2.markdown("**현재입찰가**")
-        _hh3.markdown("**상태**")
-        _hh4.markdown("**제거**")
-
-        for kw_obj in kw_list:
-            kw = kw_obj["keyword"]
-            _c0, _c1, _c2, _c3, _c4 = st.columns([1, 3, 2, 2, 1])
-            _en_checks[kw] = _c0.checkbox(
-                "", key=f"en_{sel_g['id']}_{kw}",
-                value=kw_obj.get("enabled", True),
-                label_visibility="collapsed",
+        # 키워드 추가
+        if len(kw_list) < MAX_KEYWORDS:
+            kw_text = st.text_area(
+                "키워드 추가 (줄바꿈 또는 쉼표로 구분)",
+                placeholder="이혼변호사\n이혼전문변호사",
+                height=120,
+                key="kw_tab_input",
             )
-            _c1.write(kw)
-            _c2.write(f"{kw_obj['current_bid']:,}원" if kw_obj.get("current_bid") else "—")
-            _c3.write(
-                STATUS_ICON.get(kw_obj.get("status", "데이터 부족"), "⚪")
-                + " " + kw_obj.get("status", "데이터 부족")
+            if st.button("추가", type="primary", key="kw_tab_add"):
+                raw = re.split(r"[\n,]+", kw_text or "")
+                new = [k.strip() for k in raw if k.strip() and k.strip() not in existing]
+                new = new[:MAX_KEYWORDS - len(kw_list)]
+                if not new:
+                    st.warning("추가할 새 키워드가 없습니다.")
+                else:
+                    for k in new:
+                        sel_g["keywords"].append(new_kw_obj(k))
+                    save_data(data)
+                    st.success(f"{len(new)}개 추가 완료")
+                    st.rerun()
+        else:
+            st.warning(f"키워드 최대 {MAX_KEYWORDS}개 도달")
+
+        st.divider()
+
+        # 현재 키워드 목록
+        _on_cnt  = sum(1 for k in kw_list if k.get("enabled", True))
+        _off_cnt = len(kw_list) - _on_cnt
+        st.markdown(f"**등록 키워드** — 전체 {len(kw_list)}개 (활성 {_on_cnt} / 비활성 {_off_cnt})")
+        if not kw_list:
+            st.info("등록된 키워드가 없습니다.")
+        else:
+            _en_checks  = {}
+            _del_checks = {}
+
+            # 헤더
+            _hh0, _hh1, _hh2, _hh3, _hh4 = st.columns([1, 3, 2, 2, 1])
+            _hh0.markdown("**ON**")
+            _hh1.markdown("**키워드**")
+            _hh2.markdown("**현재입찰가**")
+            _hh3.markdown("**상태**")
+            _hh4.markdown("**제거**")
+
+            for kw_obj in kw_list:
+                kw = kw_obj["keyword"]
+                _c0, _c1, _c2, _c3, _c4 = st.columns([1, 3, 2, 2, 1])
+                _en_checks[kw] = _c0.checkbox(
+                    "", key=f"en_{sel_g['id']}_{kw}",
+                    value=kw_obj.get("enabled", True),
+                    label_visibility="collapsed",
+                )
+                _c1.write(kw)
+                _c2.write(f"{kw_obj['current_bid']:,}원" if kw_obj.get("current_bid") else "—")
+                _c3.write(
+                    STATUS_ICON.get(kw_obj.get("status", "데이터 부족"), "⚪")
+                    + " " + kw_obj.get("status", "데이터 부족")
+                )
+                _del_checks[kw] = _c4.checkbox(
+                    "", key=f"del_{sel_g['id']}_{kw}",
+                    label_visibility="collapsed",
+                )
+
+            # 일괄 버튼 + 저장
+            _ba, _bb, _bc, _ = st.columns([1, 1, 1, 3])
+            _all_on  = _ba.button("전체 ON",  key="kw_all_on")
+            _all_off = _bb.button("전체 OFF", key="kw_all_off")
+            _del_btn = _bc.button("선택 제거", key="kw_del_btn", type="secondary")
+
+            if _all_on:
+                for k in kw_list: k["enabled"] = True
+                save_data(data); st.rerun()
+            if _all_off:
+                for k in kw_list: k["enabled"] = False
+                save_data(data); st.rerun()
+            if _del_btn:
+                to_del = {k for k, v in _del_checks.items() if v}
+                if not to_del:
+                    st.warning("제거할 항목을 체크하세요.")
+                else:
+                    sel_g["keywords"] = [k for k in kw_list if k["keyword"] not in to_del]
+                    save_data(data)
+                    st.success(f"{len(to_del)}개 제거 완료")
+                    st.rerun()
+
+            # ON/OFF 변경 저장
+            _changed = any(
+                kw_obj.get("enabled", True) != _en_checks.get(kw_obj["keyword"], True)
+                for kw_obj in kw_list
             )
-            _del_checks[kw] = _c4.checkbox(
-                "", key=f"del_{sel_g['id']}_{kw}",
-                label_visibility="collapsed",
-            )
-
-        # 일괄 버튼 + 저장
-        _ba, _bb, _bc, _ = st.columns([1, 1, 1, 3])
-        _all_on  = _ba.button("전체 ON",  key="kw_all_on")
-        _all_off = _bb.button("전체 OFF", key="kw_all_off")
-        _del_btn = _bc.button("선택 제거", key="kw_del_btn", type="secondary")
-
-        if _all_on:
-            for k in kw_list: k["enabled"] = True
-            save_data(data); st.rerun()
-        if _all_off:
-            for k in kw_list: k["enabled"] = False
-            save_data(data); st.rerun()
-        if _del_btn:
-            to_del = {k for k, v in _del_checks.items() if v}
-            if not to_del:
-                st.warning("제거할 항목을 체크하세요.")
-            else:
-                sel_g["keywords"] = [k for k in kw_list if k["keyword"] not in to_del]
-                save_data(data)
-                st.success(f"{len(to_del)}개 제거 완료")
-                st.rerun()
-
-        # ON/OFF 변경 저장
-        _changed = any(
-            kw_obj.get("enabled", True) != _en_checks.get(kw_obj["keyword"], True)
-            for kw_obj in kw_list
-        )
-        if _changed:
-            if st.button("💾 ON/OFF 변경 저장", type="primary", key="kw_en_save"):
-                for kw_obj in kw_list:
-                    kw_obj["enabled"] = _en_checks.get(kw_obj["keyword"], True)
-                save_data(data)
-                st.success("저장됐습니다.")
-                st.rerun()
+            if _changed:
+                if st.button("💾 ON/OFF 변경 저장", type="primary", key="kw_en_save"):
+                    for kw_obj in kw_list:
+                        kw_obj["enabled"] = _en_checks.get(kw_obj["keyword"], True)
+                    save_data(data)
+                    st.success("저장됐습니다.")
+                    st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # 탭4: 계정 관리
