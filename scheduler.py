@@ -595,6 +595,25 @@ def main():
             if not running and not trigger:
                 continue
 
+            # activated_at 만료 체크 (8시간 이상 경과 시 자동 비활성화)
+            if running and not trigger:
+                _activated = state.get("activated_at", "")
+                _expired = True
+                if _activated:
+                    try:
+                        _act_dt = datetime.fromisoformat(_activated)
+                        _elapsed = (datetime.now() - _act_dt).total_seconds()
+                        if _elapsed <= 8 * 3600:  # 8시간 이내면 유효
+                            _expired = False
+                    except Exception:
+                        pass
+                if _expired:
+                    print(f"  [{cid}] activated_at 만료 — running 초기화 (수동 재시작 필요)")
+                    state["running"] = False
+                    bdata["state"] = state
+                    sb_save(f"bidding_{cid}", bdata)
+                    continue
+
             print(f"\n  클라이언트: {cid} ({'트리거' if trigger else '자동'})")
 
             # trigger 초기화

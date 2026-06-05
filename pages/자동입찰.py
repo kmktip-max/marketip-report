@@ -729,12 +729,14 @@ with tab1:
             if st.button("▶ 자동입찰 시작", use_container_width=True,
                          disabled=is_running):
                 _existing_pid = _find_scheduler_pid()
+                _now_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
                 if _existing_pid:
                     # 이미 실행 중인 스케줄러에 running=True 신호만 전달
                     data["state"] = {
                         **bid_state,
-                        "running":    True,
-                        "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                        "running":      True,
+                        "started_at":   _now_ts,
+                        "activated_at": _now_ts,   # 8시간 만료 기준
                     }
                     save_data(data)
                     st.success("✅ 자동입찰이 활성화됐습니다. (스케줄러 실행 중)")
@@ -752,7 +754,8 @@ with tab1:
                             data["state"] = {
                                 **bid_state,
                                 "running":       True,
-                                "started_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                                "started_at":    _now_ts,
+                                "activated_at":  _now_ts,   # 8시간 만료 기준
                                 "scheduler_pid": _proc2.pid,
                             }
                             save_data(data)
