@@ -612,7 +612,8 @@ def main():
                     try:
                         _act_dt = datetime.fromisoformat(_activated)
                         _elapsed = (datetime.now() - _act_dt).total_seconds()
-                        if _elapsed <= 8 * 3600 and _act_dt >= _session_start:
+                        # 60초 여유: 버튼 클릭 후 스케줄러 프로세스 시작까지 race condition 방지
+                        if _elapsed <= 8 * 3600 and _act_dt >= _session_start - timedelta(seconds=60):
                             _expired = False
                     except Exception:
                         pass
