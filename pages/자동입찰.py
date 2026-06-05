@@ -728,31 +728,38 @@ with tab1:
         with b1:
             if st.button("▶ 자동입찰 시작", use_container_width=True,
                          disabled=is_running):
-                from pathlib import Path as _PL2
-                _pr2 = _PL2(__file__).resolve().parents[1]
-                _bp2 = _pr2 / "run_scheduler.bat"
-
-                if not _bp2.exists():
-                    st.error(f"BAT 파일 없음: {_bp2}")
+                _existing_pid = _find_scheduler_pid()
+                if _existing_pid:
+                    # 이미 실행 중인 스케줄러에 running=True 신호만 전달
+                    data["state"] = {
+                        **bid_state,
+                        "running":    True,
+                        "started_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    }
+                    save_data(data)
+                    st.success("✅ 자동입찰이 활성화됐습니다. (스케줄러 실행 중)")
                 else:
-                    try:
-                        _cmd2 = f'start "마케팁 자동입찰" cmd.exe /k "{_bp2}"'
-                        _proc2 = subprocess.Popen(
-                            _cmd2,
-                            shell=True,
-                            cwd=str(_pr2),
-                        )
-                        st.success("자동입찰 스케줄러가 시작됐습니다.")
-                        data["state"] = {
-                            **bid_state,
-                            "running":       True,
-                            "started_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                            "scheduler_pid": _proc2.pid,
-                        }
-                        save_data(data)
-                    except Exception as _e2:
-                        st.error("[자동입찰] CMD 실행 실패")
-                        st.exception(_e2)
+                    # 스케줄러가 없으면 새로 시작
+                    from pathlib import Path as _PL2
+                    _pr2 = _PL2(__file__).resolve().parents[1]
+                    _bp2 = _pr2 / "run_scheduler.bat"
+                    if not _bp2.exists():
+                        st.error(f"BAT 파일 없음: {_bp2}")
+                    else:
+                        try:
+                            _cmd2 = f'start "마케팁 자동입찰" cmd.exe /k "{_bp2}"'
+                            _proc2 = subprocess.Popen(_cmd2, shell=True, cwd=str(_pr2))
+                            data["state"] = {
+                                **bid_state,
+                                "running":       True,
+                                "started_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                                "scheduler_pid": _proc2.pid,
+                            }
+                            save_data(data)
+                            st.success("✅ 자동입찰 스케줄러가 시작됐습니다.")
+                        except Exception as _e2:
+                            st.error("[자동입찰] CMD 실행 실패")
+                            st.exception(_e2)
         with b2:
             if st.button("⏹ 자동입찰 중지", use_container_width=True,
                          disabled=not is_running):

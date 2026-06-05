@@ -541,6 +541,25 @@ def main():
     print("  종료: Ctrl+C")
     print("=" * 60)
 
+    # ── 시작 시 자동입찰 running 상태 초기화 (수동 클릭 없이 재개 방지) ─────
+    print("  [시작] 자동입찰 상태 초기화 — 수동으로 '자동입찰 시작' 버튼을 눌러야 작동합니다.")
+    try:
+        _init_accounts = sb_load("client_accounts",
+                                  os.path.join(ROOT, "client_accounts.json")) or []
+        _init_ids = ["admin"] + [a.get("username","") for a in _init_accounts if a.get("username")]
+        for _cid in _init_ids:
+            _bd = sb_load(f"bidding_{_cid}")
+            if _bd and isinstance(_bd, dict):
+                _st = _bd.get("state", {})
+                if _st.get("running") or _st.get("trigger_now"):
+                    _st["running"]     = False
+                    _st["trigger_now"] = False
+                    _bd["state"] = _st
+                    sb_save(f"bidding_{_cid}", _bd)
+                    print(f"  [시작] {_cid}: running → False (수동 시작 필요)")
+    except Exception as _ie:
+        print(f"  [시작] 초기화 오류 (무시): {_ie}")
+
     cycle_count         = 0
     _last_hb_t          = 0.0   # heartbeat 마지막 저장 시각
     _last_report_check  = 0.0   # 보고서 스케줄 마지막 체크 시각
