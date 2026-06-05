@@ -704,25 +704,35 @@ with tab1:
         "Streamlit 화면은 상태 조회 · 제어만 담당합니다."
     )
 
-    # ── 실행 경로 디버그 (expander) ───────────────────────────────────────
-    from pathlib import Path as _PL
-    _pr_dbg  = _PL(__file__).resolve().parents[1]
-    _bp_dbg  = _pr_dbg / "run_scheduler.bat"
-    _sp_dbg  = _pr_dbg / "scheduler.py"
-    with st.expander("🔍 실행 경로 디버그", expanded=False):
-        st.code(
-            f"__file__         = {__file__}\n"
-            f"os.getcwd()      = {os.getcwd()}\n"
-            f"sys.executable   = {sys.executable}\n"
-            f"PROJECT_ROOT     = {_pr_dbg}\n"
-            f"BAT_PATH         = {_bp_dbg}\n"
-            f"BAT_EXISTS       = {_bp_dbg.exists()}\n"
-            f"SCHEDULER_EXISTS = {_sp_dbg.exists()}"
-        )
-
+    # ── 등록 그룹 요약 ────────────────────────────────────────────────────
     if not groups:
         st.info("등록된 그룹이 없습니다. [그룹 관리] 탭에서 그룹을 추가하세요.")
     else:
+        # ── 자동입찰 대상 그룹 요약 ─────────────────────────────────────
+        st.markdown("**자동입찰 대상 그룹**")
+        _gcols = st.columns(len(groups)) if len(groups) <= 4 else st.columns(4)
+        for _gi, _g in enumerate(groups):
+            _kws     = _g.get("keywords", [])
+            _on_kws  = sum(1 for _k in _kws if _k.get("enabled", True))
+            _total   = len(_kws)
+            _intv    = _g.get("check_interval", 15)
+            _trank   = _g.get("target_rank", "-")
+            _minb    = _g.get("min_bid", 0)
+            _maxb    = _g.get("max_bid", 0)
+            with _gcols[_gi % 4]:
+                st.markdown(
+                    f"<div style='border:1px solid #E2E8F0;border-radius:8px;"
+                    f"padding:10px 14px;background:#F8FAFC;font-size:13px;'>"
+                    f"<div style='font-weight:700;color:#1E293B;margin-bottom:4px;'>{_g['name']}</div>"
+                    f"<div style='color:#475569;'>목표순위 <b>{_trank}위</b></div>"
+                    f"<div style='color:#475569;'>입찰 {_minb:,}~{_maxb:,}원</div>"
+                    f"<div style='color:#475569;'>키워드 <b>{_on_kws}/{_total}개</b> ON</div>"
+                    f"<div style='color:#64748B;font-size:12px;margin-top:2px;'>⏱ {_intv}분 주기</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+
         # ── 제어 버튼 4개 ───────────────────────────────────────────────
         b1, b2, b3, b4 = st.columns(4)
         with b1:
