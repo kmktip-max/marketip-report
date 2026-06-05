@@ -1620,40 +1620,40 @@ with tab4:
 
     # ── 계정 수정 / 삭제 ──────────────────────────────────────────────────
     if _t4_names:
-        st.subheader("계정 수정 / 삭제")
-        _edit_name = st.selectbox("수정할 계정 선택", _t4_names, key="t4_edit_acct_sel")
-        _edit_acct = next((a for a in _t4_accounts if a["business_name"] == _edit_name), None)
-        if _edit_acct:
-            with st.form("edit_acct_form"):
-                ea, eb = st.columns(2)
-                with ea:
-                    ea_biz = st.text_input("업체명 *",   value=_edit_acct["business_name"])
-                    ea_ak  = st.text_input("API Key *",  value=_edit_acct["api_key"], type="password")
-                with eb:
-                    ea_sk  = st.text_input("Secret Key *", value=_edit_acct["secret_key"], type="password")
-                    ea_ci  = st.text_input("고객 ID *",   value=_edit_acct["customer_id"])
-                ea_memo = st.text_input("메모", value=_edit_acct.get("memo", ""))
-                cs, cd = st.columns(2)
-                with cs:
-                    if st.form_submit_button("수정 저장", use_container_width=True):
-                        if not all([ea_biz.strip(), ea_ak.strip(), ea_sk.strip(), ea_ci.strip()]):
-                            st.error("필수 항목을 모두 입력해주세요.")
-                        else:
-                            _edit_acct.update({
-                                "business_name": ea_biz.strip(),
-                                "api_key":       ea_ak.strip(),
-                                "secret_key":    ea_sk.strip(),
-                                "customer_id":   ea_ci.strip(),
-                                "memo":          ea_memo.strip(),
-                                "updated_at":    datetime.now().isoformat(),
-                            })
+        with st.expander("✏️ 계정 수정 / 삭제", expanded=False):
+            _edit_name = st.selectbox("수정할 계정 선택", _t4_names, key="t4_edit_acct_sel")
+            _edit_acct = next((a for a in _t4_accounts if a["business_name"] == _edit_name), None)
+            if _edit_acct:
+                with st.form("edit_acct_form"):
+                    ea, eb = st.columns(2)
+                    with ea:
+                        ea_biz = st.text_input("업체명 *",   value=_edit_acct["business_name"])
+                        ea_ak  = st.text_input("API Key *",  value=_edit_acct["api_key"], type="password")
+                    with eb:
+                        ea_sk  = st.text_input("Secret Key *", value=_edit_acct["secret_key"], type="password")
+                        ea_ci  = st.text_input("고객 ID *",   value=_edit_acct["customer_id"])
+                    ea_memo = st.text_input("메모", value=_edit_acct.get("memo", ""))
+                    cs, cd = st.columns(2)
+                    with cs:
+                        if st.form_submit_button("수정 저장", use_container_width=True):
+                            if not all([ea_biz.strip(), ea_ak.strip(), ea_sk.strip(), ea_ci.strip()]):
+                                st.error("필수 항목을 모두 입력해주세요.")
+                            else:
+                                _edit_acct.update({
+                                    "business_name": ea_biz.strip(),
+                                    "api_key":       ea_ak.strip(),
+                                    "secret_key":    ea_sk.strip(),
+                                    "customer_id":   ea_ci.strip(),
+                                    "memo":          ea_memo.strip(),
+                                    "updated_at":    datetime.now().isoformat(),
+                                })
+                                save_ad_accounts(_t4_accounts)
+                                st.success("수정 완료")
+                                st.rerun()
+                    with cd:
+                        if st.form_submit_button("삭제", use_container_width=True):
+                            _t4_accounts[:] = [a for a in _t4_accounts if a["id"] != _edit_acct["id"]]
                             save_ad_accounts(_t4_accounts)
-                            st.success("수정 완료")
                             st.rerun()
-                with cd:
-                    if st.form_submit_button("삭제", use_container_width=True):
-                        _t4_accounts[:] = [a for a in _t4_accounts if a["id"] != _edit_acct["id"]]
-                        save_ad_accounts(_t4_accounts)
-                        st.rerun()
     else:
         st.info("등록된 광고계정이 없습니다. 위에서 신규 계정을 등록해주세요.")
