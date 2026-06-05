@@ -87,14 +87,14 @@ section[data-testid="stSidebar"] { display: none !important; }
 
   <!-- 광고구조 컨설팅 -->
   <div style="margin-bottom:12px;">
-    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고구조 컨설팅</div>
+    <div style="font-size:11px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고구조 컨설팅</div>
     <div style="display:flex;flex-direction:column;gap:5px;">
       <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
                   background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">📈</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">광고분석 컨설팅</div>
-          <div style="font-size:10px;color:#64748B;">광고 구조 진단 및 개선 방향 제안</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">광고분석 컨설팅</div>
+          <div style="font-size:11px;color:#64748B;">광고 구조 진단 및 개선 방향 제안</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
@@ -102,8 +102,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                   background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">📩</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">월간보고서</div>
-          <div style="font-size:10px;color:#64748B;">월간 광고 성과 보고서 자동 생성 · 이메일 발송</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">월간보고서</div>
+          <div style="font-size:11px;color:#64748B;">월간 광고 성과 보고서 자동 생성 · 이메일 발송</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
@@ -112,13 +112,13 @@ section[data-testid="stSidebar"] { display: none !important; }
 
   <!-- 광고주 관리 -->
   <div style="margin-bottom:12px;">
-    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고주 관리</div>
+    <div style="font-size:11px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고주 관리</div>
     <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
                 background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;">
       <span style="font-size:18px;line-height:1;">💸</span>
       <div style="flex:1;">
-        <div style="font-size:12px;font-weight:700;color:#1E293B;">광고비 페이백 신청</div>
-        <div style="font-size:10px;color:#64748B;">네이버 · 카카오 · 당근 페이백 계정 연동</div>
+        <div style="font-size:13px;font-weight:700;color:#1E293B;">광고비 페이백 신청</div>
+        <div style="font-size:11px;color:#64748B;">네이버 · 카카오 · 당근 페이백 계정 연동</div>
       </div>
       <span style="font-size:11px;">🔒</span>
     </div>
@@ -126,14 +126,14 @@ section[data-testid="stSidebar"] { display: none !important; }
 
   <!-- 광고 운영 -->
   <div style="margin-bottom:12px;">
-    <div style="font-size:10px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고 운영</div>
+    <div style="font-size:11px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고 운영</div>
     <div style="display:flex;flex-direction:column;gap:5px;">
       <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
                   background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">📊</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">목표순위 자동입찰</div>
-          <div style="font-size:10px;color:#64748B;">키워드별 목표 순위 자동 입찰 관리</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">목표순위 자동입찰</div>
+          <div style="font-size:11px;color:#64748B;">키워드별 목표 순위 자동 입찰 관리</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
@@ -141,8 +141,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                   background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">🔍</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">키워드 추출</div>
-          <div style="font-size:10px;color:#64748B;">경쟁사 기반 고효율 키워드 자동 발굴</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">키워드 추출</div>
+          <div style="font-size:11px;color:#64748B;">경쟁사 기반 고효율 키워드 자동 발굴</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
@@ -150,8 +150,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                   background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">✍️</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">광고소재 추출</div>
-          <div style="font-size:10px;color:#64748B;">AI 기반 광고 제목 · 설명 자동 생성</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">광고소재 추출</div>
+          <div style="font-size:11px;color:#64748B;">AI 기반 광고 제목 · 설명 자동 생성</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
@@ -159,8 +159,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                   background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">📐</span>
         <div style="flex:1;">
-          <div style="font-size:12px;font-weight:700;color:#1E293B;">랜딩페이지 기획/분석</div>
-          <div style="font-size:10px;color:#64748B;">랜딩페이지 진단 및 개선안 제안</div>
+          <div style="font-size:13px;font-weight:700;color:#1E293B;">랜딩페이지 기획/분석</div>
+          <div style="font-size:11px;color:#64748B;">랜딩페이지 진단 및 개선안 제안</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
