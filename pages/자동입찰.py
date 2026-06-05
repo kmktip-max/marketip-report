@@ -139,10 +139,15 @@ def _kill_scheduler(stored_pid=None):
             psutil.Process(py_pid).terminate()
         except Exception:
             pass
-    # heartbeat 파일 삭제 (상태 초기화)
+    # 로컬 heartbeat 파일 삭제
     try:
         if os.path.exists(HB_PATH):
             os.remove(HB_PATH)
+    except Exception:
+        pass
+    # Supabase heartbeat도 "stopped"로 초기화 (fallback 읽기 방지)
+    try:
+        sb_save("scheduler_heartbeat", {"status": "stopped", "last_heartbeat": ""})
     except Exception:
         pass
 
