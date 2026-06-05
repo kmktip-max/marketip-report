@@ -1209,7 +1209,6 @@ with tab2:
                     with c2:
                         g_unit   = st.number_input("증감단위(원)", value=g["bid_unit"],       min_value=10, step=10)
                         g_intvl  = st.number_input("체크주기(분)", value=g["check_interval"], min_value=1)
-                        g_auto   = st.checkbox("자동적용",         value=g.get("auto_apply", False))
                     g_domain = st.text_input(
                         "검색 도메인 (순위 자동조회용)",
                         value=g.get("check_domain",""),
@@ -1229,7 +1228,6 @@ with tab2:
                                     "name": g_name.strip(), "target_rank": int(g_rank),
                                     "min_bid": int(g_min), "max_bid": int(g_max),
                                     "bid_unit": int(g_unit), "check_interval": int(g_intvl),
-                                    "auto_apply": g_auto,
                                     "check_domain": g_domain.strip(),
                                 })
                                 save_data(data)
@@ -1272,7 +1270,7 @@ with tab2:
                 with c2:
                     n_unit  = st.number_input("증감단위(원)", value=100, min_value=10, step=10)
                     n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
-                    n_auto  = st.checkbox("자동적용", value=False)
+
 
                 n_domain = st.text_input(
                     "검색 도메인 (순위 자동조회용)",
@@ -1304,7 +1302,6 @@ with tab2:
                             "max_bid":        int(n_max),
                             "bid_unit":       int(n_unit),
                             "check_interval": int(n_intvl),
-                            "auto_apply":     n_auto,
                             "check_domain":   n_domain.strip(),
                             "keywords":       [new_kw_obj(k) for k in kws],
                         }
@@ -1549,7 +1546,7 @@ with tab2:
                 with c2:
                     n_unit  = st.number_input("증감단위(원)", value=100, min_value=10, step=10)
                     n_intvl = st.number_input("체크주기(분)", value=15, min_value=1)
-                    n_auto  = st.checkbox("자동적용", value=False)
+
 
                 n_domain = st.text_input(
                     "검색 도메인 (순위 자동조회용)",
@@ -1585,7 +1582,6 @@ with tab2:
                             "max_bid":          int(n_max),
                             "bid_unit":         int(n_unit),
                             "check_interval":   int(n_intvl),
-                            "auto_apply":        n_auto,
                             "check_domain":      n_domain.strip(),
                             "keywords":          kw_objs,
                             "naver_campaign_id": camp_id,
