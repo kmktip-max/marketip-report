@@ -531,43 +531,119 @@ with TAB_SCR:
         f'?client_id={target_cid}"></script>'
     )
 
-    st.markdown("#### 랜딩페이지 삽입 코드")
+    # ── 발급 코드 ──────────────────────────────────────────────────────────────
+    st.markdown("#### 📋 발급된 스크립트 코드")
     st.code(script_tag, language="html")
 
-    st.markdown("#### 전환 이벤트 호출 (선택)")
+    st.markdown("---")
+
+    # ── 삽입 위치 안내 ──────────────────────────────────────────────────────────
+    st.markdown("### 📌 어디에 넣어야 하나요?")
+    st.info(
+        "광고를 클릭했을 때 사람들이 **처음 도달하는 페이지(랜딩페이지)** 의 HTML 코드 안, "
+        "**`</head>` 태그 바로 위**에 붙여넣기 하면 됩니다."
+    )
+
+    st.markdown("#### ✅ 올바른 삽입 위치 예시")
     st.code(
-        "// 문의/구매/전화 등 전환 시 호출\nwindow.mktipConversion({type: 'inquiry'});",
-        language="javascript",
+        f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>광고 랜딩페이지</title>
+
+  <!-- ▼▼▼ 여기에 붙여넣기 ▼▼▼ -->
+  {script_tag}
+  <!-- ▲▲▲ 여기까지 ▲▲▲ -->
+
+</head>
+<body>
+  ... 페이지 내용 ...
+</body>
+</html>""",
+        language="html",
     )
 
     st.markdown("---")
-    st.markdown("#### 추적 서버 실행 방법")
-    st.code(
-        "# 1. 의존성 설치\npip install fastapi uvicorn\n\n"
-        "# 2. 서버 실행 (포트 8502)\nuvicorn fraud.server:app --host 0.0.0.0 --port 8502",
-        language="bash",
-    )
+    st.markdown("### 🏗️ 홈페이지 종류별 삽입 방법")
 
-    st.markdown("#### 수집 항목")
-    st.markdown("""
-| 항목 | 설명 |
-|------|------|
-| `ip_address` | 방문자 IP (서버에서 수집) |
-| `user_agent` | 브라우저/OS 정보 |
-| `landing_url` | 랜딩페이지 URL |
-| `referrer` | 유입 전 페이지 |
-| `keyword` | utm_term / kw 파라미터 |
-| `utm_source/medium/campaign` | UTM 파라미터 |
-| `device/browser/os` | UA 파싱 결과 |
-| `session_id` | 세션 고유 ID |
-| `stay_seconds` | 체류시간 (페이지 이탈 시 전송) |
-| `is_conversion` | 전환 여부 (mktipConversion 호출 시) |
+    tab_cafe24, tab_wordpress, tab_html, tab_naver = st.tabs([
+        "카페24 / 메이크샵", "워드프레스", "직접 제작 HTML", "네이버 스마트스토어"
+    ])
+
+    with tab_cafe24:
+        st.markdown("""
+**카페24 관리자 → 디자인 → HTML/CSS 편집**
+
+1. 카페24 관리자 페이지 로그인
+2. 상단 메뉴 **디자인** 클릭
+3. **디자인 편집** → HTML 편집 버튼
+4. `index.html` (또는 메인 레이아웃 파일) 열기
+5. `</head>` 를 찾아서 **그 바로 위**에 코드 붙여넣기
+6. 저장
 """)
 
+    with tab_wordpress:
+        st.markdown("""
+**워드프레스 → 외모 → 테마 편집기** 또는 **헤더/푸터 플러그인**
+
+**방법 1 — 테마 편집기**
+1. 워드프레스 관리자 → **외모** → **테마 편집기**
+2. 오른쪽에서 `header.php` 선택
+3. `</head>` 바로 위에 코드 붙여넣기
+4. **파일 업데이트** 클릭
+
+**방법 2 — 플러그인 (권장)**
+1. 플러그인 → **Insert Headers and Footers** 설치
+2. 설정 → **Scripts in Header** 칸에 코드 붙여넣기
+3. 저장
+""")
+
+    with tab_html:
+        st.markdown("""
+**직접 제작 또는 HTML 파일 수정**
+
+1. 랜딩페이지 `.html` 파일을 텍스트 편집기(메모장, VS Code 등)로 열기
+2. `Ctrl+F`로 `</head>` 검색
+3. `</head>` 바로 위 줄에 코드 붙여넣기
+4. 저장 후 서버에 재업로드 (FTP 등)
+""")
+
+    with tab_naver:
+        st.markdown("""
+**네이버 스마트스토어는 외부 스크립트 삽입이 제한**됩니다.
+
+- 스마트스토어 자체 페이지에는 이 스크립트를 직접 삽입할 수 없습니다.
+- 대신 **별도 랜딩페이지**(자체 도메인)를 제작하고, 그 페이지에서 스마트스토어로 연결하는 방식을 사용하세요.
+- 광고 도착 URL을 자체 랜딩페이지로 설정 → 추적 후 스마트스토어로 리다이렉트 가능합니다.
+""")
+
+    st.markdown("---")
+
+    # ── 전환 이벤트 (선택) ─────────────────────────────────────────────────────
+    with st.expander("📞 전환 이벤트 설정 (전화 상담·문의 완료 등)"):
+        st.markdown("""
+전환이 발생했을 때 아래 코드를 호출하면, 해당 방문자의 위험도 점수가 낮아집니다.
+(부정클릭이 아닌 진짜 고객으로 분류)
+
+**예시 — 전화 버튼 클릭 시:**
+""")
+        st.code(
+            """<button onclick="window.mktipConversion({type: 'call'})">
+  📞 전화 상담
+</button>""",
+            language="html",
+        )
+        st.markdown("**예시 — 문의 폼 제출 완료 시:**")
+        st.code(
+            """// 폼 submit 성공 후 실행
+window.mktipConversion({type: 'inquiry'});""",
+            language="javascript",
+        )
+
     st.info(
-        "⚠️ **개인정보 처리**: IP 주소는 부정클릭 탐지 목적으로만 수집되며, "
-        "개인정보 처리방침에 IP 수집 항목을 반드시 명시하세요. "
-        "IP 해시 옵션이 필요하시면 fraud/db.py의 `hash_ip` 함수를 참고하세요."
+        "⚠️ **개인정보 처리방침**: 이 스크립트는 방문자 IP를 수집합니다. "
+        "사이트 개인정보 처리방침에 **'광고 부정클릭 방지 목적으로 IP 주소를 수집함'** 을 명시하세요."
     )
 
     with st.expander("API 엔드포인트 참고"):
