@@ -1,0 +1,16 @@
+[
+  {
+    "customer_id": "2815366",
+    "alert_enabled": true,
+    "first_alert_amount": 50000,
+    "second_alert_amount": 0,
+    "first_alert_sent": false,
+    "second_alert_sent": false,
+    "advertiser_phone": "01027973164",
+    "manager_name": "권혁우",
+    "manager_phone": "01027973164",
+    "last_bizmoney_balance": 752,
+    "last_checked_at": "2026-05-27T13:22:08.628216+09:00",
+    "memo": "test"
+  }
+]

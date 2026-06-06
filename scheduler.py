@@ -590,6 +590,7 @@ def main():
     cycle_count         = 0
     _last_hb_t          = 0.0   # heartbeat 마지막 저장 시각
     _last_report_check  = 0.0   # 보고서 스케줄 마지막 체크 시각
+    _last_bizmoney_check = 0.0  # 비즈머니 알림 마지막 체크 시각
     _last_run_ts        = ""    # 마지막 사이클 완료 시각 (heartbeat에 포함용)
 
     while True:
@@ -718,6 +719,20 @@ def main():
             except Exception as _rse:
                 print(f"[보고서스케줄] 오류: {_rse}")
             _last_report_check = time.time()
+
+        # 비즈머니 잔액 알림 체크 (1시간마다)
+        if time.time() - _last_bizmoney_check > 3600:
+            try:
+                from bizmoney_alert import run_check as _bm_run_check
+                _bm_results = _bm_run_check(dry_run=False)
+                for _r in _bm_results:
+                    _cid_ = _r.get("customer_id", "?")
+                    _bal_ = _r.get("balance")
+                    _bal_s = f"{_bal_:,}원" if _bal_ is not None else "조회실패"
+                    print(f"[비즈머니] {_cid_} 잔액: {_bal_s}")
+            except Exception as _bme:
+                print(f"[비즈머니] 오류: {_bme}")
+            _last_bizmoney_check = time.time()
 
         if not processed_any:
             print(f"  자동입찰 ON 클라이언트 없음 — 60초 후 재확인")
