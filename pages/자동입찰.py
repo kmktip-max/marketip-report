@@ -766,7 +766,9 @@ with tab1:
                          disabled=_bid_active):
                 # 기존 프로세스 kill 후 최신 코드로 항상 재시작
                 _kill_scheduler(stored_pid=bid_state.get("scheduler_pid"))
-                _now_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+                from datetime import timezone as _tz, timedelta as _td
+                _kst = _tz(_td(hours=9))
+                _now_ts = datetime.now(_kst).strftime("%Y-%m-%dT%H:%M:%S")
                 from pathlib import Path as _PL2
                 _pr2 = _PL2(__file__).resolve().parents[1]
                 _sp2 = _pr2 / "scheduler.py"
