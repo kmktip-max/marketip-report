@@ -535,6 +535,7 @@ def run_cycle(client_id: str) -> list:
             # 전일 노출 0 키워드: 검색량 부족으로 입찰 올려도 파워링크 노출 안 됨 → 스킵
             if rank is None and kid in zero_imp_kids:
                 e["status"] = "노출없음(검색량부족)"
+                kw["status"] = e["status"]
                 entries.append(e)
                 if DEBUG_RANK:
                     print(f"  {kw['keyword']}: 전일노출0 — 입찰 조정 스킵")
@@ -555,6 +556,7 @@ def run_cycle(client_id: str) -> list:
 
             if new_bid == cur_bid or status in ("유지", "최대입찰 도달", "최소입찰 도달"):
                 # 변경 불필요
+                kw["status"] = status  # UI 상태 반영
                 entries.append(e)
                 print(f"  {kw['keyword']}: {status} ({cur_bid}원) 순위={rank}")
                 continue
@@ -573,6 +575,7 @@ def run_cycle(client_id: str) -> list:
             e["after_bid"]     = after
             e["changed"]       = verify
             e["status"]        = ("변경성공" if verify else "변경(검증불일치)") + f"/{status}"
+            kw["status"]       = e["status"]  # UI 상태 반영
             e["api_response"]  = f"HTTP {http_st}"
             changed = True
             entries.append(e)
