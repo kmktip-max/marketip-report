@@ -185,7 +185,7 @@ def run():
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(
-            headless=False,
+            headless=True,
             args=["--disable-blink-features=AutomationControlled"],
         )
         ctx = browser.new_context(
