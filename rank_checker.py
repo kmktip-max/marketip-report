@@ -97,10 +97,12 @@ def _domain_match(href: str, target_domain: str) -> bool:
     return target_domain in dest_domain or dest_domain in target_domain
 
 # ── 네이버 파워링크 순위 조회 ─────────────────────────────────────────────────
-def check_rank(page, keyword: str, domain: str) -> int | None:
+def check_rank(page, keyword: str, domain: str) -> tuple:
     """
     네이버에서 keyword 검색 후 파워링크 영역에서 domain 광고 순위 반환.
-    못 찾으면 None.
+    반환: (rank: int|None, total_slots: int)
+    - rank=None: 해당 도메인 광고 없음
+    - total_slots: 파워링크 구좌 수 (0이면 파워링크 영역 자체 없음)
     """
     target = _normalize_domain(domain)
     url = (
@@ -112,10 +114,9 @@ def check_rank(page, keyword: str, domain: str) -> int | None:
         page.wait_for_timeout(random.randint(1500, 2500))
     except Exception as e:
         print(f"    [페이지 로드 오류] {keyword}: {e}")
-        return None
+        return None, 0
 
     # 파워링크 광고 영역 — 상단 광고 li 항목들
-    # Naver 구조: #ad_area_top > ul > li  또는 .ad_area > ul.lst_ad > li
     ad_selectors = [
         "#ad_area_top ul li",
         ".lst_ad_top li",
@@ -130,23 +131,23 @@ def check_rank(page, keyword: str, domain: str) -> int | None:
             ad_items = items
             break
 
+    total_slots = len(ad_items)
+
     if not ad_items:
-        print(f"    [{keyword}] 파워링크 영역 없음")
-        return None
+        print(f"    [{keyword}] 파워링크 영역 없음 (구좌 0)")
+        return None, 0
 
     for rank, item in enumerate(ad_items, start=1):
-        # 항목 내 모든 a 태그 href 확인
         links = item.query_selector_all("a[href]")
         for link in links:
             href = link.get_attribute("href") or ""
             if _domain_match(href, target):
-                return rank
-        # 항목 텍스트에서 도메인 확인 (일부 광고는 표시 URL이 있음)
+                return rank, total_slots
         txt = item.inner_text().lower()
         if target in txt:
-            return rank
+            return rank, total_slots
 
-    return None
+    return None, total_slots
 
 # ── 전체 클라이언트 순위 조회 루프 ───────────────────────────────────────────
 def run():
@@ -214,15 +215,17 @@ def run():
         for i, (sb_key, bdata, gi, ki, keyword, domain) in enumerate(targets, 1):
             bdata_map[sb_key] = bdata  # 같은 객체 참조 — 아래 업데이트가 반영됨
             print(f"  [{i}/{len(targets)}] {keyword!r}  ({domain})")
-            rank = check_rank(page, keyword, domain)
+            rank, total_slots = check_rank(page, keyword, domain)
             if rank is not None:
-                print(f"    → {rank}위")
+                print(f"    → {rank}위 (구좌 {total_slots}개)")
             else:
-                print(f"    → 광고 없음 (미노출 또는 도메인 불일치)")
+                slot_info = f"구좌 없음" if total_slots == 0 else f"구좌 {total_slots}개 — 내 광고 없음"
+                print(f"    → 미노출 ({slot_info})")
 
             # 데이터 업데이트
-            bdata["groups"][gi]["keywords"][ki]["current_rank"] = rank
-            bdata["groups"][gi]["keywords"][ki]["last_checked"] = now_str
+            bdata["groups"][gi]["keywords"][ki]["current_rank"]   = rank
+            bdata["groups"][gi]["keywords"][ki]["total_ad_slots"] = total_slots
+            bdata["groups"][gi]["keywords"][ki]["last_checked"]   = now_str
 
             # sb_key가 바뀌는 시점(=이전 클라이언트 데이터 완료)에 즉시 저장
             if prev_sb_key and prev_sb_key != sb_key and prev_sb_key not in saved_keys:

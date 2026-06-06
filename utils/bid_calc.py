@@ -13,11 +13,9 @@ def calc_bid(current_rank, target_rank, current_bid, bid_unit, min_bid, max_bid)
     if current_bid is None:
         return current_bid, "데이터 부족"
 
-    # 순위 데이터 없음 = 파워링크 구좌 없음 → 최소입찰가 고정 (증감 안 함)
+    # 순위 데이터 없음 → 입찰가 그대로 유지 (증감 없음)
     if current_rank is None:
-        if current_bid > min_bid:
-            return min_bid, "감액(순위없음→최소)"
-        return min_bid, "최소입찰(순위없음)"
+        return current_bid, "유지(순위없음)"
     diff = current_rank - target_rank
     if diff > 0.5:
         delta   = min(bid_unit, MAX_SINGLE)

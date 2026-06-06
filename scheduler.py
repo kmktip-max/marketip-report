@@ -540,8 +540,16 @@ def run_cycle(client_id: str) -> list:
                     print(f"  {kw['keyword']}: 전일노출0 — 입찰 조정 스킵")
                 continue
 
+            # 저경쟁 키워드: 구좌 수가 3개 이하면 1위 목표 고정
+            total_slots = kw.get("total_ad_slots")
+            effective_target = g["target_rank"]
+            if total_slots is not None and 1 <= total_slots <= 3:
+                effective_target = 1
+                if DEBUG_RANK:
+                    print(f"  {kw['keyword']}: 구좌{total_slots}개(저경쟁) → target_rank=1 자동적용")
+
             # 입찰 계산
-            new_bid, status = calc_bid(rank, g["target_rank"], cur_bid,
+            new_bid, status = calc_bid(rank, effective_target, cur_bid,
                                        g["bid_unit"], g["min_bid"], g["max_bid"])
             e["status"] = status
 
@@ -682,9 +690,9 @@ def main():
                 "changed":  sum(1 for e in entries if e.get("changed")),
                 "kept":     sum(1 for e in entries if e.get("status") in (
                     "유지", "최대입찰 도달", "최소입찰 도달",
-                    "최대입찰(노출없음)", "최소입찰(순위없음)")),
+                    "최대입찰(노출없음)", "최소입찰(순위없음)", "유지(순위없음)")),
                 "bidding":  sum(1 for e in entries if e.get("status") in (
-                    "증액중", "감액중", "증액중(노출없음)", "감액(순위없음→최소)")),
+                    "증액중", "감액중", "증액중(노출없음)")),
                 "no_data":  sum(1 for e in entries if e.get("status") in ("데이터 부족", "ID없음")),
                 "zero_imp": sum(1 for e in entries if e.get("status") == "노출없음(검색량부족)"),
                 "failed":   sum(1 for e in entries if "API 실패" in e.get("status","")),
