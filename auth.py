@@ -27,11 +27,12 @@ PERM_CATALOG = {
     "ad_analysis":      ("pages/광고분석컨설팅.py", "광고분석컨설팅",       "📈"),
     "monthly_report":   ("pages/월간보고서.py",     "월간보고서",           "📩"),
     "rebate":           ("pages/페이백신청.py",     "광고비 페이백신청",    "💸"),
-    "bid_assist":       ("pages/자동입찰.py",       "목표순위 자동입찰",    "📊"),
+    "bid_assist":       ("pages/자동입찰.py",       "자동입찰 관리",    "📊"),
     "keyword_tool":     ("pages/키워드도구.py",     "키워드 추출",          "🔍"),
     "creative_tool":    ("pages/광고소재.py",       "광고소재 추출",        "✍️"),
     "landing_analysis": ("pages/상세페이지.py",     "랜딩페이지 기획/분석", "📐"),
     "bizmoney_alert":   ("pages/비즈머니알림.py",   "비즈머니 알림",        "💰"),
+    "fraud_detect":     ("pages/부정클릭관리.py",   "부정클릭 관리",        "🛡️"),
 }
 
 # 구권한키 → 신권한키 호환 테이블

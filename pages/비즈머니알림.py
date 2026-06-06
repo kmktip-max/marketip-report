@@ -29,10 +29,8 @@ from bizmoney_alert import (
 
 KST = timezone(timedelta(hours=9))
 
-# ── 관리자 전용 ────────────────────────────────────────────────────────────────
-if st.session_state.get("auth_type") != "admin":
-    st.error("🔒 관리자만 접근 가능합니다.")
-    st.stop()
+_is_admin = st.session_state.get("auth_type") == "admin"
+_username = st.session_state.get("auth_username", "")
 
 st.title("비즈머니 잔액 알림 관리")
 st.caption("광고주 정보(API 키·Customer ID)는 월간보고서 광고주 등록 데이터를 사용합니다.")
@@ -48,7 +46,11 @@ def _reload():
     st.rerun()
 
 
-settings = _load_merged()
+_all_settings = _load_merged()
+# 관리자는 전체, 그 외 계정은 본인 소유 광고주만 표시
+settings = _all_settings if _is_admin else [
+    s for s in _all_settings if s.get("owner", "") == _username
+]
 
 if not settings:
     st.warning(

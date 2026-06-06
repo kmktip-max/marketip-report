@@ -43,14 +43,15 @@ MAX_KEYWORDS       = 9999  # 사실상 무제한
 DEFAULT_INTERVAL_MIN = 15  # 그룹 check_interval 기본값 (분)
 
 STATUS_ICON = {
-    "증액중":            "🔴",
-    "증액중(노출없음)":  "🔴",
-    "감액중":            "🔵",
-    "유지":              "🟢",
-    "데이터 부족":       "⚪",
-    "최대입찰 도달":     "🟠",
-    "최대입찰(노출없음)":"🟠",
-    "최소입찰 도달":     "🟡",
+    "증액중":               "🔴",
+    "증액중(노출없음)":     "🔴",
+    "감액중":               "🔵",
+    "유지":                 "🟢",
+    "데이터 부족":          "⚪",
+    "최대입찰 도달":        "🟠",
+    "최대입찰(노출없음)":   "🟠",
+    "최소입찰 도달":        "🟡",
+    "노출없음(검색량부족)": "⬜",
 }
 
 # ── 데이터 ────────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ def _sched_status() -> tuple:
         ts   = datetime.fromisoformat(ts_str)
         diff = (datetime.now() - ts).total_seconds()
         diff = max(diff, 0)   # 클럭 오차로 인한 음수 방지
-        return (diff <= 120), diff, hb
+        return (diff <= 180), diff, hb
     except Exception:
         return False, None, hb
 
@@ -170,8 +171,8 @@ def new_kw_obj(keyword, current_bid=None, ncc_keyword_id=None):
 # 정확한 API Base URL: api.searchad.naver.com (api.naver.com 아님)
 NAVER_API_BASE = "https://api.searchad.naver.com"
 
-AD_ACCOUNTS_SB_KEY = "naver_ad_accounts"
-AD_ACCOUNTS_FB     = os.path.join(ROOT, "naver_ad_accounts.json")
+AD_ACCOUNTS_SB_KEY = f"naver_ad_accounts_{client_id}"
+AD_ACCOUNTS_FB     = os.path.join(ROOT, f"naver_ad_accounts_{client_id}.json")
 
 def load_ad_accounts():
     raw = sb_load(AD_ACCOUNTS_SB_KEY, AD_ACCOUNTS_FB)
@@ -661,6 +662,8 @@ with tab1:
             pass
 
     is_running = _alive or _grace
+    # 실제 입찰 활성 여부 (버튼 disable 기준): 스케줄러 살아있고 running=True 일 때만
+    _bid_active = is_running and bid_state.get("running", False)
 
     # heartbeat 경과 표시 문자열
     if _diff is None:
@@ -678,11 +681,19 @@ with tab1:
     _cycle_cnt = (_hb or {}).get("cycle",     bid_state.get("cycle_count", 0))
     _interval  = bid_state.get("interval_min", DEFAULT_INTERVAL_MIN)
 
-    if is_running:
+    if is_running and _bid_active:
         _label = "시작 중... (초기화 대기)" if _grace else "자동입찰 실행중 (스케줄러)"
+        _banner_bg, _banner_bd, _banner_fg = "#EFF6FF", "#0D47A1", "#1E3A8A"
+    elif is_running:
+        _label = "스케줄러 실행중 — 입찰 대기 (▶ 시작 클릭)"
+        _banner_bg, _banner_bd, _banner_fg = "#FFFBEB", "#D97706", "#92400E"
+    else:
+        _label = None
+
+    if _label:
         st.markdown(
-            f"<div style='padding:12px 18px;background:#EFF6FF;border-left:4px solid #0D47A1;"
-            f"border-radius:8px;font-weight:700;color:#1E3A8A;'>"
+            f"<div style='padding:12px 18px;background:{_banner_bg};border-left:4px solid {_banner_bd};"
+            f"border-radius:8px;font-weight:700;color:{_banner_fg};'>"
             f"● {_label}"
             f"<span style='font-weight:400;font-size:12px;'>"
             f" &nbsp; 마지막: {_last_run} | 다음: {_next_run} | "
@@ -752,49 +763,37 @@ with tab1:
         b1, b2, b3, b4 = st.columns(4)
         with b1:
             if st.button("▶ 자동입찰 시작", use_container_width=True,
-                         disabled=is_running):
-                _existing_pid = _find_scheduler_pid()
+                         disabled=_bid_active):
+                # 기존 프로세스 kill 후 최신 코드로 항상 재시작
+                _kill_scheduler(stored_pid=bid_state.get("scheduler_pid"))
                 _now_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-                if _existing_pid:
-                    # 이미 실행 중인 스케줄러에 running=True 신호만 전달
+                from pathlib import Path as _PL2
+                _pr2 = _PL2(__file__).resolve().parents[1]
+                _sp2 = _pr2 / "scheduler.py"
+                try:
+                    _popen_kwargs = {"cwd": str(_pr2)}
+                    if sys.platform == "win32":
+                        _popen_kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+                    _proc2 = subprocess.Popen(
+                        [sys.executable, "-X", "utf8", str(_sp2)],
+                        **_popen_kwargs,
+                    )
                     data["state"] = {
                         **bid_state,
-                        "running":      True,
-                        "started_at":   _now_ts,
-                        "activated_at": _now_ts,   # 8시간 만료 기준
+                        "running":       True,
+                        "started_at":    _now_ts,
+                        "activated_at":  _now_ts,
+                        "scheduler_pid": _proc2.pid,
                     }
                     save_data(data)
-                    st.success("✅ 자동입찰이 활성화됐습니다. (스케줄러 실행 중)")
-                else:
-                    # 스케줄러가 없으면 새로 시작
-                    from pathlib import Path as _PL2
-                    _pr2 = _PL2(__file__).resolve().parents[1]
-                    _sp2 = _pr2 / "scheduler.py"
-                    try:
-                        # Windows: 새 콘솔 창, Linux/Mac: 백그라운드 실행
-                        _popen_kwargs = {"cwd": str(_pr2)}
-                        if sys.platform == "win32":
-                            _popen_kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-                        _proc2 = subprocess.Popen(
-                            [sys.executable, "-X", "utf8", str(_sp2)],
-                            **_popen_kwargs,
-                        )
-                        data["state"] = {
-                            **bid_state,
-                            "running":       True,
-                            "started_at":    _now_ts,
-                            "activated_at":  _now_ts,
-                            "scheduler_pid": _proc2.pid,
-                        }
-                        save_data(data)
-                        st.success(f"✅ 자동입찰 스케줄러가 시작됐습니다. (PID {_proc2.pid})")
-                        st.rerun()
-                    except Exception as _e2:
-                        st.error("[자동입찰] 스케줄러 실행 실패")
-                        st.exception(_e2)
+                    st.success(f"✅ 자동입찰 스케줄러가 시작됐습니다. (PID {_proc2.pid})")
+                    st.rerun()
+                except Exception as _e2:
+                    st.error("[자동입찰] 스케줄러 실행 실패")
+                    st.exception(_e2)
         with b2:
             if st.button("⏹ 자동입찰 중지", use_container_width=True,
-                         disabled=not is_running):
+                         disabled=not is_running and not bid_state.get("running", False)):
                 _kill_scheduler(stored_pid=bid_state.get("scheduler_pid"))
                 data["state"] = {**bid_state, "running": False, "scheduler_pid": None}
                 save_data(data)
@@ -1169,9 +1168,15 @@ with tab1:
         if not logs_all:
             st.caption("아직 실행 이력이 없습니다.")
         else:
+            # run_time 기준 시간순 정렬 후 최근 15회
+            try:
+                logs_all = sorted(logs_all, key=lambda r: r.get("run_time", ""))
+            except Exception:
+                pass
             # 최근 15회 차트 (altair — 레이블 가로 유지)
             _chart_data = []
-            for i, run in enumerate(logs_all[-15:]):
+            _recent_logs = logs_all[-15:]
+            for i, run in enumerate(_recent_logs):
                 s = run.get("summary", {})
                 _t = run.get("run_time", "")
                 _label = _t[5:16].replace("T", " ") if len(_t) >= 16 else str(i+1)
@@ -1200,13 +1205,15 @@ with tab1:
                 except Exception:
                     pass
 
-            for run in reversed(logs_all[-15:]):
+            for run in reversed(_recent_logs):
                 s   = run.get("summary", {})
                 cyc = run.get("cycle", "")
+                _zi = s.get("zero_imp", 0)
                 lbl = (
                     f"🕒 {run['run_time']} [{run.get('mode','')}] — "
                     f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)} · "
-                    f"데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
+                    + (f"노출없음 {_zi} · " if _zi else "")
+                    + f"데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
                     + (f" | 사이클#{cyc}" if cyc else "")
                 )
                 with st.expander(lbl, expanded=False):

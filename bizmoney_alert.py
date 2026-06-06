@@ -160,6 +160,7 @@ def get_merged_settings() -> list[dict]:
             # 광고주 정보 (읽기 전용, clients.json)
             "advertiser_name":     c.get("name", ""),
             "customer_id":         cid,
+            "owner":               c.get("owner", ""),
             "api_access_license":  c.get("api_key", ""),
             "secret_key":          c.get("secret_key", ""),
             "client_email":        c.get("email", ""),

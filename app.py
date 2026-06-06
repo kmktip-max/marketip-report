@@ -132,7 +132,7 @@ section[data-testid="stSidebar"] { display: none !important; }
                   background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
         <span style="font-size:18px;line-height:1;">📊</span>
         <div style="flex:1;">
-          <div style="font-size:14px;font-weight:700;color:#1E293B;">목표순위 자동입찰</div>
+          <div style="font-size:14px;font-weight:700;color:#1E293B;">자동입찰 관리</div>
           <div style="font-size:12px;color:#64748B;">키워드별 목표 순위 자동 입찰 관리</div>
         </div>
         <span style="font-size:11px;">🔒</span>
@@ -314,19 +314,20 @@ if auth_type == "admin":
         st.Page("pages/광고분석컨설팅.py", title="광고구조 컨설팅"),
         st.Page("pages/월간보고서.py",    title="월간보고서"),
         st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
-        st.Page("pages/자동입찰.py",      title="목표순위 자동입찰"),
+        st.Page("pages/자동입찰.py",      title="자동입찰 관리"),
         st.Page("pages/키워드도구.py",    title="키워드 추출"),
         st.Page("pages/광고소재.py",      title="광고소재 추출"),
         st.Page("pages/상세페이지.py",    title="랜딩페이지 기획/분석"),
         st.Page("pages/정산관리.py",      title="정산관리"),
         st.Page("pages/비즈머니알림.py",  title="비즈머니 알림"),
         st.Page("pages/계정관리.py",      title="계정관리"),
+        st.Page("pages/부정클릭관리.py",  title="부정클릭 관리"),
     ])
 else:
-    # 권한 있는 페이지만 navigation에 추가
+    # 권한 있는 페이지만 navigation에 추가 (비즈머니 알림은 모든 계정 기본 제공)
     client_pages = []
     for perm_key, (path, title, _icon) in PERM_CATALOG.items():
-        if perm_key in auth_perms:
+        if perm_key == "bizmoney_alert" or perm_key in auth_perms:
             client_pages.append(st.Page(path, title=title))
 
     if not client_pages:
@@ -378,6 +379,7 @@ with st.sidebar:
         st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
         st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
         st.page_link("pages/월간보고서.py",     label="📩  월간보고서",     use_container_width=True)
+        st.page_link("pages/비즈머니알림.py",   label="💰  비즈머니 알림",  use_container_width=True)
 
         st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
@@ -391,18 +393,18 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
 </style>""", unsafe_allow_html=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
-        st.page_link("pages/자동입찰.py",   label="📊  목표순위 자동입찰",    use_container_width=True)
-        st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",         use_container_width=True)
-        st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",       use_container_width=True)
-        st.page_link("pages/상세페이지.py", label="📐  랜딩페이지 기획/분석", use_container_width=True)
+        st.page_link("pages/자동입찰.py",      label="📊  자동입찰 관리",    use_container_width=True)
+        st.page_link("pages/부정클릭관리.py",  label="🛡️  부정클릭 관리",      use_container_width=True)
+        st.page_link("pages/키워드도구.py",    label="🔍  키워드 추출",         use_container_width=True)
+        st.page_link("pages/광고소재.py",      label="✍️  광고소재 추출",       use_container_width=True)
+        st.page_link("pages/상세페이지.py",    label="📐  랜딩페이지 기획/분석", use_container_width=True)
 
         st.markdown("""
 <div style="padding:12px 20px 8px;margin-top:8px;">
   <hr style="border:none;border-top:1px solid #E5E8ED;margin:0 0 10px;">
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/정산관리.py",     label="⚙️  정산관리",      use_container_width=True)
-        st.page_link("pages/비즈머니알림.py", label="💰  비즈머니 알림", use_container_width=True)
-        st.page_link("pages/계정관리.py",     label="👤  계정관리",      use_container_width=True)
+        st.page_link("pages/정산관리.py",     label="⚙️  정산관리", use_container_width=True)
+        st.page_link("pages/계정관리.py",     label="👤  계정관리", use_container_width=True)
 
     elif auth_type == "client":
         client_info = st.session_state.get("auth_client", {})
@@ -414,8 +416,9 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
                 unsafe_allow_html=True,
             )
         st.markdown('<span class="sb-label">내 메뉴</span>', unsafe_allow_html=True)
+        st.page_link("pages/비즈머니알림.py", label="💰  비즈머니 알림", use_container_width=True)
         for perm_key, (path, title, icon) in PERM_CATALOG.items():
-            if perm_key in auth_perms:
+            if perm_key != "bizmoney_alert" and perm_key in auth_perms:
                 st.page_link(path, label=f"{icon}  {title}", use_container_width=True)
 
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)

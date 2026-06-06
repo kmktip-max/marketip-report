@@ -140,22 +140,45 @@ def get_keywords_in_adgroup(ak, sk, cid, adgroup_id):
     except Exception:
         return []
 
-def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> dict:
-    """전일 평균노출순위(avgRnk) 배치 조회. 반환: {kid: avgRnk}"""
+def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> tuple:
+    """전일 평균노출순위 + 노출수 배치 조회. 반환: ({kid: avgRnk}, {zero_imp_kids})"""
     if not keyword_ids:
-        return {}
-    results = {}
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        return {}, set()
+    results  = {}
+    zero_imp = set()   # 전일 노출횟수 0 키워드 ID (검색량 부족 가능성)
+
+    # 날짜 fallback: 어제 → 2일전 → 3일전 (새벽에는 전일 데이터 미준비로 400 반환)
+    stat_date = None
+    for days_back in range(1, 4):
+        candidate = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        try:
+            _get("/stats", ak, sk, cid, params={
+                "id":        keyword_ids[0],
+                "statType":  "AD_GROUP_KEYWORD",
+                "startDate": candidate,
+                "endDate":   candidate,
+                "timeUnit":  "DAY",
+                "fields":    "impCnt",
+            })
+            stat_date = candidate
+            break
+        except Exception:
+            pass
+    if not stat_date:
+        if DEBUG_RANK:
+            print(f"  [RANK-DEBUG] stats API: 최근 3일 모두 400 — 순위 조회 건너뜀")
+        return results, zero_imp
+
     if DEBUG_RANK:
-        print(f"  [RANK-DEBUG] stats API 조회 날짜: {yesterday}, 키워드 수: {len(keyword_ids)}")
+        print(f"  [RANK-DEBUG] stats API 조회 날짜: {stat_date}, 키워드 수: {len(keyword_ids)}")
     for i in range(0, len(keyword_ids), 50):
         batch = keyword_ids[i:i+50]
         try:
             rows = _get("/stats", ak, sk, cid, params={
                 "id":        ",".join(batch),
                 "statType":  "AD_GROUP_KEYWORD",
-                "startDate": yesterday,
-                "endDate":   yesterday,
+                "startDate": stat_date,
+                "endDate":   stat_date,
                 "timeUnit":  "DAY",
                 "fields":    "clkCnt,impCnt,avgRnk",
             }) or []
@@ -164,15 +187,18 @@ def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> dict:
             for item in rows:
                 kid_ = item.get("id", "")
                 for dr in (item.get("data") or []):
+                    imp = int(dr.get("impCnt") or 0)
                     rnk = dr.get("avgRnk")
                     if rnk and float(rnk) > 0:
                         results[kid_] = float(rnk)
+                    if imp == 0 and kid_:
+                        zero_imp.add(kid_)   # 노출 0 → 검색량 부족 or 광고 미노출
         except Exception as e:
             if DEBUG_RANK:
                 print(f"  [RANK-DEBUG] stats API 예외: {e}")
     if DEBUG_RANK:
-        print(f"  [RANK-DEBUG] 순위 수신된 키워드 수: {len(results)}/{len(keyword_ids)}")
-    return results
+        print(f"  [RANK-DEBUG] 순위 수신 {len(results)}/{len(keyword_ids)}, 노출0: {len(zero_imp)}")
+    return results, zero_imp
 
 def update_bid(ak, sk, cid, kid, new_bid, keyword_text="", adgroup_id=""):
     """
@@ -446,7 +472,7 @@ def run_cycle(client_id: str) -> list:
                         kw["current_bid"] = int(raw_bid)
                     kid_list.append(str(kid_))
 
-        stats = get_keyword_stats(ak, sk, ci, kid_list) if kid_list else {}
+        stats, zero_imp_kids = get_keyword_stats(ak, sk, ci, kid_list) if kid_list else ({}, set())
 
         for kw in g.get("keywords", []):
             if not kw.get("enabled", True):
@@ -500,6 +526,14 @@ def run_cycle(client_id: str) -> list:
             if cur_bid is None:
                 e["status"] = "데이터 부족"; entries.append(e); continue
 
+            # 전일 노출 0 키워드: 검색량 부족으로 입찰 올려도 파워링크 노출 안 됨 → 스킵
+            if rank is None and kid in zero_imp_kids:
+                e["status"] = "노출없음(검색량부족)"
+                entries.append(e)
+                if DEBUG_RANK:
+                    print(f"  {kw['keyword']}: 전일노출0 — 입찰 조정 스킵")
+                continue
+
             # 입찰 계산
             new_bid, status = calc_bid(rank, g["target_rank"], cur_bid,
                                        g["bid_unit"], g["min_bid"], g["max_bid"])
@@ -547,38 +581,20 @@ def main():
     # ── 이 스케줄러 인스턴스 시작 시각 (activated_at 유효성 기준) ──────────────
     _session_start = datetime.now()
 
-    # ── 시작 시 자동입찰 running 상태 초기화 (수동 클릭 없이 재개 방지) ─────
-    print("  [시작] 자동입찰 상태 초기화 — 수동으로 '자동입찰 시작' 버튼을 눌러야 작동합니다.")
-    try:
-        _init_accounts = sb_load("client_accounts",
-                                  os.path.join(ROOT, "client_accounts.json")) or []
-        _init_ids = ["admin"] + [a.get("username","") for a in _init_accounts if a.get("username")]
-        for _cid in _init_ids:
-            _bd = sb_load(f"bidding_{_cid}")
-            if _bd and isinstance(_bd, dict):
-                _st = _bd.get("state", {})
-                if _st.get("running") or _st.get("trigger_now"):
-                    _st["running"]     = False
-                    _st["trigger_now"] = False
-                    _bd["state"] = _st
-                    sb_save(f"bidding_{_cid}", _bd)
-                    print(f"  [시작] {_cid}: running → False (수동 시작 필요)")
-    except Exception as _ie:
-        print(f"  [시작] 초기화 오류 (무시): {_ie}")
-
     cycle_count         = 0
     _last_hb_t          = 0.0   # heartbeat 마지막 저장 시각
     _last_report_check  = 0.0   # 보고서 스케줄 마지막 체크 시각
+    _last_run_ts        = ""    # 마지막 사이클 완료 시각 (heartbeat에 포함용)
 
     while True:
         now = datetime.now()
 
         # 스케줄러 alive heartbeat (3분마다 로컬 파일 + Supabase 저장)
         if time.time() - _last_hb_t > 180:
-            _save_heartbeat({
-                "status":         "running",
-                "last_heartbeat": now.strftime("%Y-%m-%dT%H:%M:%S"),
-            })
+            _hb = {"status": "running", "last_heartbeat": now.strftime("%Y-%m-%dT%H:%M:%S")}
+            if _last_run_ts:
+                _hb["last_run"] = _last_run_ts
+            _save_heartbeat(_hb)
             _last_hb_t = time.time()
 
         print(f"\n[{now.strftime('%H:%M:%S')}] 사이클 #{cycle_count + 1} 시작")
@@ -634,8 +650,13 @@ def main():
             cycle_count += 1
             processed_any = True
 
+            # run_cycle 이 내부에서 keyword 업데이트 후 저장했으므로 최신 bdata 재로드
+            bdata = sb_load(f"bidding_{cid}") or bdata
+            state = bdata.get("state", {})
+
             # 상태 업데이트
             state["last_run"]    = now.strftime("%Y-%m-%dT%H:%M:%S")
+            _last_run_ts         = state["last_run"]
             state["cycle_count"] = state.get("cycle_count", 0) + 1
 
             # 다음 실행 예정 (그룹 최소 interval 기준)
@@ -650,11 +671,12 @@ def main():
             log_key  = f"bidding_log_{cid}"
             logs     = sb_load(log_key) or []
             summary_ = {
-                "total":   len(entries),
-                "changed": sum(1 for e in entries if e.get("changed")),
-                "kept":    sum(1 for e in entries if e.get("status") in ("유지", "최대입찰 도달", "최소입찰 도달")),
-                "no_data": sum(1 for e in entries if e.get("status") in ("데이터 부족", "ID없음")),
-                "failed":  sum(1 for e in entries if "API 실패" in e.get("status","")),
+                "total":    len(entries),
+                "changed":  sum(1 for e in entries if e.get("changed")),
+                "kept":     sum(1 for e in entries if e.get("status") in ("유지", "최대입찰 도달", "최소입찰 도달")),
+                "no_data":  sum(1 for e in entries if e.get("status") in ("데이터 부족", "ID없음")),
+                "zero_imp": sum(1 for e in entries if e.get("status") == "노출없음(검색량부족)"),
+                "failed":   sum(1 for e in entries if "API 실패" in e.get("status","")),
             }
             logs.append({
                 "run_time": now.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -692,10 +714,19 @@ def main():
             time.sleep(60)
             continue
 
-        # 다음 사이클까지 대기 (최소 interval)
+        # 다음 사이클까지 대기 (최소 interval) — 60초 단위로 깨어나 heartbeat 갱신
         wait_min = min_int if 'min_int' in dir() else DEFAULT_INTERVAL_MIN
-        print(f"\n  다음 실행: {wait_min}분 후 ({(now + timedelta(minutes=wait_min)).strftime('%H:%M:%S')})")
-        time.sleep(wait_min * 60)
+        _next_ts = (now + timedelta(minutes=wait_min)).strftime('%H:%M:%S')
+        print(f"\n  다음 실행: {wait_min}분 후 ({_next_ts})")
+        _wait_end = time.time() + wait_min * 60
+        while time.time() < _wait_end:
+            time.sleep(min(60, max(0, _wait_end - time.time())))
+            if time.time() - _last_hb_t >= 60:
+                _hb = {"status": "running", "last_heartbeat": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+                if _last_run_ts:
+                    _hb["last_run"] = _last_run_ts
+                _save_heartbeat(_hb)
+                _last_hb_t = time.time()
 
 if __name__ == "__main__":
     try:

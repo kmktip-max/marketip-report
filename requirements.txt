@@ -17,3 +17,5 @@ playwright>=1.44.0
 playwright-stealth>=2.0.0
 gspread>=6.0.0
 google-auth>=2.0.0
+fastapi>=0.100.0
+uvicorn>=0.20.0
