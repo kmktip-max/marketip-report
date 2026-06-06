@@ -1159,13 +1159,18 @@ with tab1:
                 s = kw.get("status", "데이터없음")
                 _rank = kw.get("current_rank")
                 _tgt  = g["target_rank"]
-                _delta = round(_rank - _tgt, 1) if _rank is not None else None
+                _slots = kw.get("total_ad_slots")
+                _is_low = _slots is not None and 1 <= _slots <= 3
+                _eff_tgt = 1 if _is_low else _tgt
+                _delta = round(_rank - _eff_tgt, 1) if _rank is not None else None
+                _tgt_label = f"1위고정★({_slots}구좌)" if _is_low else str(_tgt)
                 rows.append({
                     "그룹명":      g["name"],
                     "키워드":      kw["keyword"],
                     "현재순위":    _rank,
-                    "목표순위":    _tgt,
-                    "순위차":      _delta,   # +: 목표보다 낮음(증액필요), -: 목표보다 높음(감액가능)
+                    "목표순위":    _tgt_label,
+                    "구좌수":      _slots,
+                    "순위차":      _delta,
                     "현재입찰가":  kw.get("current_bid"),
                     "상태":        STATUS_ICON.get(s, "⚪") + " " + s,
                     "마지막 실행": kw.get("last_checked", "") or "",
@@ -1174,7 +1179,8 @@ with tab1:
             pd.DataFrame(rows), use_container_width=True, hide_index=True,
             column_config={
                 "현재순위":   st.column_config.NumberColumn(format="%.1f위"),
-                "목표순위":   st.column_config.NumberColumn(format="%d위"),
+                "목표순위":   st.column_config.TextColumn(help="★1위고정: 파워링크 구좌 3개 이하(저경쟁) 키워드"),
+                "구좌수":     st.column_config.NumberColumn(format="%d개", help="파워링크 구좌 수 (3개 이하=저경쟁 자동 1위고정)"),
                 "순위차":     st.column_config.NumberColumn(
                     format="%.1f",
                     help="양수: 목표보다 낮은 순위(증액필요) / 음수: 목표보다 높은 순위(감액가능)"
@@ -1182,7 +1188,7 @@ with tab1:
                 "현재입찰가": st.column_config.NumberColumn(format="%d원"),
             },
         )
-        st.caption("🔴 증액중(노출없음 포함)  🔵 감액중  🟢 목표도달  ⚪ 데이터없음  🟠 최대입찰  🟡 최소입찰")
+        st.caption("🔴 증액중(노출없음 포함)  🔵 감액중  🟢 목표도달  ⚪ 데이터없음  🟠 최대입찰  🟡 최소입찰  ★저경쟁(구좌≤3) 1위고정")
 
         st.divider()
 

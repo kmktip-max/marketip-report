@@ -490,7 +490,7 @@ def run_cycle(client_id: str) -> list:
             # 단, 순위 데이터가 RANK_STALE_MIN분 이상 오래됐으면 무시 (오진 방지)
             RANK_STALE_MIN = 15
             stored_rank = kw.get("current_rank")
-            rank_last_checked = kw.get("last_checked")
+            rank_last_checked = kw.get("rank_checked_at") or kw.get("last_checked")
             if stored_rank is not None and rank_last_checked:
                 try:
                     _lc = datetime.fromisoformat(rank_last_checked[:19])

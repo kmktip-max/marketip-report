@@ -223,9 +223,10 @@ def run():
                 print(f"    → 미노출 ({slot_info})")
 
             # 데이터 업데이트
-            bdata["groups"][gi]["keywords"][ki]["current_rank"]   = rank
-            bdata["groups"][gi]["keywords"][ki]["total_ad_slots"] = total_slots
-            bdata["groups"][gi]["keywords"][ki]["last_checked"]   = now_str
+            bdata["groups"][gi]["keywords"][ki]["current_rank"]    = rank
+            bdata["groups"][gi]["keywords"][ki]["total_ad_slots"]  = total_slots
+            bdata["groups"][gi]["keywords"][ki]["rank_checked_at"] = now_str  # 순위 체크 전용 타임스탬프
+            bdata["groups"][gi]["keywords"][ki]["last_checked"]    = now_str
 
             # sb_key가 바뀌는 시점(=이전 클라이언트 데이터 완료)에 즉시 저장
             if prev_sb_key and prev_sb_key != sb_key and prev_sb_key not in saved_keys:
