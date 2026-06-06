@@ -13,7 +13,13 @@
 
 import os, sys, time, hmac, hashlib, base64, json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
+
+def now_kst() -> datetime:
+    """항상 KST(UTC+9) 기준 현재 시각 반환 (tzinfo 없는 naive datetime)"""
+    return datetime.now(KST).replace(tzinfo=None)
 
 if sys.platform == "win32":
     try:
@@ -82,7 +88,7 @@ def sb_save(key_, data_):
         sb.table("app_data").upsert({
             "key":        key_,
             "data":       data_,
-            "updated_at": datetime.utcnow().isoformat() + "Z",
+            "updated_at": now_kst().isoformat(),
         }, on_conflict="key").execute()
         return True
     except Exception as e:
@@ -150,7 +156,7 @@ def get_keyword_stats(ak, sk, cid, keyword_ids: list) -> tuple:
     # 날짜 fallback: 어제 → 2일전 → 3일전 (새벽에는 전일 데이터 미준비로 400 반환)
     stat_date = None
     for days_back in range(1, 4):
-        candidate = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        candidate = (now_kst() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         try:
             _get("/stats", ak, sk, cid, params={
                 "id":        keyword_ids[0],
@@ -278,7 +284,7 @@ def _save_schedule_data(data):
         if sb:
             sb.table("app_data").upsert(
                 {"key": "report_schedule", "data": data,
-                 "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
+                 "updated_at": now_kst().strftime("%Y-%m-%dT%H:%M:%S")},
                 on_conflict="key",
             ).execute()
     except Exception as e:
@@ -293,7 +299,7 @@ def _send_one_report(client, since, until, period_key, history, smtp_cfg):
 
     api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
     data = api.fetch_report(period=period_key, since=since, until=until)
-    html = generate_html(data, client["name"], datetime.now().strftime("%Y-%m-%d"))
+    html = generate_html(data, client["name"], now_kst().strftime("%Y-%m-%d"))
     send_report(
         to_email=client["email"],
         client_name=client["name"],
@@ -309,7 +315,7 @@ def _send_one_report(client, since, until, period_key, history, smtp_cfg):
         "period":    period_key,
         "since":     since,
         "until":     until,
-        "sent_at":   datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "sent_at":   now_kst().strftime("%Y-%m-%d %H:%M"),
         "status":    "성공",
         "send_mode": "scheduled",
     })
@@ -337,7 +343,7 @@ def run_scheduled_reports():
         "smtp_host":     os.getenv("SMTP_HOST", "smtp.naver.com"),
         "smtp_port":     int(os.getenv("SMTP_PORT", "465")),
     }
-    now     = datetime.now()
+    now     = now_kst()
     changed = False
 
     # ── 1. 예약발송 처리 ─────────────────────────────────────────────
@@ -434,7 +440,7 @@ def run_cycle(client_id: str) -> list:
     acct_map    = {a["id"]: a for a in ad_accounts}
 
     entries  = []
-    now_str  = datetime.now().strftime("%H:%M:%S")
+    now_str  = now_kst().strftime("%H:%M:%S")
     changed  = False
 
     for g in groups:
@@ -554,7 +560,7 @@ def run_cycle(client_id: str) -> list:
                 adgroup_id=ag_id,
             )
             kw["current_bid"]  = after or new_bid
-            kw["last_checked"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            kw["last_checked"] = now_kst().strftime("%Y-%m-%dT%H:%M:%S")
             e["before_bid"]    = before
             e["after_bid"]     = after
             e["changed"]       = verify
@@ -574,12 +580,12 @@ def run_cycle(client_id: str) -> list:
 def main():
     print("=" * 60)
     print("  마케팁 OS — 자동입찰 스케줄러")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 시작")
+    print(f"  {now_kst().strftime('%Y-%m-%d %H:%M:%S')} 시작 (KST)")
     print("  종료: Ctrl+C")
     print("=" * 60)
 
     # ── 이 스케줄러 인스턴스 시작 시각 (activated_at 유효성 기준) ──────────────
-    _session_start = datetime.now()
+    _session_start = now_kst()
 
     cycle_count         = 0
     _last_hb_t          = 0.0   # heartbeat 마지막 저장 시각
@@ -587,7 +593,7 @@ def main():
     _last_run_ts        = ""    # 마지막 사이클 완료 시각 (heartbeat에 포함용)
 
     while True:
-        now = datetime.now()
+        now = now_kst()
 
         # 스케줄러 alive heartbeat (3분마다 로컬 파일 + Supabase 저장)
         if time.time() - _last_hb_t > 180:
@@ -627,7 +633,7 @@ def main():
                 if _activated:
                     try:
                         _act_dt = datetime.fromisoformat(_activated)
-                        _elapsed = (datetime.now() - _act_dt).total_seconds()
+                        _elapsed = (now_kst() - _act_dt).total_seconds()
                         # 60초 여유: 버튼 클릭 후 스케줄러 프로세스 시작까지 race condition 방지
                         if _elapsed <= 8 * 3600 and _act_dt >= _session_start - timedelta(seconds=60):
                             _expired = False
@@ -722,7 +728,7 @@ def main():
         while time.time() < _wait_end:
             time.sleep(min(60, max(0, _wait_end - time.time())))
             if time.time() - _last_hb_t >= 60:
-                _hb = {"status": "running", "last_heartbeat": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}
+                _hb = {"status": "running", "last_heartbeat": now_kst().strftime("%Y-%m-%dT%H:%M:%S")}
                 if _last_run_ts:
                     _hb["last_run"] = _last_run_ts
                 _save_heartbeat(_hb)
