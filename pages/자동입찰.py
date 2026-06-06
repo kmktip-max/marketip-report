@@ -1160,80 +1160,81 @@ with tab1:
 
         st.divider()
 
-        # ── 실행 이력 차트 ──────────────────────────────────────────────
-        _log_h1, _log_h2 = st.columns([5, 1])
-        _log_h1.markdown("##### 실행 이력")
-        if _log_h2.button("🗑️ 이력 삭제", key="clear_log", use_container_width=True):
-            save_log([])
-            st.rerun()
-        logs_all = load_log()
-        if not logs_all:
-            st.caption("아직 실행 이력이 없습니다.")
-        else:
-            # run_time 기준 시간순 정렬 후 최근 15회
-            try:
-                logs_all = sorted(logs_all, key=lambda r: r.get("run_time", ""))
-            except Exception:
-                pass
-            # 최근 15회 차트 (altair — 레이블 가로 유지)
-            _chart_data = []
-            _recent_logs = logs_all[-15:]
-            for i, run in enumerate(_recent_logs):
-                s = run.get("summary", {})
-                _t = run.get("run_time", "")
-                _label = _t[5:16].replace("T", " ") if len(_t) >= 16 else str(i+1)
-                _chart_data.append({"회차": _label, "항목": "변경", "수": s.get("changed", 0)})
-                _chart_data.append({"회차": _label, "항목": "유지",  "수": s.get("kept", 0)})
-            if _chart_data:
+        # ── 실행 이력 차트 (30초 자동 갱신) ───────────────────────────
+        @st.fragment(run_every=30)
+        def _render_history():
+            _log_h1, _log_h2 = st.columns([5, 1])
+            _log_h1.markdown("##### 실행 이력")
+            if _log_h2.button("🗑️ 이력 삭제", key="clear_log", use_container_width=True):
+                save_log([])
+                st.rerun()
+            logs_all = load_log()
+            if not logs_all:
+                st.caption("아직 실행 이력이 없습니다.")
+            else:
                 try:
-                    import altair as alt
-                    import pandas as _pd_chart
-                    _df_c = _pd_chart.DataFrame(_chart_data)
-                    _ch = (
-                        alt.Chart(_df_c)
-                        .mark_bar()
-                        .encode(
-                            x=alt.X("회차:N", sort=None, axis=alt.Axis(labelAngle=0, labelFontSize=10)),
-                            y=alt.Y("수:Q"),
-                            color=alt.Color("항목:N", scale=alt.Scale(
-                                domain=["변경", "유지"], range=["#3B82F6", "#93C5FD"]
-                            )),
-                            xOffset="항목:N",
-                            tooltip=["회차", "항목", "수"],
-                        )
-                        .properties(height=180)
-                    )
-                    st.altair_chart(_ch, use_container_width=True)
+                    logs_all = sorted(logs_all, key=lambda r: r.get("run_time", ""))
                 except Exception:
                     pass
+                _chart_data = []
+                _recent_logs = logs_all[-15:]
+                for i, run in enumerate(_recent_logs):
+                    s = run.get("summary", {})
+                    _t = run.get("run_time", "")
+                    _label = _t[5:16].replace("T", " ") if len(_t) >= 16 else str(i+1)
+                    _chart_data.append({"회차": _label, "항목": "변경", "수": s.get("changed", 0)})
+                    _chart_data.append({"회차": _label, "항목": "유지",  "수": s.get("kept", 0)})
+                if _chart_data:
+                    try:
+                        import altair as alt
+                        import pandas as _pd_chart
+                        _df_c = _pd_chart.DataFrame(_chart_data)
+                        _ch = (
+                            alt.Chart(_df_c)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X("회차:N", sort=None, axis=alt.Axis(labelAngle=0, labelFontSize=10)),
+                                y=alt.Y("수:Q"),
+                                color=alt.Color("항목:N", scale=alt.Scale(
+                                    domain=["변경", "유지"], range=["#3B82F6", "#93C5FD"]
+                                )),
+                                xOffset="항목:N",
+                                tooltip=["회차", "항목", "수"],
+                            )
+                            .properties(height=180)
+                        )
+                        st.altair_chart(_ch, use_container_width=True)
+                    except Exception:
+                        pass
 
-            for run in reversed(_recent_logs):
-                s   = run.get("summary", {})
-                cyc = run.get("cycle", "")
-                _zi = s.get("zero_imp", 0)
-                _bd = s.get("bidding", 0)
-                lbl = (
-                    f"🕒 {run['run_time']} [{run.get('mode','')}] — "
-                    f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)}"
-                    + (f" · 입찰중 {_bd}" if _bd else "")
-                    + (f" · 노출없음 {_zi}" if _zi else "")
-                    + f" · 데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
-                    + (f" | 사이클#{cyc}" if cyc else "")
-                )
-                with st.expander(lbl, expanded=False):
-                    hist = [{
-                        "시간":      e.get("time", ""),
-                        "그룹":      e.get("group", ""),
-                        "키워드":    e.get("keyword", ""),
-                        "현재순위":  e.get("current_rank"),
-                        "목표순위":  e.get("target_rank"),
-                        "변경전(원)": e.get("before_bid"),
-                        "변경후(원)": e.get("after_bid"),
-                        "상태":      e.get("status", ""),
-                    } for e in run.get("entries", [])]
-                    if hist:
-                        st.dataframe(pd.DataFrame(hist),
-                                     use_container_width=True, hide_index=True)
+                for run in reversed(_recent_logs):
+                    s   = run.get("summary", {})
+                    cyc = run.get("cycle", "")
+                    _zi = s.get("zero_imp", 0)
+                    _bd = s.get("bidding", 0)
+                    lbl = (
+                        f"🕒 {run['run_time']} [{run.get('mode','')}] — "
+                        f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)}"
+                        + (f" · 입찰중 {_bd}" if _bd else "")
+                        + (f" · 노출없음 {_zi}" if _zi else "")
+                        + f" · 데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
+                        + (f" | 사이클#{cyc}" if cyc else "")
+                    )
+                    with st.expander(lbl, expanded=False):
+                        hist = [{
+                            "시간":      e.get("time", ""),
+                            "그룹":      e.get("group", ""),
+                            "키워드":    e.get("keyword", ""),
+                            "현재순위":  e.get("current_rank"),
+                            "목표순위":  e.get("target_rank"),
+                            "변경전(원)": e.get("before_bid"),
+                            "변경후(원)": e.get("after_bid"),
+                            "상태":      e.get("status", ""),
+                        } for e in run.get("entries", [])]
+                        if hist:
+                            st.dataframe(pd.DataFrame(hist),
+                                         use_container_width=True, hide_index=True)
+        _render_history()
 
 
 # 탭2: 그룹 관리
