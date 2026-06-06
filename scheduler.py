@@ -487,8 +487,20 @@ def run_cycle(client_id: str) -> list:
             cur_bid = kw.get("current_bid")
 
             # 실시간 순위(rank_checker.py) 우선, 없으면 avgRnk fallback
+            # 단, 순위 데이터가 RANK_STALE_MIN분 이상 오래됐으면 무시 (오진 방지)
+            RANK_STALE_MIN = 15
             stored_rank = kw.get("current_rank")
-            api_rank    = stats.get(kid)
+            rank_last_checked = kw.get("last_checked")
+            if stored_rank is not None and rank_last_checked:
+                try:
+                    _lc = datetime.fromisoformat(rank_last_checked[:19])
+                    if (now_kst() - _lc).total_seconds() > RANK_STALE_MIN * 60:
+                        if DEBUG_RANK:
+                            print(f"  {kw['keyword']}: 순위데이터 {(now_kst()-_lc).total_seconds()/60:.0f}분 경과 → 무시(유지)")
+                        stored_rank = None
+                except Exception:
+                    pass
+            api_rank = stats.get(kid)
             if stored_rank is not None:
                 rank = stored_rank
             elif api_rank:
