@@ -1167,9 +1167,9 @@ with tab1:
                 rows.append({
                     "그룹명":      g["name"],
                     "키워드":      kw["keyword"],
-                    "현재순위":    _rank,
                     "목표순위":    _tgt_label,
                     "구좌수":      _slots,
+                    "현재순위":    _rank,
                     "순위차":      _delta,
                     "현재입찰가":  kw.get("current_bid"),
                     "상태":        STATUS_ICON.get(s, "⚪") + " " + s,
