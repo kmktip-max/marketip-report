@@ -150,11 +150,6 @@ def check_rank(page, keyword: str, domain: str) -> int | None:
 
 # ── 전체 클라이언트 순위 조회 루프 ───────────────────────────────────────────
 def run():
-    print("=" * 60)
-    print("  마케팁 OS — 네이버 파워링크 순위 조회기")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
-
     # client_accounts에서 클라이언트 목록 가져오기
     accounts_raw = sb_load("client_accounts") or []
     client_ids   = ["admin"] + [a.get("username","") for a in accounts_raw if a.get("username")]
@@ -174,9 +169,9 @@ def run():
                 targets.append((sb_key, bdata, gi, ki, kw["keyword"], domain))
 
     if not targets:
-        print("\n⚠  순위 체크 대상 없음.")
+        print("\n⚠  순위 체크 대상 없음 — 5분 후 재시도")
         print("   [그룹 관리] 탭에서 그룹에 '검색 도메인'을 설정해주세요.")
-        input("\n아무 키나 누르면 종료...")
+        time.sleep(300)
         return
 
     print(f"\n총 {len(targets)}개 키워드 순위 조회 시작\n")
@@ -252,5 +247,21 @@ def run():
 
     print(f"\n완료! ({len(targets)}개 키워드 조회)")
 
+
 if __name__ == "__main__":
-    run()
+    print("=" * 60)
+    print("  마케팁 OS — 순위 조회기 (연속 실행 모드)")
+    print("  종료: Ctrl+C")
+    print("=" * 60)
+    pass_num = 0
+    while True:
+        pass_num += 1
+        print(f"\n\n{'='*60}")
+        print(f"  패스 #{pass_num} 시작  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*60}")
+        try:
+            run()
+        except Exception as e:
+            print(f"\n[오류] {e} — 60초 후 재시도")
+            time.sleep(60)
+        # 다음 패스 바로 시작 (키워드 간 딜레이가 이미 충분한 쿨타임)
