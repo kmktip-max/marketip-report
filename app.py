@@ -119,9 +119,9 @@ section[data-testid="stSidebar"] { display: none !important; }
     </div>
   </div>
 
-  <!-- 광고주 관리 -->
+  <!-- 수수료 환급 -->
   <div style="margin-bottom:12px;">
-    <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:5px;">광고주 관리</div>
+    <div style="font-size:12px;font-weight:700;color:#6B7280;margin-bottom:5px;">수수료 환급</div>
     <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
                 background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;">
       <span style="font-size:18px;line-height:1;">💸</span>
@@ -399,7 +399,7 @@ with st.sidebar:
         st.page_link("pages/월간보고서.py",     label="📩  월간보고서",     use_container_width=True)
         st.page_link("pages/비즈머니알림.py",   label="💰  비즈머니 알림",  use_container_width=True)
 
-        st.markdown('<span class="sb-label">광고주 관리</span>', unsafe_allow_html=True)
+        st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
         st.markdown("""
 <style>
