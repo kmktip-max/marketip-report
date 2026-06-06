@@ -204,11 +204,20 @@ def run():
         page.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(random.randint(2000, 3000))
 
-        # 변경된 데이터 추적 (sb_key 기준)
-        changed: dict[str, dict] = {}
         now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
+        # sb_key별로 그룹화: 같은 키에 속하는 타깃을 모아서 그룹 끝날 때마다 즉시 저장
+        from itertools import groupby
+        from operator import itemgetter
+
+        # targets를 (sb_key, bdata, gi, ...) 로 묶어 sb_key 기준 순서 보장
+        # targets는 이미 sb_key 순으로 수집되어 있음
+        saved_keys: set[str] = set()
+        prev_sb_key = None
+        bdata_map: dict[str, dict] = {}
+
         for i, (sb_key, bdata, gi, ki, keyword, domain) in enumerate(targets, 1):
+            bdata_map[sb_key] = bdata  # 같은 객체 참조 — 아래 업데이트가 반영됨
             print(f"  [{i}/{len(targets)}] {keyword!r}  ({domain})")
             rank = check_rank(page, keyword, domain)
             if rank is not None:
@@ -217,9 +226,15 @@ def run():
                 print(f"    → 광고 없음 (미노출 또는 도메인 불일치)")
 
             # 데이터 업데이트
-            bdata["groups"][gi]["keywords"][ki]["current_rank"]  = rank
-            bdata["groups"][gi]["keywords"][ki]["last_checked"]  = now_str
-            changed[sb_key] = bdata
+            bdata["groups"][gi]["keywords"][ki]["current_rank"] = rank
+            bdata["groups"][gi]["keywords"][ki]["last_checked"] = now_str
+
+            # sb_key가 바뀌는 시점(=이전 클라이언트 데이터 완료)에 즉시 저장
+            if prev_sb_key and prev_sb_key != sb_key and prev_sb_key not in saved_keys:
+                ok = sb_save(prev_sb_key, bdata_map[prev_sb_key])
+                print(f"  [저장] {prev_sb_key}: {'완료' if ok else '실패'}")
+                saved_keys.add(prev_sb_key)
+            prev_sb_key = sb_key
 
             # 키워드 간 딜레이 (봇 차단 방지)
             if i < len(targets):
@@ -228,14 +243,14 @@ def run():
 
         browser.close()
 
-    # Supabase 저장
+    # 마지막 클라이언트 저장
     print("\n결과 저장 중...")
-    for sb_key, bdata in changed.items():
-        ok = sb_save(sb_key, bdata)
-        print(f"  {sb_key}: {'저장 완료' if ok else '저장 실패'}")
+    for sb_key, bdata in bdata_map.items():
+        if sb_key not in saved_keys:
+            ok = sb_save(sb_key, bdata)
+            print(f"  {sb_key}: {'저장 완료' if ok else '저장 실패'}")
 
     print(f"\n완료! ({len(targets)}개 키워드 조회)")
-    input("\n아무 키나 누르면 종료...")
 
 if __name__ == "__main__":
     run()

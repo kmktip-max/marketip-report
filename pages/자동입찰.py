@@ -1211,11 +1211,13 @@ with tab1:
                 s   = run.get("summary", {})
                 cyc = run.get("cycle", "")
                 _zi = s.get("zero_imp", 0)
+                _bd = s.get("bidding", 0)
                 lbl = (
                     f"🕒 {run['run_time']} [{run.get('mode','')}] — "
-                    f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)} · "
-                    + (f"노출없음 {_zi} · " if _zi else "")
-                    + f"데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
+                    f"변경 {s.get('changed',0)} · 유지 {s.get('kept',0)}"
+                    + (f" · 입찰중 {_bd}" if _bd else "")
+                    + (f" · 노출없음 {_zi}" if _zi else "")
+                    + f" · 데이터없음 {s.get('no_data',0)} · 실패 {s.get('failed',0)}"
                     + (f" | 사이클#{cyc}" if cyc else "")
                 )
                 with st.expander(lbl, expanded=False):

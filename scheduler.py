@@ -679,7 +679,10 @@ def main():
             summary_ = {
                 "total":    len(entries),
                 "changed":  sum(1 for e in entries if e.get("changed")),
-                "kept":     sum(1 for e in entries if e.get("status") in ("유지", "최대입찰 도달", "최소입찰 도달")),
+                "kept":     sum(1 for e in entries if e.get("status") in (
+                    "유지", "최대입찰 도달", "최소입찰 도달", "최대입찰(노출없음)")),
+                "bidding":  sum(1 for e in entries if e.get("status") in (
+                    "증액중", "감액중", "증액중(노출없음)")),
                 "no_data":  sum(1 for e in entries if e.get("status") in ("데이터 부족", "ID없음")),
                 "zero_imp": sum(1 for e in entries if e.get("status") == "노출없음(검색량부족)"),
                 "failed":   sum(1 for e in entries if "API 실패" in e.get("status","")),
