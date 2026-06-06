@@ -107,6 +107,15 @@ section[data-testid="stSidebar"] { display: none !important; }
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">💰</span>
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:700;color:#1E293B;">비즈머니 알림</div>
+          <div style="font-size:12px;color:#64748B;">광고 잔액 부족 시 카카오톡 · 문자 자동 알림</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
     </div>
   </div>
 
@@ -134,6 +143,15 @@ section[data-testid="stSidebar"] { display: none !important; }
         <div style="flex:1;">
           <div style="font-size:14px;font-weight:700;color:#1E293B;">자동입찰 관리</div>
           <div style="font-size:12px;color:#64748B;">키워드별 목표 순위 자동 입찰 관리</div>
+        </div>
+        <span style="font-size:11px;">🔒</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                  background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;">
+        <span style="font-size:18px;line-height:1;">🛡️</span>
+        <div style="flex:1;">
+          <div style="font-size:14px;font-weight:700;color:#1E293B;">부정클릭 관리</div>
+          <div style="font-size:12px;color:#64748B;">의심 클릭 탐지 및 IP 차단 요청 관리</div>
         </div>
         <span style="font-size:11px;">🔒</span>
       </div>
