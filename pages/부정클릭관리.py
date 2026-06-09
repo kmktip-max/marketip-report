@@ -170,16 +170,15 @@ with TAB_INTRO:
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
-<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
-  <div style="font-size:13px;color:#92400E;line-height:2;">
-    <b>신청 조건</b><br>
+<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:18px 22px;margin-bottom:20px;">
+  <div style="font-size:15px;font-weight:700;color:#92400E;margin-bottom:10px;">신청 조건</div>
+  <div style="font-size:15px;color:#92400E;line-height:2;">
     ✅ 마케팁 페이백(수수료 환급) 계정 연동 완료<br>
-    ✅ 전월 네이버 광고비 300만원 이상 소진<br>
-    <br>
-    <span style="color:#B45309;">
-      두 조건 모두 충족하면 <b>서비스 신청 탭</b>이 자동으로 열립니다.<br>
-      일반적으로 가입 후 <b>2개월 이후</b>부터 신청 가능합니다.
-    </span>
+    ✅ 전월 네이버 광고비 300만원 이상 소진
+  </div>
+  <div style="font-size:14px;color:#B45309;margin-top:10px;line-height:1.8;">
+    두 조건 모두 충족하면 <b>서비스 신청 탭</b>이 자동으로 열립니다.<br>
+    일반적으로 가입 후 <b>2개월 이후</b>부터 신청 가능합니다.
   </div>
 </div>
 """, unsafe_allow_html=True)
