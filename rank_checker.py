@@ -200,8 +200,6 @@ def run():
         page.goto("https://www.naver.com", wait_until="domcontentloaded", timeout=15000)
         page.wait_for_timeout(random.randint(2000, 3000))
 
-        now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
         # sb_key별로 그룹화: 같은 키에 속하는 타깃을 모아서 그룹 끝날 때마다 즉시 저장
         from itertools import groupby
         from operator import itemgetter
@@ -222,10 +220,11 @@ def run():
                 slot_info = f"구좌 없음" if total_slots == 0 else f"구좌 {total_slots}개 — 내 광고 없음"
                 print(f"    → 미노출 ({slot_info})")
 
-            # 데이터 업데이트
+            # 키워드별 실제 체크 시각 기록 (패스 시작 시각 아닌 실제 체크 시각)
+            now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             bdata["groups"][gi]["keywords"][ki]["current_rank"]    = rank
             bdata["groups"][gi]["keywords"][ki]["total_ad_slots"]  = total_slots
-            bdata["groups"][gi]["keywords"][ki]["rank_checked_at"] = now_str  # 순위 체크 전용 타임스탬프
+            bdata["groups"][gi]["keywords"][ki]["rank_checked_at"] = now_str
             bdata["groups"][gi]["keywords"][ki]["last_checked"]    = now_str
 
             # sb_key가 바뀌는 시점(=이전 클라이언트 데이터 완료)에 즉시 저장

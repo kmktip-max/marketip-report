@@ -488,7 +488,7 @@ def run_cycle(client_id: str) -> list:
 
             # 실시간 순위(rank_checker.py) 우선, 없으면 avgRnk fallback
             # 단, 순위 데이터가 RANK_STALE_MIN분 이상 오래됐으면 무시 (오진 방지)
-            RANK_STALE_MIN = 15
+            RANK_STALE_MIN = 90  # rank_checker 1패스(~60분) + 여유 30분
             stored_rank = kw.get("current_rank")
             rank_last_checked = kw.get("rank_checked_at") or kw.get("last_checked")
             if stored_rank is not None and rank_last_checked:
@@ -647,10 +647,8 @@ def main():
             if not running and not trigger:
                 continue
 
-            # activated_at 만료 체크
-            # ① 8시간 초과 → 만료
-            # ② 이번 스케줄러 세션(_session_start) 이전 활성화 → 만료
-            #    (재부팅/재시작 후 이전 세션 activated_at으로 자동 재개 방지)
+            # activated_at 만료 체크: 8시간 초과 시에만 만료
+            # (스케줄러 프로세스 재시작 후에도 8시간 내라면 자동 재개)
             if running and not trigger:
                 _activated = state.get("activated_at", "")
                 _expired = True
@@ -658,13 +656,12 @@ def main():
                     try:
                         _act_dt = datetime.fromisoformat(_activated)
                         _elapsed = (now_kst() - _act_dt).total_seconds()
-                        # 60초 여유: 버튼 클릭 후 스케줄러 프로세스 시작까지 race condition 방지
-                        if _elapsed <= 8 * 3600 and _act_dt >= _session_start - timedelta(seconds=60):
+                        if _elapsed <= 8 * 3600:
                             _expired = False
                     except Exception:
                         pass
                 if _expired:
-                    print(f"  [{cid}] activated_at 만료/이전세션 — running 초기화 (수동 재시작 필요)")
+                    print(f"  [{cid}] activated_at 8시간 초과 — running 초기화 (수동 재시작 필요)")
                     state["running"] = False
                     bdata["state"] = state
                     sb_save(f"bidding_{cid}", bdata)
