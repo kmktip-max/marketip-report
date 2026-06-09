@@ -169,6 +169,21 @@ with TAB_INTRO:
 """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
+  <div style="font-size:13px;color:#92400E;line-height:2;">
+    <b>신청 조건</b><br>
+    ✅ 마케팁 페이백(수수료 환급) 계정 연동 완료<br>
+    ✅ 전월 네이버 광고비 300만원 이상 소진<br>
+    <br>
+    <span style="color:#B45309;">
+      두 조건 모두 충족하면 <b>서비스 신청 탭</b>이 자동으로 열립니다.<br>
+      일반적으로 가입 후 <b>2개월 이후</b>부터 신청 가능합니다.
+    </span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     st.markdown("#### 제공 혜택")
 
     img_col, tbl_col = st.columns([1, 1], gap="large")
@@ -201,22 +216,6 @@ with TAB_INTRO:
 """, unsafe_allow_html=True)
         except Exception:
             st.markdown("[![스마트로그](https://smlog.co.kr/2020/img/sub01/p_sub_box02_img.png)](https://smlog.co.kr/2020/prevent.html)")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("""
-<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 18px;">
-  <div style="font-size:13px;color:#92400E;line-height:2;">
-    <b>신청 조건</b><br>
-    ✅ 마케팁 페이백(수수료 환급) 계정 연동 완료<br>
-    ✅ 전월 네이버 광고비 300만원 이상 소진<br>
-    <br>
-    <span style="color:#B45309;">
-      두 조건 모두 충족하면 <b>서비스 신청 탭</b>이 자동으로 열립니다.<br>
-      일반적으로 가입 후 <b>2개월 이후</b>부터 신청 가능합니다.
-    </span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — 서비스 신청 (클라이언트)
