@@ -28,6 +28,7 @@ from fraud.db import (
     block_ip,
     unblock_ip,
     clear_suspect,
+    get_recent_clicks_sb,
     _use_sb,
     _sb_url,
 )
@@ -599,24 +600,75 @@ with TAB_IP:
                 run_detection(cid)
             st.cache_data.clear(); st.rerun()
     with run_c3:
-        if st.button("테스트 클릭", key="ip_test_click", help="클릭 로그 DB에 테스트 데이터를 추가합니다"):
-            import random as _rnd
-            _ips = ["1.234.56.78", "210.90.141.33", "125.178.90.12"]
+        if st.button("테스트 클릭", key="ip_test_click", help="DB에 테스트 클릭 데이터 추가"):
+            _test_ip = "1.234.56.78"
             _kws = ["검색광고리베이트", "네이버광고대행사", "구글광고대행사"]
+            _now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             for _i in range(5):
                 log_click({
                     "client_id": cid,
-                    "ip_address": _rnd.choice(_ips),
-                    "keyword": _rnd.choice(_kws),
-                    "device": _rnd.choice(["desktop", "mobile"]),
+                    "ip_address": _test_ip,
+                    "keyword": _kws[_i % len(_kws)],
+                    "device": "desktop",
                     "landing_url": "https://www.admarketip.com/",
                     "referrer": "https://search.naver.com/",
                     "session_id": f"test_{_i}",
                     "ad_type": "naver",
-                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "created_at": _now,
                 })
-            st.success("테스트 클릭 5개 추가됨 — 새로고침하면 반영됩니다")
+            _mode = "Supabase" if _use_sb() else "SQLite(로컬)"
+            st.success(f"✅ 테스트 클릭 5개 → {_mode} 저장 완료")
             st.cache_data.clear(); st.rerun()
+
+    # ── 실시간 로그 ──────────────────────────────────────────────────────────
+    st.markdown("---")
+    live_hdr, live_ref = st.columns([4, 1])
+    with live_hdr:
+        st.markdown("#### 🔴 실시간 클릭 로그")
+    with live_ref:
+        if st.button("🔄 새로고침", key="ip_live_refresh", use_container_width=True):
+            st.cache_data.clear()
+
+    # 자동 새로고침 토글
+    auto_refresh = st.toggle("30초마다 자동 새로고침", key="ip_auto_refresh", value=False)
+
+    @st.cache_data(ttl=5, show_spinner=False)
+    def _live_clicks(cid_key: str):
+        if _use_sb():
+            rows = get_recent_clicks_sb(cid_key, limit=30)
+        else:
+            from fraud.db import get_clicks as _gc
+            rows = _gc(cid_key, hours=24, limit=30)
+        return rows
+
+    live_rows = _live_clicks(cid)
+
+    if not live_rows:
+        if _use_sb():
+            st.info("최근 클릭 없음 — 테스트 클릭 버튼으로 연결 테스트 가능")
+        else:
+            st.warning("⚠️ Supabase 미연결 (로컬 SQLite 사용 중) — 랜딩페이지 스크립트가 서버에 전송한 데이터만 표시됩니다")
+    else:
+        _df_cols = {
+            "created_at": "시간",
+            "ip_address": "IP",
+            "keyword": "키워드",
+            "device": "기기",
+            "stay_seconds": "체류(초)",
+            "is_conversion": "전환",
+            "landing_url": "랜딩URL",
+        }
+        import pandas as _pd
+        _df = _pd.DataFrame(live_rows)
+        _show = [c for c in _df_cols if c in _df.columns]
+        _df = _df[_show].rename(columns=_df_cols)
+        st.dataframe(_df, use_container_width=True, hide_index=True, height=250)
+        st.caption(f"최근 {len(live_rows)}개 클릭 · {'Supabase' if _use_sb() else 'SQLite(로컬)'}")
+
+    if auto_refresh:
+        import time as _t
+        _t.sleep(30)
+        st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

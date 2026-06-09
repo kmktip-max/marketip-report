@@ -8,6 +8,14 @@ import string
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# .env 로드 (uvicorn/scheduler 등 비-Streamlit 컨텍스트에서도 동작)
+try:
+    from dotenv import load_dotenv
+    _root = Path(__file__).parent.parent
+    load_dotenv(_root / ".env")
+except Exception:
+    pass
+
 DB_PATH = Path(__file__).parent.parent / "data" / "click_fraud.db"
 
 _DEFAULT_SETTINGS = {
@@ -296,24 +304,46 @@ def _log_click_sb(data: dict):
 
 
 def _fetch_clicks_sb(client_id: str, start_date: str, end_date: str, limit: int = 5000) -> list[dict]:
-    """Supabase에서 날짜 범위 클릭 로그 조회."""
+    """Supabase app_data에서 클릭 로그 조회 (LIKE + Python 날짜 필터)."""
     sb = _get_sb()
     if not sb:
         return []
-    lo = _click_key(client_id, _date_to_ms(start_date))[:28]      # fc_{cid}_{16자리}
-    hi = _click_key(client_id, _date_to_ms(end_date, end_of_day=True) + 999)[:28] + "_zzzzzz"
+    prefix = f"fc_{client_id}_"
+    start_s = start_date + " 00:00:00"
+    end_s   = end_date   + " 23:59:59"
     try:
         res = (
             sb.table("app_data")
             .select("data")
-            .gte("key", lo)
-            .lte("key", hi)
+            .like("key", prefix + "%")
+            .limit(limit)
+            .execute()
+        )
+        rows = [r["data"] for r in (res.data or []) if isinstance(r.get("data"), dict)]
+        return [r for r in rows if start_s <= (r.get("created_at") or "") <= end_s]
+    except Exception as e:
+        print(f"[fraud/sb] fetch_clicks 실패: {e}")
+        return []
+
+
+def get_recent_clicks_sb(client_id: str, limit: int = 50) -> list[dict]:
+    """실시간 로그용 — 최근 N개 클릭 (날짜 무관)."""
+    sb = _get_sb()
+    if not sb:
+        return []
+    prefix = f"fc_{client_id}_"
+    try:
+        res = (
+            sb.table("app_data")
+            .select("key,data")
+            .like("key", prefix + "%")
+            .order("key", desc=True)
             .limit(limit)
             .execute()
         )
         return [r["data"] for r in (res.data or []) if isinstance(r.get("data"), dict)]
     except Exception as e:
-        print(f"[fraud/sb] fetch_clicks 실패: {e}")
+        print(f"[fraud/sb] get_recent_clicks 실패: {e}")
         return []
 
 
