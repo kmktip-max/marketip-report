@@ -126,13 +126,24 @@ with TAB_INTRO:
     st.markdown("""
 <div style="background:#EFF6FF;border-left:4px solid #3B82F6;
             padding:16px 20px;border-radius:8px;margin-bottom:20px;">
-  <div style="font-size:16px;font-weight:700;color:#1E40AF;margin-bottom:6px;">
-    네이버 스마트로그란?
-  </div>
-  <div style="font-size:14px;color:#1E3A8A;line-height:1.7;">
-    네이버 공식 광고 로그 분석 도구입니다. 파워링크 광고를 클릭한 방문자의
-    <b>IP · 방문시간 · 체류시간 · 전환여부</b>를 자동으로 수집하고,
-    의심 클릭 패턴을 탐지해 네이버에 IP 차단 신청까지 연동합니다.
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:260px;">
+      <div style="font-size:16px;font-weight:700;color:#1E40AF;margin-bottom:6px;">
+        네이버 스마트로그란?
+      </div>
+      <div style="font-size:14px;color:#1E3A8A;line-height:1.7;">
+        네이버 공식 광고 로그 분석 도구입니다. 파워링크 광고를 클릭한 방문자의
+        <b>IP · 방문시간 · 체류시간 · 전환여부</b>를 자동으로 수집하고,
+        의심 클릭 패턴을 탐지해 네이버에 IP 차단 신청까지 연동합니다.
+      </div>
+    </div>
+    <a href="https://smlog.co.kr/2020/prevent.html" target="_blank"
+       style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+              background:#3B82F6;color:#fff;font-size:13px;font-weight:700;
+              padding:10px 18px;border-radius:8px;text-decoration:none;
+              box-shadow:0 2px 8px rgba(59,130,246,.35);align-self:center;">
+      🔗 공식 소개 보기
+    </a>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -170,18 +181,6 @@ with TAB_INTRO:
 """)
 
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # 스마트로그 공식 사이트 링크
-    st.markdown("""
-<a href="https://smlog.co.kr/2020/prevent.html" target="_blank"
-   style="display:inline-flex;align-items:center;gap:8px;
-          background:#5A39E8;color:#fff;font-size:14px;font-weight:700;
-          padding:11px 22px;border-radius:8px;text-decoration:none;
-          box-shadow:0 2px 8px rgba(90,57,232,.3);margin-bottom:20px;">
-  🔗 스마트로그 공식 소개 페이지 보기
-</a>
-""", unsafe_allow_html=True)
-
     st.markdown("""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 18px;">
   <div style="font-size:13px;color:#92400E;line-height:2;">
