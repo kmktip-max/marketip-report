@@ -188,14 +188,45 @@ with TAB_INTRO:
     img_col, tbl_col = st.columns([1, 1], gap="large")
     with tbl_col:
         st.markdown("""
-| 항목 | 일반 광고주 | 마케팁 스마트로그 |
-|------|:----------:|:---------------:|
-| 클릭 로그 조회 | 제한적 | **상세 전체 열람** |
-| 부정클릭 탐지 | 수동 | **자동 탐지 + 알림** |
-| IP 차단 신청 | 직접 신청 | **대행 처리** |
-| 월간 리포트 | 없음 | **부정클릭 분석 리포트** |
-| 비용 | 별도 | **별도 비용 없음** |
-""")
+<div style="display:flex;flex-direction:column;gap:12px;padding:4px 0;">
+
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="font-size:20px;line-height:1.4;">🔍</span>
+    <span style="font-size:15px;color:#1E293B;line-height:1.6;">
+      광고 클릭자의 <b>IP · 방문시간 · 체류시간 · 전환여부</b>를 상세하게 확인할 수 있습니다.
+    </span>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="font-size:20px;line-height:1.4;">🚫</span>
+    <span style="font-size:15px;color:#1E293B;line-height:1.6;">
+      단시간 반복 클릭 · 비정상 패턴을 자동으로 탐지해 <b>의심 IP를 즉시 차단</b>할 수 있습니다.
+    </span>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="font-size:20px;line-height:1.4;">📍</span>
+    <span style="font-size:15px;color:#1E293B;line-height:1.6;">
+      클릭자의 <b>GPS · 통신사 · 기기 정보</b>까지 확인해 경쟁사 클릭을 추적할 수 있습니다.
+    </span>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="font-size:20px;line-height:1.4;">🛡️</span>
+    <span style="font-size:15px;color:#1E293B;line-height:1.6;">
+      탐지된 부정 IP를 <b>네이버 광고 시스템에 직접 차단 신청</b>해 광고 낭비를 막을 수 있습니다.
+    </span>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <span style="font-size:20px;line-height:1.4;">💰</span>
+    <span style="font-size:15px;color:#1E293B;line-height:1.6;">
+      불필요한 광고 클릭 비용 낭비를 <b>평균 20~30% 절감</b>할 수 있습니다.
+    </span>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
     with img_col:
         import base64 as _b64, os as _os
         _img_path = _os.path.join(ROOT, "static", "smlog_preview.png")
