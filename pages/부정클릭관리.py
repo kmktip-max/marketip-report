@@ -170,6 +170,18 @@ with TAB_INTRO:
 """)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # 스마트로그 공식 사이트 링크
+    st.markdown("""
+<a href="https://smlog.co.kr/2020/prevent.html" target="_blank"
+   style="display:inline-flex;align-items:center;gap:8px;
+          background:#5A39E8;color:#fff;font-size:14px;font-weight:700;
+          padding:11px 22px;border-radius:8px;text-decoration:none;
+          box-shadow:0 2px 8px rgba(90,57,232,.3);margin-bottom:20px;">
+  🔗 스마트로그 공식 소개 페이지 보기
+</a>
+""", unsafe_allow_html=True)
+
     st.markdown("""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:14px 18px;">
   <div style="font-size:13px;color:#92400E;line-height:2;">
