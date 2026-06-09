@@ -171,7 +171,7 @@ with TAB_INTRO:
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("#### 제공 혜택")
 
-    tbl_col, img_col = st.columns([1, 1], gap="large")
+    img_col, tbl_col = st.columns([1, 1], gap="large")
     with tbl_col:
         st.markdown("""
 | 항목 | 일반 광고주 | 마케팁 스마트로그 |
