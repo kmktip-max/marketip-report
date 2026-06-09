@@ -170,7 +170,10 @@ with TAB_INTRO:
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("#### 제공 혜택")
-    st.markdown("""
+
+    tbl_col, img_col = st.columns([1, 1], gap="large")
+    with tbl_col:
+        st.markdown("""
 | 항목 | 일반 광고주 | 마케팁 스마트로그 |
 |------|:----------:|:---------------:|
 | 클릭 로그 조회 | 제한적 | **상세 전체 열람** |
@@ -179,6 +182,25 @@ with TAB_INTRO:
 | 월간 리포트 | 없음 | **부정클릭 분석 리포트** |
 | 비용 | 별도 | **페이백 수수료에 포함** |
 """)
+    with img_col:
+        import base64 as _b64, os as _os
+        _img_path = _os.path.join(ROOT, "static", "smlog_preview.png")
+        try:
+            with open(_img_path, "rb") as _f:
+                _img_b64 = _b64.b64encode(_f.read()).decode()
+            st.markdown(f"""
+<a href="https://smlog.co.kr/2020/prevent.html" target="_blank"
+   style="display:block;border-radius:10px;overflow:hidden;
+          box-shadow:0 4px 20px rgba(0,0,0,0.13);border:1px solid #E5E7EB;">
+  <img src="data:image/png;base64,{_img_b64}"
+       style="width:100%;display:block;" />
+</a>
+<div style="text-align:center;margin-top:6px;font-size:11px;color:#9CA3AF;">
+  ▲ 부정클릭 IP 분석 화면 (클릭 시 공식 페이지)
+</div>
+""", unsafe_allow_html=True)
+        except Exception:
+            st.markdown("[![스마트로그](https://smlog.co.kr/2020/img/sub01/p_sub_box02_img.png)](https://smlog.co.kr/2020/prevent.html)")
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("""
