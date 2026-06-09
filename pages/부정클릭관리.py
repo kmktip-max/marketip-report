@@ -188,6 +188,7 @@ with TAB_INTRO:
     img_col, tbl_col = st.columns([1, 1], gap="large")
     with tbl_col:
         st.markdown("""
+<div style="font-size:16px;font-weight:700;color:#1E293B;margin-bottom:14px;">스마트로그 주요 기능</div>
 <div style="display:flex;flex-direction:column;gap:12px;padding:4px 0;">
 
   <div style="display:flex;gap:12px;align-items:flex-start;">
