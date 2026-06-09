@@ -1,42 +1,178 @@
-"""부정클릭 관리 — 관리자 전용"""
-import io
+"""부정클릭 관리 — 스마트로그 UI 스타일 (관리자 전용)"""
 import json
 import os
 import sys
 from datetime import datetime, timedelta
 
 import pandas as pd
+import requests
 import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fraud.db import (
     init_db,
-    get_all_clicks,
-    get_suspicious_ips,
-    get_blocked_ips,
-    get_dashboard_stats,
+    log_click,
+    get_clicks_for_ip,
+    get_ip_summary,
+    get_mobile_sessions,
+    get_suspect_ip_set,
+    get_blocked_ip_set,
+    get_naver_excluded_ips,
+    get_naver_excluded_ip_set,
+    add_naver_excluded_ip,
+    remove_naver_excluded_ip,
+    check_auto_block_candidates,
     get_client_settings,
     save_client_settings,
     block_ip,
     unblock_ip,
     clear_suspect,
-    get_report_data,
-    log_click,
+    _use_sb,
+    _sb_url,
 )
 from fraud.detector import run_detection
 
-# ── 관리자 전용 ───────────────────────────────────────────────────────────────
 if st.session_state.get("auth_type") != "admin":
     st.error("🔒 관리자만 접근 가능합니다.")
     st.stop()
 
-# ── DB 초기화 ─────────────────────────────────────────────────────────────────
 init_db()
 
-# ── 광고주 목록 로드 ──────────────────────────────────────────────────────────
+# ── CSS (스마트로그 스타일) ─────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* 전체 배경 */
+section.main > div { background: #f5f6fa; }
+
+/* 테이블 공통 */
+.sl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: #fff;
+    border: 1px solid #e8eaed;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.sl-table th {
+    background: #f8f9fb;
+    padding: 9px 12px;
+    text-align: left;
+    border-bottom: 1px solid #e0e3e8;
+    color: #555;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.sl-table th.center { text-align: center; }
+.sl-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #f2f3f5;
+    vertical-align: middle;
+    color: #333;
+    white-space: nowrap;
+}
+.sl-table tr:last-child td { border-bottom: none; }
+.sl-table tr:hover td { background: #f0f7ff; }
+.sl-row-suspect td { background: #f0fdf4 !important; }
+.sl-row-strong td { background: #dcfce7 !important; }
+.sl-row-blocked td { background: #fef9c3 !important; }
+.sl-divider { border-left: 1px solid #e8eaed; }
+
+/* 네이버 N 뱃지 */
+.n-badge {
+    display: inline-block;
+    background: #03C75A;
+    color: white;
+    font-size: 10px;
+    font-weight: 900;
+    width: 15px; height: 15px;
+    line-height: 15px;
+    text-align: center;
+    border-radius: 2px;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+/* IP 링크 */
+.ip-text { color: #1a73e8; font-weight: 600; }
+.plus-btn {
+    display: inline-block;
+    color: #888;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    width: 16px; height: 16px;
+    line-height: 14px;
+    text-align: center;
+    font-size: 12px;
+    margin-right: 4px;
+}
+
+/* 설정 row 레이블 */
+.cfg-label {
+    font-weight: 700;
+    font-size: 14px;
+    color: #222;
+    padding-top: 6px;
+}
+.cfg-sub {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+.cfg-divider { border-top: 1px solid #f0f0f0; margin: 8px 0; }
+
+/* 페이지 제목 */
+.sl-page-title { font-size: 20px; font-weight: 700; color: #222; margin-bottom: 4px; }
+
+/* 섹션 제목 (설정 페이지 내) */
+.sl-section-title { font-size: 16px; font-weight: 700; color: #222; margin: 24px 0 4px; }
+.sl-section-sub   { font-size: 13px; color: #888; margin-bottom: 16px; }
+
+/* 녹색 안내 배너 */
+.sl-green-box {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 13px;
+    color: #166534;
+    margin-bottom: 16px;
+    line-height: 1.7;
+}
+
+/* 조회하기 버튼 영역 */
+.filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+/* 인라인 액션 버튼 */
+.btn-sm-red {
+    display: inline-block;
+    background: #ef4444;
+    color: white;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.btn-sm-blue {
+    display: inline-block;
+    background: #3b82f6;
+    color: white;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── 광고주 로딩 ───────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
-def _load_clients() -> list[dict]:
+def _load_clients():
     try:
         from report_engine.storage import load_clients
         return load_clients() or []
@@ -44,652 +180,1005 @@ def _load_clients() -> list[dict]:
         pass
     try:
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        path = os.path.join(root, "clients.json")
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
+        p = os.path.join(root, "clients.json")
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
         pass
     return []
 
-
-clients = _load_clients()
+clients      = _load_clients()
 client_names = [c.get("name", c.get("id", "")) for c in clients]
 client_ids   = [c.get("id", "") for c in clients]
 
-# ── 헤더 ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-.fd-kpi {
-    background:#fff;border:1px solid #E5E7EB;border-radius:12px;
-    padding:20px 22px;text-align:center;
-}
-.fd-kpi-label {font-size:12px;font-weight:700;color:#6B7280;margin-bottom:6px;}
-.fd-kpi-val   {font-size:28px;font-weight:800;color:#111827;line-height:1.1;}
-.fd-kpi-sub   {font-size:12px;color:#9CA3AF;margin-top:4px;}
+if not clients:
+    st.warning("등록된 광고주가 없습니다.")
+    st.stop()
 
-.fd-risk-high   {background:#FEE2E2;color:#991B1B;padding:2px 10px;border-radius:100px;font-size:11px;font-weight:700;}
-.fd-risk-med    {background:#FEF3C7;color:#92400E;padding:2px 10px;border-radius:100px;font-size:11px;font-weight:700;}
-.fd-risk-low    {background:#D1FAE5;color:#065F46;padding:2px 10px;border-radius:100px;font-size:11px;font-weight:700;}
+# ── 헬퍼 ──────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=86400, show_spinner=False)
+def _carrier_lookup(ip: str) -> str:
+    try:
+        r = requests.get(
+            f"http://ip-api.com/json/{ip}?fields=isp,org",
+            timeout=2,
+        )
+        if r.ok:
+            d = r.json()
+            isp = d.get("isp") or d.get("org") or ""
+            for short, kws in [
+                ("주식회사 케이티", ["KT", "Olleh", "Korea Telecom"]),
+                ("에스케이텔레콤(주)", ["SKT", "SK Telecom"]),
+                ("LG U+", ["LG U+", "LGU+", "LG Uplus"]),
+                ("에스케이브로드밴드주식회사", ["SK Broadband"]),
+            ]:
+                if any(k in isp for k in kws):
+                    return short
+            return isp[:20] if isp else "-"
+    except Exception:
+        pass
+    return "-"
 
-.fd-section {font-size:15px;font-weight:700;color:#111827;border-left:3px solid #0D47A1;padding-left:10px;margin:20px 0 10px;}
-</style>
-""", unsafe_allow_html=True)
 
-st.markdown("## 🛡️ 부정클릭 관리")
-st.caption("광고 유입 로그 수집 · 의심 IP 탐지 · 차단 관리")
+def _carrier(row):
+    stored = (row.get("carrier") or "").strip()
+    if stored:
+        return stored
+    return _carrier_lookup(row.get("ip_address", ""))
 
-with st.expander("📖 이용안내 — 처음 사용하시는 분께", expanded=False):
-    st.markdown("""
-**순서대로 따라하면 바로 시작할 수 있어요!**
 
-**① 트래킹 스크립트 설치**
-**[트래킹 스크립트]** 탭에서 클라이언트 선택 → 스크립트 코드 복사
-→ 광고 랜딩페이지 HTML 소스의 `</head>` 바로 위에 붙여넣기
+def fmt_stay(s) -> str:
+    s = int(s or 0)
+    if s >= 3600:
+        return "1시간 이상"
+    if s >= 60:
+        return f"{s // 60}분 {s % 60}초"
+    return f"{s}초"
 
-**② 설치 확인**
-스크립트 설치 후 직접 광고를 클릭해 방문 → **[클릭 현황]** 탭에서 데이터 수신 확인
 
-**③ 클릭 데이터 모니터링**
-**[클릭 현황]** 탭에서 방문자별 IP·방문 횟수·체류시간·키워드 확인
-→ 체류시간이 극히 짧거나(0~3초) 같은 IP가 반복 방문하면 의심 클릭 가능성
+@st.cache_data(ttl=30, show_spinner=False)
+def _cfg(cid):
+    return get_client_settings(cid)
 
-**④ 의심 IP 확인 및 차단**
-**[의심 IP]** 탭에서 비정상 패턴 IP 목록 확인 → **[차단]** 버튼 클릭
 
-**⑤ 네이버 광고에 차단 IP 등록**
-차단된 IP를 **네이버 검색광고 시스템 → 캠페인 설정 → IP 차단**에도 등록하면 이중 차단 효과
+# ── 필터 바 헬퍼 ─────────────────────────────────────────────────────────────
+def filter_bar(key: str):
+    """스마트로그 스타일 상단 필터 바. (start_date, end_date, min_clicks) 반환."""
+    fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1])
+    with fc1:
+        period = st.selectbox(
+            "기간",
+            ["오늘", "7일", "30일", "직접 입력"],
+            key=f"{key}_period",
+            label_visibility="collapsed",
+        )
+    now = datetime.now()
+    if period == "오늘":
+        default_s = now.date()
+        default_e = now.date()
+    elif period == "30일":
+        default_s = (now - timedelta(days=29)).date()
+        default_e = now.date()
+    elif period == "직접 입력":
+        default_s = (now - timedelta(days=6)).date()
+        default_e = now.date()
+    else:  # 7일
+        default_s = (now - timedelta(days=6)).date()
+        default_e = now.date()
 
-> ⚠️ **개인정보 주의** : IP를 수집하므로 사이트 개인정보 처리방침에 수집 목적을 반드시 명시하세요.
-    """)
+    with fc2:
+        if period == "직접 입력":
+            dr = st.date_input(
+                "기간",
+                value=(default_s, default_e),
+                key=f"{key}_daterange",
+                label_visibility="collapsed",
+            )
+            start_s = str(dr[0]) if isinstance(dr, (list, tuple)) and len(dr) >= 1 else str(default_s)
+            end_s   = str(dr[1]) if isinstance(dr, (list, tuple)) and len(dr) == 2 else str(default_e)
+        else:
+            st.markdown(
+                f'<div style="padding:6px 0;font-size:13px;color:#555;">'
+                f'{default_s.strftime("%Y.%m.%d")} - {default_e.strftime("%Y.%m.%d")}</div>',
+                unsafe_allow_html=True,
+            )
+            start_s = str(default_s)
+            end_s   = str(default_e)
 
-# ── 광고주 선택 ───────────────────────────────────────────────────────────────
-col_sel, col_run, col_spacer = st.columns([2, 1.2, 4])
+    with fc3:
+        min_clicks = st.number_input(
+            "광고 클릭 횟수(유효)",
+            min_value=1, max_value=100, value=3,
+            key=f"{key}_min",
+            label_visibility="collapsed",
+        )
+        st.caption(f"+ 광고 클릭 횟수(유효): {min_clicks} 회 이상")
 
-with col_sel:
-    if not clients:
-        st.warning("등록된 광고주가 없습니다.")
-        st.stop()
+    with fc4:
+        query = st.button("조회하기", key=f"{key}_query", type="primary", use_container_width=True)
+        if query:
+            st.cache_data.clear()
+
+    return start_s, end_s, min_clicks
+
+
+# ── HTML 테이블: 광고 클릭 IP ──────────────────────────────────────────────────
+def render_ip_table(rows, suspect_map, excluded_set, blocked_set, selected_ip=None) -> str:
+    html = """
+    <table class="sl-table">
+      <thead>
+        <tr>
+          <th rowspan="2">IP</th>
+          <th rowspan="2">통신사</th>
+          <th rowspan="2" class="center">기간내<br>클릭수</th>
+          <th colspan="4" class="center sl-divider">전환</th>
+          <th rowspan="2">누적<br>체류시간</th>
+          <th colspan="3" class="center sl-divider">최근 광고클릭 내역(유효)</th>
+        </tr>
+        <tr style="font-size:11px;color:#888;">
+          <th class="center sl-divider">회원</th>
+          <th class="center">주문</th>
+          <th class="center">문의</th>
+          <th class="center">매출</th>
+          <th class="sl-divider">광고종류</th>
+          <th>키워드(순위)</th>
+          <th>클릭시간</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    for row in rows:
+        ip     = row["ip_address"]
+        car    = _carrier(row)
+        clicks = row["total_clicks"]
+        conv   = int(row.get("conversions") or 0)
+        stay   = fmt_stay(row.get("total_stay") or 0)
+        ad_t   = row.get("ad_type") or "파워링크"
+        kw     = row.get("last_keyword") or "-"
+        last   = (row.get("last_click") or "")[:19]
+
+        score = suspect_map.get(ip, {}).get("risk_score", 0)
+        if ip in blocked_set or score >= 80:
+            row_cls = "sl-row-strong"
+        elif score >= 50 or ip in excluded_set:
+            row_cls = "sl-row-suspect"
+        else:
+            row_cls = ""
+
+        sel_style = "outline:2px solid #3b82f6;" if ip == selected_ip else ""
+
+        html += f"""
+        <tr class="{row_cls}" style="{sel_style}">
+          <td><span class="plus-btn">+</span>🇰🇷 <span class="ip-text">{ip}</span></td>
+          <td>{car}</td>
+          <td class="center">{clicks}</td>
+          <td class="center sl-divider">{conv}</td>
+          <td class="center">0</td>
+          <td class="center">0</td>
+          <td class="center">W0</td>
+          <td>{stay}</td>
+          <td class="sl-divider"><span class="n-badge">N</span>{ad_t}<br>
+              <span style="color:#aaa;font-size:11px;">네이버 통합검색</span></td>
+          <td>{kw}</td>
+          <td style="color:#666;">{last}</td>
+        </tr>
+        """
+    html += "</tbody></table>"
+    return html
+
+
+# ── HTML 테이블: 스마트폰 추적 ────────────────────────────────────────────────
+def render_mobile_table(rows) -> str:
+    html = """
+    <table class="sl-table">
+      <thead>
+        <tr>
+          <th>핸드폰</th>
+          <th>단말기 세션</th>
+          <th class="center">기간내<br>클릭수</th>
+          <th>휴대폰 종류</th>
+          <th>휴대폰 모델</th>
+          <th>누적 체류시간</th>
+          <th>통신사</th>
+          <th colspan="3" class="center sl-divider">최근 광고클릭 내역(유효)</th>
+        </tr>
+        <tr style="font-size:11px;color:#888;">
+          <th></th><th></th><th></th><th></th><th></th><th></th><th></th>
+          <th class="sl-divider">광고종류</th>
+          <th>키워드(순위)</th>
+          <th>클릭시간</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    for row in rows:
+        sess  = row.get("session_key", "")[:8]
+        os_   = row.get("os") or row.get("phone_type") or ""
+        model = row.get("phone_model") or ""
+        car   = _carrier(row)
+        clicks = row["total_clicks"]
+        stay  = fmt_stay(0)  # sessions don't aggregate stay
+        ad_t  = row.get("ad_type") or "파워링크"
+        kw    = row.get("last_keyword") or "-"
+        last  = (row.get("last_click") or "")[:19]
+
+        # 폰 아이콘
+        if "iphone" in (os_ + model).lower() or "ios" in os_.lower():
+            icon = "📱"
+            phone_type = "iPhone"
+        elif "android" in os_.lower() or "galaxy" in model.lower() or "SM-" in model:
+            icon = "📱"
+            phone_type = "갤럭시" if "galaxy" in model.lower() or "SM-" in model else "Android"
+        else:
+            icon = "📱"
+            phone_type = os_ or "-"
+
+        html += f"""
+        <tr>
+          <td>{icon}</td>
+          <td><span class="plus-btn">+</span><span class="ip-text">{sess}</span></td>
+          <td class="center">{clicks}</td>
+          <td>{phone_type}</td>
+          <td>{model or "-"}</td>
+          <td>{stay}</td>
+          <td>{car}</td>
+          <td class="sl-divider"><span class="n-badge">N</span>{ad_t}<br>
+              <span style="color:#aaa;font-size:11px;">네이버 통합검색 - 모바일</span></td>
+          <td>{kw}</td>
+          <td style="color:#666;">{last}</td>
+        </tr>
+        """
+    html += "</tbody></table>"
+    return html
+
+
+# ── HTML 테이블: 네이버 노출제한 IP ───────────────────────────────────────────
+def render_naver_table(rows) -> str:
+    html = """
+    <table class="sl-table">
+      <thead>
+        <tr>
+          <th>IP</th>
+          <th>메모</th>
+          <th>등록일</th>
+          <th class="center">광고클릭수<br>(유효/전체)</th>
+          <th class="center">IP변경</th>
+          <th class="center">일순방문수</th>
+          <th class="center">전환수<br>(회원/주문/주문금액)</th>
+          <th>상태변경</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    for row in rows:
+        ip     = row["ip_address"]
+        memo   = row.get("memo") or ""
+        reg_dt = (row.get("registered_at") or "")[:10]
+        valid  = row.get("ad_clicks_valid", 0)
+        total  = row.get("ad_clicks_total", 0)
+        visits = row.get("daily_visits", 0)
+        sync   = "✅" if row.get("naver_synced") else ""
+
+        html += f"""
+        <tr>
+          <td><span class="plus-btn">+</span>🇰🇷 <span class="ip-text">{ip}</span> {sync}</td>
+          <td style="color:#555;">{memo}</td>
+          <td style="color:#666;">{reg_dt}</td>
+          <td class="center">{valid}/{total}</td>
+          <td class="center">0</td>
+          <td class="center">{visits}</td>
+          <td class="center">0/0/0</td>
+          <td><span style="color:#ef4444;border:1px solid #fca5a5;border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer;">⊗ 삭제</span></td>
+        </tr>
+        """
+    html += "</tbody></table>"
+    return html
+
+
+# ── 설정 행 레이아웃 헬퍼 ─────────────────────────────────────────────────────
+def _cfg_row(label, sub=""):
+    lc, rc = st.columns([3, 5])
+    with lc:
+        st.markdown(
+            f'<div class="cfg-label">{label}</div>'
+            + (f'<div class="cfg-sub">{sub}</div>' if sub else ""),
+            unsafe_allow_html=True,
+        )
+    return rc
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 페이지 헤더
+# ══════════════════════════════════════════════════════════════════════════════
+h1, h2 = st.columns([3, 1])
+with h1:
+    st.markdown('<div class="sl-page-title">🛡️ 부정클릭 관리</div>', unsafe_allow_html=True)
+with h2:
     sel_idx = st.selectbox(
-        "광고주 선택",
+        "광고주",
         range(len(clients)),
         format_func=lambda i: client_names[i],
         key="fd_client_idx",
         label_visibility="collapsed",
     )
-    client = clients[sel_idx]
-    cid    = client_ids[sel_idx]
 
-with col_run:
-    if st.button("🔍 탐지 실행", type="primary", use_container_width=True):
-        with st.spinner("분석 중..."):
-            n = run_detection(cid)
-        st.success(f"완료 — {n}건 갱신")
-        st.rerun()
+client = clients[sel_idx]
+cid    = client_ids[sel_idx]
+cfg    = _cfg(cid)
 
-# ── 탭 ───────────────────────────────────────────────────────────────────────
-TAB_DASH, TAB_LOG, TAB_SUS, TAB_BLK, TAB_SET, TAB_SCR = st.tabs([
-    "📊 대시보드",
-    "📋 클릭 로그",
-    "⚠️ 의심 IP",
-    "🚫 차단 IP",
-    "⚙️ 광고주 설정",
-    "🔗 추적 스크립트",
+# ══════════════════════════════════════════════════════════════════════════════
+# 메인 탭
+# ══════════════════════════════════════════════════════════════════════════════
+TAB_IP, TAB_MOB, TAB_NAVER, TAB_CFG = st.tabs([
+    "광고 클릭 IP",
+    "스마트폰 추적",
+    "네이버 노출제한 IP",
+    "부정클릭 설정",
 ])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — 대시보드
+# TAB 1 — 광고 클릭 IP
 # ══════════════════════════════════════════════════════════════════════════════
-with TAB_DASH:
-    stats = get_dashboard_stats(cid)
+with TAB_IP:
+    start_s, end_s, min_clicks = filter_bar("ip")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    kpi_data = [
-        (c1, "오늘 총 유입",     stats["today_total"],          ""),
-        (c2, "오늘 의심 클릭",   stats["today_suspect_clicks"], ""),
-        (c3, "의심 IP 수",       stats["suspect_count"],        "탐지된 IP"),
-        (c4, "차단 IP 수",       stats["blocked_count"],        ""),
-        (c5, "의심 클릭 비율",   f"{stats['suspect_ratio']}%",  ""),
-    ]
-    for col, label, val, sub in kpi_data:
-        with col:
-            st.markdown(
-                f'<div class="fd-kpi">'
-                f'<div class="fd-kpi-label">{label}</div>'
-                f'<div class="fd-kpi-val">{val}</div>'
-                f'<div class="fd-kpi-sub">{sub}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+    # 위치정보 보기 (시각적 토글, 현재는 미구현)
+    st.checkbox("□ 위치정보 보기", key="ip_loc", value=False, label_visibility="visible")
 
-    st.markdown("")
+    # 데이터 로드
+    ip_rows     = get_ip_summary(cid, start_s, end_s)
+    suspect_map = get_suspect_ip_set(cid)
+    excluded_set = get_naver_excluded_ip_set(cid)
+    blocked_set  = get_blocked_ip_set(cid)
 
-    left, right = st.columns(2)
+    ip_rows = [r for r in ip_rows if r["total_clicks"] >= min_clicks]
 
-    with left:
-        st.markdown('<div class="fd-section">상위 반복 IP TOP 10 (24h)</div>', unsafe_allow_html=True)
-        if stats["top_ips"]:
-            df_ip = pd.DataFrame(stats["top_ips"]).rename(columns={"ip_address": "IP", "cnt": "클릭수"})
-            st.dataframe(df_ip, use_container_width=True, hide_index=True)
-        else:
-            st.info("데이터 없음")
+    # 선택된 IP (상세)
+    sel_ip = st.session_state.get("ip_sel_ip")
 
-    with right:
-        st.markdown('<div class="fd-section">의심 키워드 TOP 10 (24h)</div>', unsafe_allow_html=True)
-        if stats["top_keywords"]:
-            df_kw = pd.DataFrame(stats["top_keywords"]).rename(columns={"keyword": "키워드", "cnt": "유입수"})
-            st.dataframe(df_kw, use_container_width=True, hide_index=True)
-        else:
-            st.info("데이터 없음")
-
-    # 리포트 기간 선택
-    st.markdown('<div class="fd-section">기간별 리포트</div>', unsafe_allow_html=True)
-    settings = get_client_settings(cid)
-    avg_cpc  = settings.get("avg_cpc", 500)
-
-    r1, r2, r3 = st.columns([1.2, 1.2, 3])
-    with r1:
-        rpt_start = st.date_input("시작일", datetime.now() - timedelta(days=30), key="rpt_s")
-    with r2:
-        rpt_end   = st.date_input("종료일", datetime.now(), key="rpt_e")
-
-    rdata = get_report_data(cid, str(rpt_start), str(rpt_end))
-
-    m1, m2, m3, m4, m5 = st.columns(5)
-    save_est = rdata["suspect_clicks"] * avg_cpc
-    for col, label, val in [
-        (m1, "총 유입",        rdata["total"]),
-        (m2, "의심 유입",      rdata["suspect_clicks"]),
-        (m3, "의심 IP 수",     rdata["suspect_ip_count"]),
-        (m4, "차단 IP 수",     rdata["blocked_count"]),
-        (m5, "추정 절감 광고비", f"~{save_est:,}원"),
-    ]:
-        col.metric(label, val)
-
-    st.caption(f"추정 절감 = 의심클릭 × 평균CPC {avg_cpc:,}원 (추정값)")
-
-    r_left, r_right = st.columns(2)
-    with r_left:
-        if rdata["top_keywords"]:
-            st.markdown("**의심 키워드 TOP10**")
-            st.dataframe(
-                pd.DataFrame(rdata["top_keywords"]).rename(columns={"keyword":"키워드","cnt":"의심유입수"}),
-                use_container_width=True, hide_index=True,
-            )
-    with r_right:
-        if rdata["top_ips"]:
-            st.markdown("**반복 IP TOP10**")
-            st.dataframe(
-                pd.DataFrame(rdata["top_ips"]).rename(columns={"ip_address":"IP","cnt":"클릭수"}),
-                use_container_width=True, hide_index=True,
-            )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — 클릭 로그
-# ══════════════════════════════════════════════════════════════════════════════
-with TAB_LOG:
-    st.markdown('<div class="fd-section">클릭 로그</div>', unsafe_allow_html=True)
-
-    fl1, fl2, fl3 = st.columns([1.2, 1.2, 2])
-    with fl1:
-        log_start = st.date_input("시작일", datetime.now() - timedelta(days=7), key="log_s")
-    with fl2:
-        log_end   = st.date_input("종료일", datetime.now(), key="log_e")
-    with fl3:
-        kw_filter = st.text_input("IP / 키워드 검색", placeholder="예: 1.2.3.4 또는 브랜드명", key="log_kw")
-
-    logs = get_all_clicks(cid, start_date=str(log_start), end_date=str(log_end), limit=1000)
-
-    if kw_filter.strip():
-        kw = kw_filter.strip().lower()
-        logs = [l for l in logs if kw in (l.get("ip_address","")).lower()
-                                 or kw in (l.get("keyword","")).lower()]
-
-    if logs:
-        df_log = pd.DataFrame(logs)
-        show_cols = ["created_at", "ip_address", "keyword", "device", "browser",
-                     "os", "source", "medium", "landing_url", "stay_seconds", "is_conversion"]
-        show_cols = [c for c in show_cols if c in df_log.columns]
-        col_rename = {
-            "created_at": "시간", "ip_address": "IP", "keyword": "키워드",
-            "device": "기기", "browser": "브라우저", "os": "OS",
-            "source": "소스", "medium": "매체", "landing_url": "랜딩URL",
-            "stay_seconds": "체류(초)", "is_conversion": "전환",
-        }
-        df_show = df_log[show_cols].rename(columns=col_rename)
-        st.dataframe(df_show, use_container_width=True, hide_index=True, height=420)
-        st.caption(f"총 {len(logs):,}건")
-
-        csv_buf = io.StringIO()
-        df_show.to_csv(csv_buf, index=False, encoding="utf-8-sig")
-        st.download_button("CSV 다운로드", csv_buf.getvalue(), "click_logs.csv", "text/csv")
+    # 테이블 렌더링
+    if not ip_rows:
+        st.info("해당 기간 조건에 맞는 IP가 없습니다.")
     else:
-        st.info("해당 기간 클릭 로그가 없습니다.")
+        st.markdown(render_ip_table(ip_rows, suspect_map, excluded_set, blocked_set, sel_ip),
+                    unsafe_allow_html=True)
+        st.caption(f"총 {len(ip_rows)}개 IP")
 
-    # 테스트 클릭 삽입
-    with st.expander("테스트 클릭 삽입 (개발/검증용)", expanded=False):
-        st.caption("실제 스크립트 없이 샘플 데이터를 넣어 탐지 로직을 테스트합니다.")
-        t1, t2, t3 = st.columns(3)
-        with t1:
-            t_ip  = st.text_input("IP", "1.2.3.4", key="t_ip")
-            t_kw  = st.text_input("키워드", "브랜드명", key="t_kw")
-        with t2:
-            t_cnt = st.number_input("삽입 횟수", 1, 20, 6, key="t_cnt")
-            t_stay= st.number_input("체류시간(초)", 0, 300, 5, key="t_stay")
-        with t3:
-            t_conv= st.checkbox("전환 있음", False, key="t_conv")
-            t_ua  = st.text_input("User-Agent", "Mozilla/5.0 (Windows NT 10.0)", key="t_ua")
+        # IP 선택 → 상세 + 액션
+        st.markdown("---")
+        ip_options = [r["ip_address"] for r in ip_rows]
+        ac1, ac2, ac3, ac4 = st.columns([3, 1, 1, 1])
+        with ac1:
+            chosen = st.selectbox("IP 선택 (상세 조회 · 차단)", ["— 선택 —"] + ip_options,
+                                  key="ip_sel_ip", label_visibility="collapsed")
 
-        if st.button("삽입", key="t_btn"):
-            for _ in range(int(t_cnt)):
+        if chosen and chosen != "— 선택 —":
+            with ac2:
+                if chosen not in blocked_set:
+                    if st.button("차단", key="ip_blk", type="primary"):
+                        block_ip(cid, chosen, f"수동차단", "admin")
+                        st.success(f"{chosen} 차단 완료")
+                        st.cache_data.clear(); st.rerun()
+                else:
+                    if st.button("차단해제", key="ip_ublk"):
+                        unblock_ip(cid, chosen)
+                        st.cache_data.clear(); st.rerun()
+            with ac3:
+                if chosen not in excluded_set:
+                    if st.button("노출제한", key="ip_nex"):
+                        cnt = next((r["total_clicks"] for r in ip_rows if r["ip_address"] == chosen), 0)
+                        add_naver_excluded_ip(cid, chosen, f"smart-{cnt}", cnt, cnt)
+                        st.success(f"{chosen} 노출제한 추가")
+                        st.cache_data.clear(); st.rerun()
+            with ac4:
+                if chosen in suspect_map:
+                    if st.button("정상처리", key="ip_clr"):
+                        clear_suspect(cid, chosen)
+                        st.cache_data.clear(); st.rerun()
+
+            # 클릭 상세 로그
+            detail = get_clicks_for_ip(cid, chosen, start_s, end_s, limit=50)
+            if detail:
+                df_d = pd.DataFrame(detail)
+                show = ["created_at", "keyword", "device", "os", "stay_seconds", "is_conversion"]
+                show = [c for c in show if c in df_d.columns]
+                df_d = df_d[show].rename(columns={
+                    "created_at": "클릭시간", "keyword": "키워드",
+                    "device": "기기", "os": "OS",
+                    "stay_seconds": "체류(초)", "is_conversion": "전환",
+                })
+                st.dataframe(df_d, use_container_width=True, hide_index=True, height=220)
+
+    # 탐지 실행 + 테스트 클릭 버튼
+    run_c1, run_c2, run_c3 = st.columns([4, 1, 1])
+    with run_c2:
+        if st.button("탐지 실행", key="ip_detect"):
+            with st.spinner("분석 중..."):
+                run_detection(cid)
+            st.cache_data.clear(); st.rerun()
+    with run_c3:
+        if st.button("테스트 클릭", key="ip_test_click", help="클릭 로그 DB에 테스트 데이터를 추가합니다"):
+            import random as _rnd
+            _ips = ["1.234.56.78", "210.90.141.33", "125.178.90.12"]
+            _kws = ["검색광고리베이트", "네이버광고대행사", "구글광고대행사"]
+            for _i in range(5):
                 log_click({
                     "client_id": cid,
-                    "ip_address": t_ip,
-                    "user_agent": t_ua,
-                    "keyword": t_kw,
-                    "device": "desktop", "browser": "Chrome", "os": "Windows",
-                    "is_conversion": 1 if t_conv else 0,
-                    "stay_seconds": int(t_stay),
-                    "source": "naver", "medium": "cpc",
+                    "ip_address": _rnd.choice(_ips),
+                    "keyword": _rnd.choice(_kws),
+                    "device": _rnd.choice(["desktop", "mobile"]),
+                    "landing_url": "https://www.admarketip.com/",
+                    "referrer": "https://search.naver.com/",
+                    "session_id": f"test_{_i}",
+                    "ad_type": "naver",
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 })
-            st.success(f"{t_cnt}건 삽입 완료. 상단 [탐지 실행] 버튼으로 분석하세요.")
-            st.rerun()
+            st.success("테스트 클릭 5개 추가됨 — 새로고침하면 반영됩니다")
+            st.cache_data.clear(); st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — 의심 IP
+# TAB 2 — 스마트폰 추적
 # ══════════════════════════════════════════════════════════════════════════════
-with TAB_SUS:
-    st.markdown('<div class="fd-section">의심 IP 목록</div>', unsafe_allow_html=True)
-    st.caption("위험 점수 기준: 80점 이상 강한 의심(빨강) / 50점 이상 의심(주황)")
+with TAB_MOB:
+    mob_s, mob_e, mob_min = filter_bar("mob")
 
-    suspects = get_suspicious_ips(cid)
+    sessions = get_mobile_sessions(cid, mob_s, mob_e)
+    sessions = [s for s in sessions if s["total_clicks"] >= mob_min]
 
-    if not suspects:
-        st.info("탐지된 의심 IP가 없습니다. 상단 [탐지 실행] 버튼으로 분석하세요.")
+    if not sessions:
+        st.info("해당 기간 조건에 맞는 모바일 세션이 없습니다.")
     else:
-        for sus in suspects:
-            ip    = sus["ip_address"]
-            score = sus["risk_score"]
-            status= sus["status"]
+        st.markdown(render_mobile_table(sessions), unsafe_allow_html=True)
+        st.caption(f"총 {len(sessions)}개 세션")
 
-            if status == "strong_suspect":
-                badge = '<span class="fd-risk-high">강한 의심</span>'
-                border_color = "#FCA5A5"
-            else:
-                badge = '<span class="fd-risk-med">의심</span>'
-                border_color = "#FCD34D"
 
-            with st.container():
-                st.markdown(
-                    f'<div style="background:#fff;border:1px solid {border_color};border-radius:10px;'
-                    f'padding:14px 18px;margin-bottom:10px;">',
-                    unsafe_allow_html=True,
-                )
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — 네이버 노출제한 IP
+# ══════════════════════════════════════════════════════════════════════════════
+with TAB_NAVER:
+    st.markdown('<div class="sl-page-title" style="font-size:17px;">네이버 광고노출제한 IP</div>',
+                unsafe_allow_html=True)
 
-                row1, row2 = st.columns([5, 1])
-                with row1:
-                    st.markdown(
-                        f'<b style="font-size:16px;">{ip}</b> &nbsp; {badge} &nbsp;'
-                        f'<span style="font-size:13px;color:#6B7280;">위험점수: '
-                        f'<b style="color:#DC2626;">{score}점</b></span>',
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(
-                        f'<div style="font-size:12px;color:#6B7280;margin-top:4px;">'
-                        f'클릭수: <b>{sus["click_count"]}</b> | '
-                        f'키워드수: <b>{sus["keyword_count"]}</b> | '
-                        f'첫 유입: {sus["first_seen"][:16] if sus["first_seen"] else "-"} | '
-                        f'마지막: {sus["last_seen"][:16] if sus["last_seen"] else "-"}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown(
-                        f'<div style="font-size:12px;color:#92400E;margin-top:4px;">'
-                        f'사유: {sus["reason"]}</div>',
-                        unsafe_allow_html=True,
-                    )
+    # 서브탭: 전체 | 자동 노출제한 내역
+    nv_sub = st.radio("", ["전체", "자동 노출제한 내역"],
+                      horizontal=True, key="nv_sub", label_visibility="collapsed")
 
-                with row2:
-                    st.markdown("")
-                    if st.button("🚫 차단", key=f"blk_{ip}", type="primary"):
-                        st.session_state[f"confirm_blk_{ip}"] = True
+    excluded_list = get_naver_excluded_ips(cid)
+    active_list   = [r for r in excluded_list if r["status"] == "active"]
+    auto_list     = [r for r in active_list if (r.get("memo") or "").startswith("smart-")]
 
-                if st.session_state.get(f"confirm_blk_{ip}"):
-                    blk_col1, blk_col2, blk_col3 = st.columns([3, 1, 1])
-                    with blk_col1:
-                        memo = st.text_input("차단 메모 (선택)", key=f"memo_{ip}", placeholder="예: 경쟁사 추정")
-                    with blk_col2:
-                        st.markdown("")
-                        if st.button("✅ 확인 차단", key=f"do_blk_{ip}", type="primary"):
-                            block_ip(cid, ip, sus["reason"],
-                                     st.session_state.get("auth_username", "admin"),
-                                     st.session_state.get(f"memo_{ip}", ""))
-                            st.session_state.pop(f"confirm_blk_{ip}", None)
-                            st.success(f"{ip} 차단 완료")
-                            st.rerun()
-                    with blk_col3:
-                        st.markdown("")
-                        if st.button("취소", key=f"cancel_blk_{ip}"):
-                            st.session_state.pop(f"confirm_blk_{ip}", None)
-                            st.rerun()
+    display_list  = auto_list if nv_sub == "자동 노출제한 내역" else active_list
 
-                clr_col, _ = st.columns([2, 5])
-                with clr_col:
-                    if st.button("✔️ 정상 처리", key=f"clr_{ip}"):
-                        clear_suspect(cid, ip)
-                        st.success(f"{ip} 정상 처리됨")
+    # API 연동 상태 배너
+    api_key    = cfg.get("naver_api_key", "")
+    api_secret = cfg.get("naver_api_secret", "")
+    cust_id    = cfg.get("naver_customer_id", "")
+    has_api    = bool(api_key and api_secret and cust_id)
+    synced_cnt = sum(1 for r in active_list if r.get("naver_synced"))
+
+    if has_api:
+        st.markdown(
+            f'<div class="sl-green-box">'
+            f'<b>네이버 API와 동기화 중 ({len(active_list)}개의 IP)</b><br><br>'
+            f'* 네이버 광고 시스템과 연동되어 있습니다. 이곳에 등록된 IP는 네이버 광고 열람이 불가능합니다.<br>'
+            f'* 여기서 삭제하거나 수정하시면 실제 네이버 노출제한 IP 데이터가 변경 됩니다.<br>'
+            f'* IP 옆에 [+] 버튼(아래 추가)을 눌러서 노출제한을 거실 수 있습니다. '
+            f'추가한 IP는 메모에 <i>smart-[광고클릭횟수]</i>로 기록됩니다.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div class="sl-green-box" style="background:#fefce8;border-color:#fde68a;color:#92400e;">'
+            f'<b>⚠️ Naver API 미연동 ({len(active_list)}개 로컬 등록)</b><br><br>'
+            f'* [부정클릭 설정 → 기본 설정]에서 Naver API 키를 입력하면 자동 동기화됩니다.<br>'
+            f'* 아래 TXT 다운로드 후 네이버 광고관리시스템 → 캠페인 설정 → IP 차단에 수동 등록하세요.</div>',
+            unsafe_allow_html=True,
+        )
+
+    # 자동차단 후보
+    candidates = check_auto_block_candidates(cid)
+    if candidates:
+        ab_days   = cfg.get("auto_block_days", 7)
+        ab_clicks = cfg.get("auto_block_clicks", 5)
+        with st.expander(f"⚠️ 자동차단 후보 {len(candidates)}개 — {ab_days}일 내 {ab_clicks}회 이상 클릭"):
+            for c in candidates[:15]:
+                cc1, cc2, cc3 = st.columns([4, 1, 1])
+                with cc1:
+                    _ccnt = c.get("total_clicks", c.get("cnt", 0))
+                    st.markdown(f"`{c['ip_address']}`  **{_ccnt}회 클릭**")
+                with cc2:
+                    if st.button("노출제한 추가", key=f"cand_{c['ip_address']}", type="primary"):
+                        cnt = c.get("total_clicks", c.get("cnt", 0))
+                        add_naver_excluded_ip(cid, c["ip_address"], f"smart-{cnt}", cnt, cnt)
+                        st.success(f"{c['ip_address']} 추가"); st.cache_data.clear(); st.rerun()
+                with cc3:
+                    if st.button("무시", key=f"ign_{c['ip_address']}"):
+                        safe = list(cfg.get("safe_ips", []))
+                        if c["ip_address"] not in safe:
+                            safe.append(c["ip_address"])
+                            save_client_settings(cid, {**cfg, "safe_ips": safe})
+                            st.cache_data.clear()
                         st.rerun()
 
-                st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("---")
-    if st.button("🔄 탐지 재실행", key="rerun_det"):
-        n = run_detection(cid)
-        st.success(f"{n}건 갱신")
-        st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 — 차단 IP
-# ══════════════════════════════════════════════════════════════════════════════
-with TAB_BLK:
-    st.markdown('<div class="fd-section">차단 IP 목록</div>', unsafe_allow_html=True)
-
-    blocked = get_blocked_ips(cid)
-
-    if not blocked:
-        st.info("차단된 IP가 없습니다.")
+    # 테이블
+    if not display_list:
+        st.info("등록된 노출제한 IP가 없습니다.")
     else:
-        df_blk = pd.DataFrame(blocked)[["ip_address","reason","blocked_by","created_at"]]
-        df_blk.columns = ["IP", "차단 사유", "처리자", "차단 일시"]
-        st.dataframe(df_blk, use_container_width=True, hide_index=True)
+        st.markdown(render_naver_table(display_list), unsafe_allow_html=True)
+        st.caption(f"총 {len(display_list)}개")
 
-        # 다운로드
-        d1, d2, d3 = st.columns([1, 1, 3])
-        ip_list = "\n".join(r["ip_address"] for r in blocked)
-        with d1:
-            st.download_button(
-                "TXT 다운로드",
-                ip_list,
-                file_name=f"blocked_ips_{cid}.txt",
-                mime="text/plain",
-            )
-        with d2:
-            csv_buf = io.StringIO()
-            df_blk.to_csv(csv_buf, index=False, encoding="utf-8-sig")
-            st.download_button(
-                "CSV 다운로드",
-                csv_buf.getvalue(),
-                file_name=f"blocked_ips_{cid}.csv",
-                mime="text/csv",
-            )
+        # 삭제 / 다운로드 액션
+        st.markdown("---")
+        del_col, dl_col = st.columns([3, 2])
+        with del_col:
+            del_ip = st.selectbox("삭제할 IP 선택", [r["ip_address"] for r in display_list],
+                                  key="nv_del_sel")
+            if st.button("⊗ 삭제", key="nv_del_btn"):
+                remove_naver_excluded_ip(cid, del_ip)
+                st.success(f"{del_ip} 삭제 완료"); st.cache_data.clear(); st.rerun()
+        with dl_col:
+            ip_txt = "\n".join(r["ip_address"] for r in active_list)
+            st.download_button("TXT 다운로드", ip_txt, "naver_excluded_ips.txt", "text/plain",
+                               use_container_width=True)
 
-        st.info(
-            "💡 **네이버 광고**: 광고관리시스템 → 캠페인 설정 → IP 차단 → 다운로드한 IP 등록\n\n"
-            "💡 **구글 Ads**: 도구 → IP 제외 → IP 목록 붙여넣기"
-        )
-
-        # 차단 해제
-        with st.expander("차단 해제", expanded=False):
-            unblk_ip = st.selectbox("해제할 IP", [r["ip_address"] for r in blocked], key="unblk_sel")
-            if st.button("차단 해제", key="do_unblk"):
-                unblock_ip(cid, unblk_ip)
-                st.success(f"{unblk_ip} 차단 해제됨")
-                st.rerun()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — 광고주 설정
-# ══════════════════════════════════════════════════════════════════════════════
-with TAB_SET:
-    st.markdown('<div class="fd-section">탐지 기준 설정</div>', unsafe_allow_html=True)
-    st.caption(f"광고주: **{client.get('name', cid)}**")
-
-    cfg = get_client_settings(cid)
-
-    with st.form("fraud_settings_form"):
-        s1, s2 = st.columns(2)
-        with s1:
-            st.markdown("**반복 클릭 기준**")
-            v_24h = st.number_input(
-                "24시간 내 최대 허용 클릭 수",
-                1, 100, int(cfg.get("max_clicks_24h", 5)),
-                help="이 횟수 이상이면 +30점",
-            )
-            v_1h  = st.number_input(
-                "1시간 내 최대 허용 클릭 수",
-                1, 50, int(cfg.get("max_clicks_1h", 3)),
-                help="이 횟수 이상이면 +30점",
-            )
-            v_kw  = st.number_input(
-                "동일 키워드 최대 반복 수",
-                1, 50, int(cfg.get("max_keyword_repeats", 3)),
-                help="이 횟수 이상이면 +20점",
-            )
-
-        with s2:
-            st.markdown("**체류시간 / 점수 기준**")
-            v_stay = st.number_input(
-                "최소 체류시간(초) — 이 이하는 의심",
-                1, 120, int(cfg.get("min_stay_seconds", 10)),
-                help="이 초 이하면 +20점",
-            )
-            v_score = st.number_input(
-                "의심 처리 최소 점수",
-                10, 100, int(cfg.get("auto_suspect_score", 50)),
-                help="이 점수 이상이면 의심 IP로 분류",
-            )
-            v_cpc = st.number_input(
-                "평균 CPC (원) — 절감액 추정용",
-                100, 100000, int(cfg.get("avg_cpc", 500)),
-                step=100,
-            )
-
-        st.markdown("**안전 IP 목록** (내부 직원 · 사무실 IP)")
-        safe_raw = st.text_area(
-            "한 줄에 IP 하나씩 입력",
-            value="\n".join(cfg.get("safe_ips", [])),
-            height=100,
-            placeholder="예:\n192.168.1.1\n10.0.0.5",
-            label_visibility="collapsed",
-        )
-
-        st.markdown("**점수별 기준 안내**")
-        st.markdown("""
-| 조건 | 점수 |
-|------|------|
-| 24시간 내 설정 횟수 이상 | +30 |
-| 1시간 내 설정 횟수 이상 | +30 |
-| 동일 키워드 반복 | +20 |
-| 평균 체류시간 기준 이하 | +20 |
-| 전환 없이 3회 이상 반복 | +10 |
-| 봇 패턴 UA 감지 | +10 |
-| 전환 있음 (오탐 방지 감점) | -20 |
-| 체류시간 60초 초과 (감점) | -10 |
-""")
-
-        submitted = st.form_submit_button("설정 저장", type="primary")
-
-    if submitted:
-        safe_ips = [ip.strip() for ip in safe_raw.splitlines() if ip.strip()]
-        save_client_settings(cid, {
-            "max_clicks_24h":      v_24h,
-            "max_clicks_1h":       v_1h,
-            "max_keyword_repeats": v_kw,
-            "min_stay_seconds":    v_stay,
-            "auto_suspect_score":  v_score,
-            "avg_cpc":             v_cpc,
-            "safe_ips":            safe_ips,
-        })
-        st.success("설정이 저장되었습니다.")
-        st.cache_data.clear()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 6 — 추적 스크립트 발급
-# ══════════════════════════════════════════════════════════════════════════════
-with TAB_SCR:
-    st.markdown('<div class="fd-section">추적 스크립트 발급</div>', unsafe_allow_html=True)
-
-    sc1, sc2 = st.columns([2, 1])
-    with sc1:
-        server_url = st.text_input(
-            "추적 서버 URL",
-            value="http://your-server:8502",
-            placeholder="예: http://211.x.x.x:8502 또는 https://track.example.com",
-            help="FastAPI 추적 서버 주소 (fraud/server.py 실행 필요)",
-        )
-    with sc2:
-        sel_client_idx = st.selectbox(
-            "스크립트 발급 광고주",
-            range(len(clients)),
-            format_func=lambda i: client_names[i],
-            key="scr_client_idx",
-        )
-
-    target_cid = client_ids[sel_client_idx]
-    script_tag = (
-        f'<script src="{server_url.rstrip("/")}/track.js'
-        f'?client_id={target_cid}"></script>'
-    )
-
-    # ── 발급 코드 ──────────────────────────────────────────────────────────────
-    st.markdown("#### 📋 발급된 스크립트 코드")
-    st.code(script_tag, language="html")
-
+    # IP 직접 추가
     st.markdown("---")
+    with st.expander("IP 직접 추가"):
+        na1, na2, na3 = st.columns([3, 3, 1])
+        with na1:
+            new_ip = st.text_input("IP 주소", placeholder="예: 1.2.3.4", key="nv_add_ip")
+        with na2:
+            new_memo = st.text_input("메모", placeholder="예: smart-3 또는 경쟁사", key="nv_add_memo")
+        with na3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("추가", key="nv_add_btn", type="primary"):
+                if new_ip.strip():
+                    add_naver_excluded_ip(cid, new_ip.strip(), new_memo.strip())
+                    st.success(f"{new_ip.strip()} 추가 완료"); st.cache_data.clear(); st.rerun()
+                else:
+                    st.error("IP를 입력하세요.")
 
-    # ── 삽입 위치 안내 ──────────────────────────────────────────────────────────
-    st.markdown("### 📌 어디에 넣어야 하나요?")
-    st.info(
-        "광고를 클릭했을 때 사람들이 **처음 도달하는 페이지(랜딩페이지)** 의 HTML 코드 안, "
-        "**`</head>` 태그 바로 위**에 붙여넣기 하면 됩니다."
-    )
 
-    st.markdown("#### ✅ 올바른 삽입 위치 예시")
-    st.code(
-        f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>광고 랜딩페이지</title>
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 4 — 부정클릭 설정
+# ══════════════════════════════════════════════════════════════════════════════
+with TAB_CFG:
+    st.markdown('<div class="sl-page-title" style="font-size:17px;">부정클릭 설정</div>',
+                unsafe_allow_html=True)
 
-  <!-- ▼▼▼ 여기에 붙여넣기 ▼▼▼ -->
-  {script_tag}
-  <!-- ▲▲▲ 여기까지 ▲▲▲ -->
-
-</head>
-<body>
-  ... 페이지 내용 ...
-</body>
-</html>""",
-        language="html",
-    )
-
-    st.markdown("---")
-    st.markdown("### 🏗️ 홈페이지 종류별 삽입 방법")
-
-    tab_cafe24, tab_wordpress, tab_html, tab_naver = st.tabs([
-        "카페24 / 메이크샵", "워드프레스", "직접 제작 HTML", "네이버 스마트스토어"
+    # 5개 서브탭
+    S1, S2, S3, S4, S5 = st.tabs([
+        "부정클릭 차단 설정",
+        "알림 설정",
+        "네이버 자동차단",
+        "기본 설정",
+        "추적 스크립트",
     ])
 
-    with tab_cafe24:
-        st.markdown("""
-**카페24 관리자 → 디자인 → HTML/CSS 편집**
+    # ── S1: 부정클릭 차단 설정 ────────────────────────────────────────────────
+    with S1:
+        st.markdown('<div class="sl-section-title">부정클릭 차단 설정</div>', unsafe_allow_html=True)
 
-1. 카페24 관리자 페이지 로그인
-2. 상단 메뉴 **디자인** 클릭
-3. **디자인 편집** → HTML 편집 버튼
-4. `index.html` (또는 메인 레이아웃 파일) 열기
-5. `</head>` 를 찾아서 **그 바로 위**에 코드 붙여넣기
-6. 저장
-""")
+        with st.form("s1_form"):
+            # 경고 팝업 기능 사용
+            with _cfg_row("경고 팝업 기능 사용"):
+                popup_use = st.radio("", ["사용", "사용하지 않음"],
+                                     index=0 if cfg.get("popup_enabled", 0) else 1,
+                                     horizontal=True, key="s1_popup", label_visibility="collapsed")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-    with tab_wordpress:
-        st.markdown("""
-**워드프레스 → 외모 → 테마 편집기** 또는 **헤더/푸터 플러그인**
+            # 경고 팝업 인식 방법
+            with _cfg_row("경고 팝업 인식 방법"):
+                popup_mode = st.radio("", ["유효클릭일때만 팝업", "무효+유효클릭 모두 팝업"],
+                                      index=0,
+                                      horizontal=True, key="s1_popup_mode", label_visibility="collapsed")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-**방법 1 — 테마 편집기**
-1. 워드프레스 관리자 → **외모** → **테마 편집기**
-2. 오른쪽에서 `header.php` 선택
-3. `</head>` 바로 위에 코드 붙여넣기
-4. **파일 업데이트** 클릭
+            # 스마트폰 위치 추적
+            with _cfg_row("스마트폰 위치 추적 기능",
+                          sub="N회 이상 클릭시 스마트폰 위치 추적"):
+                track_enabled = st.radio("", ["사용", "사용하지 않음"],
+                                         index=0 if cfg.get("mobile_track_enabled", 1) else 1,
+                                         horizontal=True, key="s1_track", label_visibility="collapsed")
+                if track_enabled == "사용":
+                    track_n = st.number_input("CPC광고를 N회 이상 클릭시 위치 추적",
+                                              1, 100, int(cfg.get("mobile_track_clicks", 5)),
+                                              key="s1_track_n", label_visibility="visible")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-**방법 2 — 플러그인 (권장)**
-1. 플러그인 → **Insert Headers and Footers** 설치
-2. 설정 → **Scripts in Header** 칸에 코드 붙여넣기
-3. 저장
-""")
+            # 스마트폰 전용 경고 팝업
+            with _cfg_row("스마트폰 전용 경고 팝업",
+                          sub="N회 이상 클릭시 휴대폰/통신사 정보 표시"):
+                mobile_popup = st.radio("", ["사용", "사용하지 않음"],
+                                        index=0 if cfg.get("mobile_popup_enabled", 1) else 1,
+                                        horizontal=True, key="s1_mpopup", label_visibility="collapsed")
+                if mobile_popup == "사용":
+                    mobile_popup_n = st.number_input("CPC광고를 N회 이상 클릭시 팝업",
+                                                     1, 100, int(cfg.get("mobile_popup_clicks", 4)),
+                                                     key="s1_mpopup_n", label_visibility="visible")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-    with tab_html:
-        st.markdown("""
-**직접 제작 또는 HTML 파일 수정**
+            # 탐지 기준
+            st.markdown('<div class="sl-section-title" style="font-size:14px;margin-top:16px;">탐지 기준</div>',
+                        unsafe_allow_html=True)
+            dc1, dc2 = st.columns(2)
+            with dc1:
+                v_24h = st.number_input("24시간 내 최대 허용 클릭", 1, 100, int(cfg.get("max_clicks_24h", 5)))
+                v_1h  = st.number_input("1시간 내 최대 허용 클릭",  1,  50, int(cfg.get("max_clicks_1h", 3)))
+            with dc2:
+                v_kw   = st.number_input("동일 키워드 최대 반복",  1, 50, int(cfg.get("max_keyword_repeats", 3)))
+                v_stay = st.number_input("최소 체류시간(초)",       1, 120, int(cfg.get("min_stay_seconds", 10)))
 
-1. 랜딩페이지 `.html` 파일을 텍스트 편집기(메모장, VS Code 등)로 열기
-2. `Ctrl+F`로 `</head>` 검색
-3. `</head>` 바로 위 줄에 코드 붙여넣기
-4. 저장 후 서버에 재업로드 (FTP 등)
-""")
+            v_score = st.number_input("의심 분류 최소 점수", 10, 100, int(cfg.get("auto_suspect_score", 50)))
+            v_cpc   = st.number_input("평균 CPC (원)", 100, 100000, int(cfg.get("avg_cpc", 500)), step=100)
 
-    with tab_naver:
-        st.markdown("""
-**네이버 스마트스토어는 외부 스크립트 삽입이 제한**됩니다.
+            # 안전 IP
+            st.markdown("**안전 IP (내부 직원 · 사무실)**")
+            safe_raw = st.text_area("", value="\n".join(cfg.get("safe_ips", [])),
+                                    height=70, label_visibility="collapsed",
+                                    placeholder="192.168.1.1\n10.0.0.1")
 
-- 스마트스토어 자체 페이지에는 이 스크립트를 직접 삽입할 수 없습니다.
-- 대신 **별도 랜딩페이지**(자체 도메인)를 제작하고, 그 페이지에서 스마트스토어로 연결하는 방식을 사용하세요.
-- 광고 도착 URL을 자체 랜딩페이지로 설정 → 추적 후 스마트스토어로 리다이렉트 가능합니다.
-""")
+            _, save_col = st.columns([5, 1])
+            with save_col:
+                s1_saved = st.form_submit_button("저장", type="primary", use_container_width=True)
 
-    st.markdown("---")
+        if s1_saved:
+            save_client_settings(cid, {
+                **cfg,
+                "popup_enabled":        popup_use == "사용",
+                "mobile_track_enabled": track_enabled == "사용",
+                "mobile_track_clicks":  track_n if track_enabled == "사용" else 5,
+                "mobile_popup_enabled": mobile_popup == "사용",
+                "mobile_popup_clicks":  mobile_popup_n if mobile_popup == "사용" else 4,
+                "max_clicks_24h":       v_24h,
+                "max_clicks_1h":        v_1h,
+                "max_keyword_repeats":  v_kw,
+                "min_stay_seconds":     v_stay,
+                "auto_suspect_score":   v_score,
+                "avg_cpc":              v_cpc,
+                "safe_ips":             [ip.strip() for ip in safe_raw.splitlines() if ip.strip()],
+            })
+            st.success("저장되었습니다.")
+            st.cache_data.clear()
 
-    # ── 전환 이벤트 (선택) ─────────────────────────────────────────────────────
-    with st.expander("📞 전환 이벤트 설정 (전화 상담·문의 완료 등)"):
-        st.markdown("""
-전환이 발생했을 때 아래 코드를 호출하면, 해당 방문자의 위험도 점수가 낮아집니다.
-(부정클릭이 아닌 진짜 고객으로 분류)
+    # ── S2: 알림 설정 ─────────────────────────────────────────────────────────
+    with S2:
+        st.markdown('<div class="sl-section-title">알림톡 알림 설정</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sl-section-sub">알림톡 알림을 설정합니다.</div>', unsafe_allow_html=True)
 
-**예시 — 전화 버튼 클릭 시:**
-""")
-        st.code(
-            """<button onclick="window.mktipConversion({type: 'call'})">
-  📞 전화 상담
-</button>""",
-            language="html",
-        )
-        st.markdown("**예시 — 문의 폼 제출 완료 시:**")
-        st.code(
-            """// 폼 submit 성공 후 실행
-window.mktipConversion({type: 'inquiry'});""",
-            language="javascript",
-        )
+        with st.form("s2_form"):
+            # 알림톡 사용
+            with _cfg_row("알림톡 사용"):
+                alert_use = st.radio("", ["사용함", "사용하지 않음"],
+                                     index=0 if cfg.get("alert_enabled", 0) else 1,
+                                     horizontal=True, key="s2_alert_use", label_visibility="collapsed")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-    st.info(
-        "⚠️ **개인정보 처리방침**: 이 스크립트는 방문자 IP를 수집합니다. "
-        "사이트 개인정보 처리방침에 **'광고 부정클릭 방지 목적으로 IP 주소를 수집함'** 을 명시하세요."
-    )
+            # 알림 횟수
+            with _cfg_row("알림 횟수 설정"):
+                c_l, c_r = st.columns([2, 3])
+                with c_l:
+                    alert_n = st.number_input("", 1, 100, int(cfg.get("alert_clicks", 3)),
+                                              key="s2_alert_n", label_visibility="collapsed")
+                with c_r:
+                    st.markdown(
+                        f'<div style="padding-top:8px;font-size:13px;color:#555;">'
+                        f'회 이상 클릭시 알림을 받습니다. <span style="color:#aaa;">(최근 24시간 이내)</span></div>',
+                        unsafe_allow_html=True)
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
 
-    with st.expander("API 엔드포인트 참고"):
-        st.code(f"""
-# 스크립트 파일
-GET  {server_url}/track.js?client_id=CLIENT_ID
+            # 알림 수신번호
+            with _cfg_row("알림 수신번호"):
+                alert_phone = st.text_input("", value=cfg.get("alert_phone", ""),
+                                            placeholder="010-0000-0000",
+                                            key="s2_phone", label_visibility="collapsed")
 
-# 클릭 수집
-POST {server_url}/track
-     Body: {{client_id, session_id, landing_url, referrer, keyword, ...}}
+            _, sv2 = st.columns([5, 1])
+            with sv2:
+                s2_saved = st.form_submit_button("저장", type="primary", use_container_width=True)
 
-# 체류시간 전송
-POST {server_url}/track/stay
-     Body: {{log_id, stay_seconds}}
+        if s2_saved:
+            save_client_settings(cid, {
+                **cfg,
+                "alert_enabled": alert_use == "사용함",
+                "alert_clicks":  alert_n,
+                "alert_phone":   alert_phone,
+            })
+            st.success("저장되었습니다.")
+            st.cache_data.clear()
 
-# 전환 기록
-POST {server_url}/track/convert
-     Body: {{log_id}}
+        # 테스트 발송
+        st.markdown("---")
+        t1, t2 = st.columns([3, 1])
+        with t1:
+            test_ip = st.text_input("테스트 IP", "1.2.3.4", key="s2_test_ip")
+        with t2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("테스트 발송", key="s2_test_btn"):
+                phone = cfg.get("alert_phone", "")
+                if not phone:
+                    st.error("수신번호를 먼저 저장하세요.")
+                else:
+                    from bizmoney_alert import send_sms_notification
+                    res = send_sms_notification(
+                        phone,
+                        f"[마케팁] 부정클릭 알림 테스트\nIP: {test_ip}\n클릭수: 99회\n즉시 확인하세요.",
+                    )
+                    if res.get("status") == "success":
+                        st.success("테스트 발송 완료")
+                    else:
+                        st.error(f"발송 실패: {res.get('error', res)}")
 
-# IP 차단 확인
-GET  {server_url}/check/{{ip}}?client_id=CLIENT_ID
+    # ── S3: 네이버 자동차단 ───────────────────────────────────────────────────
+    with S3:
+        st.markdown('<div class="sl-section-title">네이버 광고 API 자동 차단 사용</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="sl-section-sub">'
+            '이 기능은 네이버 광고 API를 이용하여, 설정된 (유효)클릭 횟수에 도달할 경우,<br>'
+            '자동으로 네이버 광고 노출제한 IP에 등록하는 기능입니다.</div>',
+            unsafe_allow_html=True)
 
-# 헬스체크
-GET  {server_url}/health
-""", language="text")
+        with st.form("s3_form"):
+            # 자동차단 사용 여부
+            with _cfg_row("네이버 광고 API 자동 차단 사용"):
+                auto_use = st.radio("", ["사용함", "사용하지 않음"],
+                                    index=0 if cfg.get("auto_block_naver", 0) else 1,
+                                    horizontal=True, key="s3_auto_use", label_visibility="collapsed")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+            # LTE 자동차단
+            with _cfg_row("LTE 자동 차단 허용"):
+                lte_use = st.radio("", ["사용함", "사용하지 않음"],
+                                   index=0 if cfg.get("lte_auto_block", 0) else 1,
+                                   horizontal=True, key="s3_lte", label_visibility="collapsed")
+            st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+            # 차단 설정
+            with _cfg_row("차단 설정"):
+                cc1, cc2, cc3, cc4 = st.columns([2, 1, 2, 2])
+                with cc1:
+                    st.markdown('<div style="padding-top:8px;font-size:13px;">네이버 광고를 최근</div>',
+                                unsafe_allow_html=True)
+                with cc2:
+                    ab_days = st.number_input("", 1, 30, int(cfg.get("auto_block_days", 1)),
+                                              key="s3_days", label_visibility="collapsed")
+                with cc3:
+                    st.markdown('<div style="padding-top:8px;font-size:13px;">일 이내</div>',
+                                unsafe_allow_html=True)
+                ab2_c1, ab2_c2, ab2_c3 = st.columns([1, 2, 3])
+                with ab2_c1:
+                    ab_clicks = st.number_input("", 1, 100, int(cfg.get("auto_block_clicks", 5)),
+                                                key="s3_clicks", label_visibility="collapsed")
+                with ab2_c2:
+                    st.markdown('<div style="padding-top:8px;font-size:13px;">회 이상 클릭시 노출제한 IP에 등록</div>',
+                                unsafe_allow_html=True)
+
+            _, sv3 = st.columns([5, 1])
+            with sv3:
+                s3_saved = st.form_submit_button("저장", type="primary", use_container_width=True)
+
+        if s3_saved:
+            save_client_settings(cid, {
+                **cfg,
+                "auto_block_naver":  auto_use == "사용함",
+                "lte_auto_block":    lte_use == "사용함",
+                "auto_block_days":   ab_days,
+                "auto_block_clicks": ab_clicks,
+            })
+            st.success("저장되었습니다.")
+            st.cache_data.clear()
+
+    # ── S4: 기본 설정 ─────────────────────────────────────────────────────────
+    with S4:
+        # 서브탭: 네이버 광고 API | 담당자 정보
+        b1, b2 = st.tabs(["네이버 광고 API", "담당자 정보"])
+
+        with b1:
+            st.markdown('<div class="sl-section-title">네이버 광고 API 설정</div>', unsafe_allow_html=True)
+
+            # 연동 상태 배너
+            if has_api:
+                st.markdown(
+                    '<div class="sl-green-box"><b>● 네이버 API와 동기화 중</b></div>',
+                    unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    '<div class="sl-green-box" style="background:#fff7ed;border-color:#fed7aa;color:#c2410c;">'
+                    '네이버 광고 API 연동 안내<br><br>'
+                    '1. API를 연동하면 마케팁에서 원클릭으로 특정 IP의 광고노출을 제한할 수 있습니다.<br>'
+                    '2. 연동 완료 후 [네이버 노출제한 IP] 탭에서 네이버와 연동된 노출제한 IP를 확인할 수 있습니다.'
+                    '</div>',
+                    unsafe_allow_html=True)
+
+            with st.form("b1_form"):
+                with _cfg_row("현재상태"):
+                    if has_api:
+                        st.markdown("🟢 **네이버 API와 동기화 중**")
+                    else:
+                        st.markdown("⚫ 미연동")
+                st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+                with _cfg_row("CUSTOMER_ID"):
+                    nv_cust = st.text_input("", value=cfg.get("naver_customer_id", ""),
+                                            key="b1_cust", label_visibility="collapsed")
+                st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+                with _cfg_row("엑세스라이선스"):
+                    nv_key = st.text_input("", value=cfg.get("naver_api_key", ""),
+                                           type="password", key="b1_key", label_visibility="collapsed")
+                st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+                with _cfg_row("비밀키"):
+                    nv_secret = st.text_input("", value=cfg.get("naver_api_secret", ""),
+                                              type="password", key="b1_secret", label_visibility="collapsed")
+
+                del_col2, sv_col2 = st.columns([1, 1])
+                with del_col2:
+                    del_api = st.form_submit_button("삭제")
+                with sv_col2:
+                    sv_api  = st.form_submit_button("저장", type="primary")
+
+            if del_api:
+                save_client_settings(cid, {
+                    **cfg,
+                    "naver_customer_id": "",
+                    "naver_api_key":     "",
+                    "naver_api_secret":  "",
+                })
+                st.success("API 정보가 삭제되었습니다.")
+                st.cache_data.clear(); st.rerun()
+
+            if sv_api:
+                save_client_settings(cid, {
+                    **cfg,
+                    "naver_customer_id": nv_cust,
+                    "naver_api_key":     nv_key,
+                    "naver_api_secret":  nv_secret,
+                })
+                st.success("저장되었습니다.")
+                st.cache_data.clear()
+
+        with b2:
+            st.markdown('<div class="sl-section-title">담당자 정보</div>', unsafe_allow_html=True)
+            st.markdown('<div class="sl-section-sub">부정클릭 알림 등이 해당 번호로 발송됩니다.</div>',
+                        unsafe_allow_html=True)
+
+            with st.form("b2_form"):
+                with _cfg_row("담당자 이름 *"):
+                    mgr_name = st.text_input("", value=cfg.get("manager_name", ""),
+                                             key="b2_name", label_visibility="collapsed")
+                st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+                with _cfg_row("담당자 이메일 *"):
+                    mgr_email = st.text_input("", value=cfg.get("manager_email", ""),
+                                              key="b2_email", label_visibility="collapsed")
+                st.markdown('<div class="cfg-divider"></div>', unsafe_allow_html=True)
+
+                with _cfg_row("담당자 휴대폰번호 *"):
+                    mgr_phone = st.text_input("", value=cfg.get("alert_phone", ""),
+                                              placeholder="010-0000-0000",
+                                              key="b2_phone", label_visibility="collapsed")
+                    st.caption("*부정클릭 알림 사용 시 해당 번호로 발송됩니다.")
+
+                _, sv_b2 = st.columns([5, 1])
+                with sv_b2:
+                    b2_saved = st.form_submit_button("저장", type="primary", use_container_width=True)
+
+            if b2_saved:
+                save_client_settings(cid, {
+                    **cfg,
+                    "manager_name":  mgr_name,
+                    "manager_email": mgr_email,
+                    "alert_phone":   mgr_phone,
+                })
+                st.success("저장되었습니다.")
+                st.cache_data.clear()
+
+    # ── S5: 추적 스크립트 ─────────────────────────────────────────────────────
+    with S5:
+        st.markdown('<div class="sl-section-title">클릭 추적 서버 설정</div>', unsafe_allow_html=True)
+
+        # 서버 URL 설정
+        with st.form("s5_server_form"):
+            with _cfg_row("추적 서버 URL", sub="랜딩페이지에서 클릭 데이터를 전송할 서버 주소"):
+                srv_url = st.text_input(
+                    "", value=cfg.get("track_server_url", ""),
+                    placeholder="예: https://your-server.onrender.com  또는  http://localhost:8502",
+                    key="s5_srv_url", label_visibility="collapsed",
+                )
+            _, sv5 = st.columns([5, 1])
+            with sv5:
+                s5_saved = st.form_submit_button("저장", type="primary", use_container_width=True)
+
+        if s5_saved:
+            save_client_settings(cid, {**cfg, "track_server_url": srv_url.strip()})
+            st.success("저장되었습니다.")
+            st.cache_data.clear()
+            cfg = get_client_settings(cid)
+
+        srv = cfg.get("track_server_url", "").rstrip("/")
+
+        # 서버 상태 확인
+        st.markdown("---")
+        col_s, col_b = st.columns([4, 1])
+        with col_b:
+            check_srv = st.button("서버 상태 확인", key="s5_check")
+        with col_s:
+            if check_srv and srv:
+                try:
+                    import requests as _req
+                    r = _req.get(srv + "/health", timeout=3)
+                    if r.ok:
+                        st.success(f"✅ 서버 정상 응답 ({srv})")
+                    else:
+                        st.error(f"⚠️ 서버 오류 ({r.status_code})")
+                except Exception as _e:
+                    st.error(f"❌ 서버 연결 실패: {_e}")
+            elif check_srv and not srv:
+                st.warning("서버 URL을 먼저 입력·저장하세요.")
+
+        # Supabase 상태
+        if _use_sb():
+            st.success("✅ Supabase 연결됨 — 클릭 데이터가 Supabase에 저장됩니다.")
+        else:
+            st.warning("⚠️ Supabase 미연결 — 클릭 데이터가 로컬 SQLite에 저장됩니다.")
+
+        # 추적 스크립트 임베드 코드
+        st.markdown("---")
+        st.markdown("### 랜딩페이지 삽입 코드")
+
+        if not srv:
+            st.info("추적 서버 URL을 설정하면 삽입 코드가 표시됩니다.")
+        else:
+            embed_code = f'<script src="{srv}/track.js?client_id={cid}"></script>'
+            st.markdown(
+                '<div class="sl-green-box">'
+                '<b>✅ 아래 스크립트를 랜딩페이지의 &lt;/body&gt; 직전에 삽입하세요</b><br>'
+                '광고 클릭으로 방문한 사용자의 IP, 기기, 키워드, 체류시간을 자동 수집합니다.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            st.code(embed_code, language="html")
+
+            st.markdown("**전환 발생 시 추가 코드 (주문/문의 완료 페이지):**")
+            st.code("window.mktipConversion({type: 'inquiry'});  // 또는 'order', 'signup'",
+                    language="javascript")
+
+        # 서버 실행 안내
+        st.markdown("---")
+        st.markdown("### 추적 서버 실행 방법")
+
+        tab_local, tab_cloud = st.tabs(["로컬 실행 (테스트용)", "클라우드 배포 (운영용)"])
+
+        with tab_local:
+            st.markdown("**1단계 — 터미널에서 서버 시작:**")
+            st.code("python -m uvicorn fraud.server:app --host 0.0.0.0 --port 8502", language="bash")
+            st.markdown("**2단계 — ngrok으로 외부 접근 가능하게 (선택):**")
+            st.code("ngrok http 8502", language="bash")
+            st.caption("ngrok 설치: https://ngrok.com/download — 무료 계정으로 공개 URL 생성")
+            st.markdown("**3단계 — 서버 URL 설정:**")
+            st.markdown("- 로컬만 테스트: `http://localhost:8502`")
+            st.markdown("- ngrok 사용 시: ngrok이 출력한 `https://xxxx.ngrok.io` URL")
+
+        with tab_cloud:
+            st.markdown(
+                "**Render 무료 배포 (권장):**\n\n"
+                "1. [render.com](https://render.com) 무료 계정 생성\n"
+                "2. New → Web Service → GitHub 저장소 연결\n"
+                "3. Build Command: `pip install -r requirements.txt`\n"
+                "4. Start Command: `uvicorn fraud.server:app --host 0.0.0.0 --port $PORT`\n"
+                "5. 환경변수 추가: `SUPABASE_URL`, `SUPABASE_KEY`\n"
+                "6. 생성된 URL을 위 '추적 서버 URL'에 입력"
+            )
+            st.markdown(
+                '<div class="sl-green-box" style="margin-top:12px;">'
+                '<b>💡 Supabase 연결 시 클릭 데이터 자동 공유</b><br>'
+                '서버(Render)와 Streamlit(Cloud) 모두 동일한 Supabase에 연결하면 '
+                '데이터가 실시간 동기화됩니다.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
