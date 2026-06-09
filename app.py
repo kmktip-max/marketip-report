@@ -454,7 +454,7 @@ st.markdown("""
 <style>
 .kakao-float {
     position: fixed;
-    bottom: 28px;
+    bottom: 88px;
     right: 28px;
     z-index: 99999;
     display: flex;
