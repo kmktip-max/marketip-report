@@ -229,12 +229,12 @@ def hash_ip(ip: str) -> str:
     return hashlib.sha256(ip.encode()).hexdigest()[:16]
 
 
-def log_click(data: dict) -> int:
+def log_click(data: dict) -> bool:
     """클릭 로그 저장. Supabase 우선, 로컬 SQLite 폴백."""
     import time
     if _use_sb():
         _log_click_sb(data)
-        return 0
+        return True
 
     # SQLite 폴백
     conn = get_conn()
@@ -283,8 +283,8 @@ def _log_click_sb(data: dict):
         "browser":      data.get("browser") or "",
         "os":           data.get("os") or "",
         "session_id":   (data.get("session_id") or "")[:80],
-        "is_conversion": int(data.get("is_conversion") or 0),
-        "stay_seconds": int(data.get("stay_seconds") or 0),
+        "is_conversion": int(data.get("is_conversion") or data.get("converted") or 0),
+        "stay_seconds": int(data.get("stay_seconds") or data.get("stay_sec") or 0),
         "carrier":      data.get("carrier") or "",
         "phone_model":  data.get("phone_model") or "",
         "phone_type":   data.get("phone_type") or "",
