@@ -177,7 +177,7 @@ def reject_account(username):
     return False
 
 def update_account(username, business_name=None, password=None,
-                   permissions=None, is_active=None):
+                   permissions=None, is_active=None, smartlog_eligible=None):
     accounts = load_accounts()
     for acc in accounts:
         if acc.get("username") == username:
@@ -189,6 +189,8 @@ def update_account(username, business_name=None, password=None,
                 acc["permissions"] = normalize_permissions(permissions)
             if is_active is not None:
                 acc["is_active"] = is_active
+            if smartlog_eligible is not None:
+                acc["smartlog_eligible"] = smartlog_eligible
             save_accounts(accounts)
             return True
     return False

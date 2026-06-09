@@ -130,7 +130,8 @@ with tab_accounts:
                             type="password", key=f"epw_{uid}",
                             placeholder="변경하지 않으면 비워두세요",
                         )
-                        e_active = st.checkbox("계정 활성화", value=is_active, key=f"ea_{uid}")
+                        e_active   = st.checkbox("계정 활성화",    value=is_active, key=f"ea_{uid}")
+                        e_smartlog = st.checkbox("🔍 스마트로그 대상", value=acc.get("smartlog_eligible", False), key=f"esl_{uid}")
 
                     with ec2:
                         st.markdown("**접근 권한**")
@@ -155,6 +156,7 @@ with tab_accounts:
                             password=e_pw or None,
                             permissions=e_perms,
                             is_active=e_active,
+                            smartlog_eligible=e_smartlog,
                         )
                         st.success("저장 완료")
                         st.rerun()
