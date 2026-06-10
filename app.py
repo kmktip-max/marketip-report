@@ -433,11 +433,40 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
                 f'font-weight:700;color:#111;">{biz}</div>',
                 unsafe_allow_html=True,
             )
-        st.markdown('<span class="sb-label">내 메뉴</span>', unsafe_allow_html=True)
-        st.page_link("pages/비즈머니알림.py", label="💰  비즈머니 알림", use_container_width=True)
-        for perm_key, (path, title, icon) in PERM_CATALOG.items():
-            if perm_key != "bizmoney_alert" and perm_key in auth_perms:
-                st.page_link(path, label=f"{icon}  {title}", use_container_width=True)
+
+        # 광고구조 컨설팅
+        _grp1 = [
+            ("bizmoney_alert",   "pages/비즈머니알림.py",      "💰  비즈머니 알림"),
+            ("ad_analysis",      "pages/광고분석컨설팅.py",    "📈  광고분석컨설팅"),
+            ("monthly_report",   "pages/월간보고서.py",        "📩  월간보고서"),
+        ]
+        _grp1_visible = [t for k, p, t in _grp1
+                         if k == "bizmoney_alert" or k in auth_perms]
+        if _grp1_visible:
+            st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
+            for k, p, label in _grp1:
+                if k == "bizmoney_alert" or k in auth_perms:
+                    st.page_link(p, label=label, use_container_width=True)
+
+        # 수수료 환급
+        if "rebate" in auth_perms:
+            st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
+            st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
+
+        # 광고 운영
+        _grp3 = [
+            ("bid_assist",       "pages/자동입찰.py",          "📊  자동입찰 관리"),
+            ("fraud_detect",     "pages/부정클릭관리.py",      "🛡️  부정클릭 관리"),
+            ("keyword_tool",     "pages/키워드도구.py",        "🔍  키워드 추출"),
+            ("creative_tool",    "pages/광고소재.py",          "✍️  광고소재 추출"),
+            ("landing_analysis", "pages/상세페이지.py",        "📐  랜딩페이지 기획/분석"),
+        ]
+        _grp3_visible = [t for k, p, t in _grp3 if k in auth_perms]
+        if _grp3_visible:
+            st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
+            for k, p, label in _grp3:
+                if k in auth_perms:
+                    st.page_link(p, label=label, use_container_width=True)
 
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
     uname = "관리자" if auth_type == "admin" else st.session_state.get("auth_username", "")
