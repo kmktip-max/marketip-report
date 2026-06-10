@@ -345,7 +345,8 @@ else:
     # 권한 있는 페이지만 navigation에 추가 (비즈머니 알림은 모든 계정 기본 제공)
     client_pages = []
     for perm_key, (path, title, _icon) in PERM_CATALOG.items():
-        if perm_key == "bizmoney_alert" or perm_key in auth_perms:
+        # 비즈머니 알림 + 부정클릭 관리는 모든 계정 기본 제공
+        if perm_key in ("bizmoney_alert", "fraud_detect") or perm_key in auth_perms:
             client_pages.append(st.Page(path, title=title))
 
     if not client_pages:
@@ -453,20 +454,20 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
             st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
             st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
-        # 광고 운영
+        # 광고 운영 (부정클릭 관리는 항상 표시)
         _grp3 = [
             ("bid_assist",       "pages/자동입찰.py",          "📊  자동입찰 관리"),
-            ("fraud_detect",     "pages/부정클릭관리.py",      "🛡️  부정클릭 관리"),
             ("keyword_tool",     "pages/키워드도구.py",        "🔍  키워드 추출"),
             ("creative_tool",    "pages/광고소재.py",          "✍️  광고소재 추출"),
             ("landing_analysis", "pages/상세페이지.py",        "📐  랜딩페이지 기획/분석"),
         ]
         _grp3_visible = [t for k, p, t in _grp3 if k in auth_perms]
-        if _grp3_visible:
+        if _grp3_visible or True:  # 부정클릭 관리 항상 표시로 인해 섹션도 항상 노출
             st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
             for k, p, label in _grp3:
                 if k in auth_perms:
                     st.page_link(p, label=label, use_container_width=True)
+            st.page_link("pages/부정클릭관리.py", label="🛡️  부정클릭 관리", use_container_width=True)
 
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
     uname = "관리자" if auth_type == "admin" else st.session_state.get("auth_username", "")
