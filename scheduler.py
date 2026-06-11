@@ -491,12 +491,15 @@ def run_cycle(client_id: str) -> list:
             RANK_STALE_MIN = 90  # rank_checker 1패스(~60분) + 여유 30분
             stored_rank = kw.get("current_rank")
             rank_last_checked = kw.get("rank_checked_at") or kw.get("last_checked")
-            if stored_rank is not None and rank_last_checked:
+            rank_fresh = False   # rank_checker 데이터가 최근(STALE 이내)인지
+            if rank_last_checked:
                 try:
-                    _lc = datetime.fromisoformat(rank_last_checked[:19])
-                    if (now_kst() - _lc).total_seconds() > RANK_STALE_MIN * 60:
+                    _lc  = datetime.fromisoformat(rank_last_checked[:19])
+                    _age = (now_kst() - _lc).total_seconds()
+                    rank_fresh = _age <= RANK_STALE_MIN * 60
+                    if stored_rank is not None and not rank_fresh:
                         if DEBUG_RANK:
-                            print(f"  {kw['keyword']}: 순위데이터 {(now_kst()-_lc).total_seconds()/60:.0f}분 경과 → 무시(유지)")
+                            print(f"  {kw['keyword']}: 순위데이터 {_age/60:.0f}분 경과 → 무시(유지)")
                         stored_rank = None
                 except Exception:
                     pass
@@ -544,17 +547,28 @@ def run_cycle(client_id: str) -> list:
             if cur_bid is None:
                 e["status"] = "데이터 부족"; entries.append(e); continue
 
-            # 전일 노출 0 키워드: 검색량 부족으로 입찰 올려도 파워링크 노출 안 됨 → 스킵
-            if rank is None and kid in zero_imp_kids:
+            # ── 미노출 탈출(최우선) ─────────────────────────────────────────
+            # rank_checker가 최근 '미노출 + 파워링크 구좌 존재(=실시간 수요)'로 확인했으면
+            # 순위가 안 잡혀도 입찰가가 낮아 못 들어간 것으로 보고, 목표(또는 1위) 진입까지
+            # max_bid 한도로 끝까지 증액한다. (구좌가 살아있는 한 키워드를 버리지 않음)
+            # max_bid 까지 올려도 미노출이면 calc_bid가 '최대입찰 도달'로 멈춤 → 어쩔 수 없음.
+            total_slots = kw.get("total_ad_slots")
+            if rank is None and rank_fresh and total_slots and total_slots >= 1:
+                rank = total_slots + 1   # 목표보다 뒤(미노출)로 간주 → calc_bid가 증액 산출
+                e["current_rank"] = rank
+                if DEBUG_RANK:
+                    print(f"  {kw['keyword']}: 미노출(구좌{total_slots}개) → max까지 증액 시도 (가상순위 {rank})")
+
+            # 파워링크 구좌 자체가 없거나(노출 기회 없음) 전일노출0 → 입찰 올려도 의미없음 → 스킵
+            elif rank is None and kid in zero_imp_kids:
                 e["status"] = "노출없음(검색량부족)"
                 kw["status"] = e["status"]
                 entries.append(e)
                 if DEBUG_RANK:
-                    print(f"  {kw['keyword']}: 전일노출0 — 입찰 조정 스킵")
+                    print(f"  {kw['keyword']}: 전일노출0·구좌없음 — 입찰 조정 스킵")
                 continue
 
             # 저경쟁 키워드: 구좌 수가 3개 이하면 1위 목표 고정
-            total_slots = kw.get("total_ad_slots")
             effective_target = g["target_rank"]
             if total_slots is not None and 1 <= total_slots <= 3:
                 effective_target = 1
