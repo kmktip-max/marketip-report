@@ -250,23 +250,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 수익 퍼널
+# 광고비 페이백 안내 (페이백 페이지로 유도)
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#0F172A;border-radius:16px;padding:26px 28px;color:#fff;">
-  <div style="font-size:18px;font-weight:900;margin-bottom:14px;">💡 두 갈래로 수익이 만들어집니다</div>
-  <div style="display:flex;gap:16px;flex-wrap:wrap;">
-    <div style="flex:1;min-width:240px;background:rgba(255,255,255,0.08);border-radius:12px;padding:18px;">
-      <div style="font-size:14px;font-weight:800;margin-bottom:6px;color:#93C5FD;">① 전자책·강의·세팅 (단기)</div>
-      <div style="font-size:13px;line-height:1.65;color:rgba(255,255,255,0.85);word-break:keep-all;">
-        배워서 직접 운영하거나 <b>대행사로 창업</b> → 바로 수익화.</div>
-    </div>
-    <div style="flex:1;min-width:240px;background:rgba(255,255,255,0.08);border-radius:12px;padding:18px;">
-      <div style="font-size:14px;font-weight:800;margin-bottom:6px;color:#6EE7B7;">② 광고비 페이백 (장기)</div>
-      <div style="font-size:13px;line-height:1.65;color:rgba(255,255,255,0.85);word-break:keep-all;">
-        쓰던 광고비의 <b>일부를 매달 돌려받아</b> → 꾸준한 장기 수익.</div>
-    </div>
+<div style="background:linear-gradient(135deg,#0F766E 0%,#10B981 100%);border-radius:16px;
+            padding:26px 30px;color:#fff;box-shadow:0 8px 22px rgba(16,185,129,0.22);">
+  <div style="font-size:20px;font-weight:900;margin-bottom:10px;">💸 광고비, 그냥 쓰지 마세요</div>
+  <div style="font-size:14.5px;line-height:1.75;color:rgba(255,255,255,0.94);word-break:keep-all;max-width:680px;">
+    이미 집행 중인 광고비의 <b>일부를 매달 돌려받을 수 있습니다.</b>
+    추가 비용도, 복잡한 절차도 없이 — 신청만 하시면 됩니다.
+    아래에서 바로 신청해 보세요.
   </div>
 </div>
 """, unsafe_allow_html=True)
