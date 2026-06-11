@@ -205,6 +205,15 @@ section[data-testid="stSidebar"] { display: none !important; }
             unsafe_allow_html=True,
         )
 
+        st.markdown("""
+<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;
+            padding:11px 16px;margin-bottom:14px;text-align:center;">
+  <span style="font-size:13px;color:#1E40AF;">
+    💡 광고주님은 <b>「🏢 광고주 로그인」</b> 탭을 이용해주세요.
+  </span>
+</div>
+""", unsafe_allow_html=True)
+
         tab_admin, tab_client, tab_join = st.tabs([
             "🔑  관리자 로그인",
             "🏢  광고주 로그인",
