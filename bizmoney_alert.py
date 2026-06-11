@@ -170,7 +170,8 @@ def get_merged_settings() -> list[dict]:
             "second_alert_amount":    alert.get("second_alert_amount",   0),
             "first_alert_sent":       alert.get("first_alert_sent",      False),
             "second_alert_sent":      alert.get("second_alert_sent",     False),
-            "advertiser_phone":       alert.get("advertiser_phone",      ""),
+            # 광고주 연락처는 월간보고서(clients.json)의 phone 을 기본값으로 자동 사용
+            "advertiser_phone":       alert.get("advertiser_phone") or c.get("phone", "") or "",
             "manager_name":           alert.get("manager_name",          ""),
             "manager_phone":          alert.get("manager_phone",         ""),
             "last_bizmoney_balance":  alert.get("last_bizmoney_balance", None),
