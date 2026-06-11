@@ -13,20 +13,18 @@ BANK_NUM    = "3333-30-3495145"
 BANK_HOLDER = "권혁우(마케팁)"
 BANK_TYPE   = "개인사업자"
 
-# ── 상품 카탈로그 (라벨, 가격표시, 입금액) ────────────────────────────────────
+# ── 상품 카탈로그 (라벨, 가격표시, 입금액 정수 / None=협의·금액없음) ───────────
 _CATALOG = [
-    ("전자책 · 구조이해(STEP1)",     "39,000원",        "39,000"),
-    ("전자책 · 기초세팅(STEP2)",     "79,000원",        "79,000"),
-    ("전자책 · 심화세팅(STEP3)",     "129,000원",       "129,000"),
-    ("전자책 · 올인원 패키지",       "199,000원",       "199,000"),
-    ("세팅 · 광고 무상점검(무료)",   "무료",            "0"),
-    ("세팅 · 초기 광고세팅(신규)",   "330,000원",       "330,000"),
-    ("세팅 · 광고최적화세팅(기존)",  "220,000원",       "220,000"),
-    ("대행 · 성과보장 광고운영대행", "월 50만원~ (협의)", "협의"),
-    ("기타 상담",                    "-",               ""),
+    ("전자책 · 구조이해(STEP1)",     "39,000원",          39000),
+    ("전자책 · 기초세팅(STEP2)",     "79,000원",          79000),
+    ("전자책 · 심화세팅(STEP3)",     "129,000원",         129000),
+    ("전자책 · 올인원 패키지",       "199,000원",         199000),
+    ("세팅 · 광고 무상점검(무료)",   "무료",              0),
+    ("세팅 · 초기 광고세팅(신규)",   "330,000원",         330000),
+    ("세팅 · 광고최적화세팅(기존)",  "220,000원",         220000),
+    ("대행 · 성과보장 광고운영대행", "월 50만원~ (협의)",   None),
+    ("기타 상담",                    "-",                 None),
 ]
-_LABELS = [c[0] for c in _CATALOG]
-_AMT    = {c[0]: c[2] for c in _CATALOG}
 
 # ── 프로필 이미지 ─────────────────────────────────────────────────────────────
 def _img_b64(path):
@@ -90,12 +88,9 @@ _is_admin = st.session_state.get("auth_type") == "admin"
 _username = st.session_state.get("auth_username", "")
 _client   = st.session_state.get("auth_client", {})
 
-if "buy_sel" not in st.session_state:
-    st.session_state["buy_sel"] = _LABELS[0]
-
-def _buy(label):
-    """구매하기 버튼 → 상품 선택 + 입금/신청란으로 스크롤."""
-    st.session_state["buy_sel"] = label
+def _add(i):
+    """구매하기 버튼 → 해당 상품 체크(장바구니 추가) + 입금/신청란으로 스크롤."""
+    st.session_state[f"cart_{i}"] = True
     st.session_state["_scroll_buy"] = True
     st.rerun()
 
@@ -193,13 +188,13 @@ def _ebook_card(grad, step, name, price, feats):
 e1, e2, e3 = st.columns(3)
 e1.markdown(_ebook_card("linear-gradient(135deg,#64748B,#94A3B8)", "STEP 1 · 입문", "구조 이해", "39,000원",
     ["검색광고 오해와 진실 20가지", "꼭 아는 기초용어 58선", "CPC·품질지수 등 비용 구조"]), unsafe_allow_html=True)
-if e1.button("🛒 구매하기", key="b_e1", use_container_width=True): _buy("전자책 · 구조이해(STEP1)")
+if e1.button("🛒 구매하기", key="b_e1", use_container_width=True): _add(0)
 e2.markdown(_ebook_card("linear-gradient(135deg,#2563EB,#3B82F6)", "STEP 2 · 실전", "기초 세팅", "79,000원",
     ["비즈채널·캠페인·그룹 세팅", "키워드 발굴 + 광고 소재 작성", "AI 키워드·소재 봇 활용법"]), unsafe_allow_html=True)
-if e2.button("🛒 구매하기", key="b_e2", use_container_width=True): _buy("전자책 · 기초세팅(STEP2)")
+if e2.button("🛒 구매하기", key="b_e2", use_container_width=True): _add(1)
 e3.markdown(_ebook_card("linear-gradient(135deg,#7C3AED,#A855F7)", "STEP 3 · 고수", "심화 세팅", "129,000원",
     ["입찰 전략·자동입찰 최적화", "클릭률 2배·파워링크 300% 전략", "리베이트 구조 심화 활용"]), unsafe_allow_html=True)
-if e3.button("🛒 구매하기", key="b_e3", use_container_width=True): _buy("전자책 · 심화세팅(STEP3)")
+if e3.button("🛒 구매하기", key="b_e3", use_container_width=True): _add(2)
 
 pa1, pa2 = st.columns([3, 1])
 pa1.markdown("""
@@ -207,7 +202,7 @@ pa1.markdown("""
   <span style="font-size:13.5px;color:#1E40AF;font-weight:700;">📦 3단계 올인원 패키지 — 199,000원</span>
   <span style="font-size:12.5px;color:#3B82F6;"> (개별 합계 247,000원 → 약 19% 할인)</span>
 </div>""", unsafe_allow_html=True)
-if pa2.button("🛒 패키지 구매", key="b_eall", use_container_width=True, type="primary"): _buy("전자책 · 올인원 패키지")
+if pa2.button("🛒 패키지 구매", key="b_eall", use_container_width=True, type="primary"): _add(3)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2) 광고 세팅 상품
@@ -232,13 +227,13 @@ def _svc_card(badge, badge_bg, badge_fg, name, price, sub, feats, highlight=Fals
 s1, s2, s3 = st.columns(3)
 s1.markdown(_svc_card("무료", "#DCFCE7", "#16A34A", "광고 무상 점검", "누구나 신청 가능", "0원",
     ["현재 계정 구조 진단", "광고비 누수 지점 분석", "맞춤 개선 리포트 제공"], highlight=True), unsafe_allow_html=True)
-if s1.button("🔍 무료 점검 신청", key="b_s1", use_container_width=True, type="primary"): _buy("세팅 · 광고 무상점검(무료)")
+if s1.button("🔍 무료 점검 신청", key="b_s1", use_container_width=True, type="primary"): _add(4)
 s2.markdown(_svc_card("신규 광고주", "#DBEAFE", "#1D4ED8", "초기 광고 세팅", "처음 시작하는 분", "330,000원",
     ["계정·비즈채널 세팅", "캠페인·그룹·키워드 구성", "광고 소재 + 랜딩 점검"]), unsafe_allow_html=True)
-if s2.button("🛒 구매하기", key="b_s2", use_container_width=True): _buy("세팅 · 초기 광고세팅(신규)")
+if s2.button("🛒 구매하기", key="b_s2", use_container_width=True): _add(5)
 s3.markdown(_svc_card("기존 광고주", "#FEF3C7", "#92400E", "광고 최적화 세팅", "운영 중인 분", "220,000원",
     ["기존 계정 구조 재정비", "제외키워드·입찰 최적화", "성과 저하 원인 교정"]), unsafe_allow_html=True)
-if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _buy("세팅 · 광고최적화세팅(기존)")
+if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _add(6)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3) 성과보장 광고대행
@@ -272,7 +267,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 ag1, ag2 = st.columns([3, 1])
-if ag2.button("🤝 대행 상담 신청", key="b_agency", use_container_width=True, type="primary"): _buy("대행 · 성과보장 광고운영대행")
+if ag2.button("🤝 대행 상담 신청", key="b_agency", use_container_width=True, type="primary"): _add(7)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 후기
@@ -296,9 +291,6 @@ st.markdown('<div id="apply_anchor"></div>', unsafe_allow_html=True)
 st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>💳 입금 후 신청</h3>", unsafe_allow_html=True)
 
-_sel    = st.session_state.get("buy_sel", _LABELS[0])
-_sel_amt = _AMT.get(_sel, "")
-
 # 계좌 안내 (통장 사본)
 st.markdown(f"""
 <div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:16px;padding:22px 26px;">
@@ -308,42 +300,60 @@ st.markdown(f"""
     <div style="background:#FEF3C7;color:#92400E;font-size:12px;font-weight:700;padding:4px 12px;border-radius:100px;">예금주 {BANK_HOLDER} · {BANK_TYPE}</div>
   </div>
   <div style="font-size:13px;color:#78716C;margin-top:12px;line-height:1.6;">
-    위 계좌로 입금 후 <b>아래 신청서</b>를 작성해 주세요. 빠르게 확인 후 자료 발송·일정 안내드립니다.<br>
+    선택한 상품의 <b>입금액 합계</b>를 위 계좌로 입금 후 <b>아래 신청서</b>를 작성해 주세요.<br>
     <b>입금자명</b>을 꼭 기재해 주시면 확인이 빠릅니다. (무상 점검은 입금 없이 바로 신청)
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+# 상품 복수 선택 (폼 밖 — 체크 토글 시 입금액 즉시 합산)
+st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+st.markdown("**🧺 신청 상품 선택 — 복수 선택 가능 (체크할수록 입금액 합산)**")
+_total = 0
+_negotiable = False
+_picked = []
+_ckcol = st.columns(2)
+for i, (label, disp, amt) in enumerate(_CATALOG):
+    with _ckcol[i % 2]:
+        if st.checkbox(f"{label}  ·  {disp}", key=f"cart_{i}"):
+            _picked.append(label)
+            if amt is None:
+                _negotiable = True
+            else:
+                _total += amt
+_amt_str = f"{_total:,}원" + ("  + 협의" if _negotiable else "")
+
 st.markdown(f"""
-<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:12px 16px;margin:14px 0;">
-  <span style="font-size:13.5px;color:#1E40AF;">선택한 상품: <b>{_sel}</b> · 입금액 <b>{_sel_amt or '—'}{'원' if _sel_amt not in ('', '0', '협의') else ''}</b></span>
+<div style="background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:12px;padding:14px 20px;margin:12px 0;
+            display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+  <span style="font-size:13.5px;color:#065F46;font-weight:600;">선택 {len(_picked)}건</span>
+  <span style="font-size:20px;font-weight:900;color:#047857;">입금액 합계 {_amt_str}</span>
 </div>
 """, unsafe_allow_html=True)
 
 _fcol, _ = st.columns([1, 1])
-with _fcol, st.form("ebook_inquiry", clear_on_submit=True):
-    _idx = _LABELS.index(_sel) if _sel in _LABELS else 0
-    q_product = st.selectbox("신청 상품", _LABELS, index=_idx)
-    q_amount  = st.text_input("입금액", value=_AMT.get(_sel, ""), help="상품 변경 시 금액을 확인해 주세요.")
+with _fcol, st.form("ebook_inquiry", clear_on_submit=False):
     q_depositor = st.text_input("입금자명 *", value=_client.get("contact_name", ""), placeholder="입금하신 분 성함")
     q_phone     = st.text_input("연락처 *", value=_client.get("phone", ""), placeholder="010-0000-0000")
     q_memo      = st.text_area("문의 내용 (선택)", placeholder="궁금한 점이나 현재 광고 상황을 적어주세요.", height=70)
     if st.form_submit_button("신청 완료", type="primary", use_container_width=True):
-        if not q_depositor.strip() or not q_phone.strip():
+        if not _picked:
+            st.error("신청할 상품을 1개 이상 선택해 주세요.")
+        elif not q_depositor.strip() or not q_phone.strip():
             st.error("입금자명과 연락처는 필수입니다.")
         else:
             leads = _load_leads()
             leads.append({
                 "id": str(uuid.uuid4())[:12],
                 "name": q_depositor.strip(), "phone": q_phone.strip(),
-                "interest": q_product, "amount": q_amount.strip(),
+                "interest": ", ".join(_picked), "amount": _amt_str,
                 "memo": q_memo.strip(),
                 "from_user": _username or "비로그인",
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "status": "신규",
             })
             _save_leads(leads)
-            st.success("신청이 접수되었습니다. 입금 확인 후 빠르게 안내드리겠습니다! 🙏")
+            st.success(f"신청이 접수되었습니다 (입금액 합계 {_amt_str}). 입금 확인 후 빠르게 안내드리겠습니다! 🙏")
 
 # 구매하기 클릭 시 입금/신청란으로 부드럽게 스크롤
 if st.session_state.pop("_scroll_buy", False):
