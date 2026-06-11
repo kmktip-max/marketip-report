@@ -553,9 +553,12 @@ def run_cycle(client_id: str) -> list:
             # max_bid 한도로 끝까지 증액한다. (구좌가 살아있는 한 키워드를 버리지 않음)
             # max_bid 까지 올려도 미노출이면 calc_bid가 '최대입찰 도달'로 멈춤 → 어쩔 수 없음.
             total_slots = kw.get("total_ad_slots")
+            is_miss = False   # 미노출(가상순위로 증액 중) 여부 — 표시용
             if rank is None and rank_fresh and total_slots and total_slots >= 1:
                 rank = total_slots + 1   # 목표보다 뒤(미노출)로 간주 → calc_bid가 증액 산출
-                e["current_rank"] = rank
+                is_miss = True
+                # 화면 '현재순위'에는 가상순위를 노출하지 않음(미노출이므로 빈칸 유지).
+                # e["current_rank"] 는 None 그대로 두고, 증액 계산에만 rank 사용.
                 if DEBUG_RANK:
                     print(f"  {kw['keyword']}: 미노출(구좌{total_slots}개) → max까지 증액 시도 (가상순위 {rank})")
 
@@ -578,13 +581,16 @@ def run_cycle(client_id: str) -> list:
             # 입찰 계산
             new_bid, status = calc_bid(rank, effective_target, cur_bid,
                                        g["bid_unit"], g["min_bid"], g["max_bid"])
-            e["status"] = status
+            # 표시용 상태: 미노출 증액이면 (미노출) 꼬리표 (로직 분기는 raw status 사용)
+            disp = status + ("(미노출)" if is_miss else "")
+            e["status"] = disp
 
             if new_bid == cur_bid or status in ("유지", "최대입찰 도달", "최소입찰 도달"):
                 # 변경 불필요
-                kw["status"] = status  # UI 상태 반영
+                kw["status"] = disp  # UI 상태 반영
                 entries.append(e)
-                print(f"  {kw['keyword']}: {status} ({cur_bid}원) 순위={rank}")
+                _rk = "미노출" if is_miss else rank
+                print(f"  {kw['keyword']}: {disp} ({cur_bid}원) 순위={_rk}")
                 continue
 
             # 실제 입찰가 변경
@@ -600,7 +606,7 @@ def run_cycle(client_id: str) -> list:
             e["before_bid"]    = before
             e["after_bid"]     = after
             e["changed"]       = verify
-            e["status"]        = ("변경성공" if verify else "변경(검증불일치)") + f"/{status}"
+            e["status"]        = ("변경성공" if verify else "변경(검증불일치)") + f"/{disp}"
             kw["status"]       = e["status"]  # UI 상태 반영
             e["api_response"]  = f"HTTP {http_st}"
             changed = True
