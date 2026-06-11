@@ -156,7 +156,10 @@ def run():
     client_ids   = ["admin"] + [a.get("username","") for a in accounts_raw if a.get("username")]
 
     # 순위 체크 대상 수집
-    targets = []   # (sb_key, data_dict, group_idx, kw_idx, keyword, domain)
+    # 자동입찰 ON(bidding_enabled) 그룹을 먼저 체크 → 실제 입찰 그룹의 순위가
+    # 큐 뒤로 밀려 stale 되는 문제 방지 (페이백관련 938개에 막혀 1.메인 83개가
+    # 2일째 갱신 안 되던 버그 수정)
+    raw = []   # (prio, sb_key, data_dict, group_idx, kw_idx, keyword, domain)
     for cid in client_ids:
         sb_key = f"bidding_{cid}"
         bdata  = sb_load(sb_key)
@@ -166,8 +169,13 @@ def run():
             domain = g.get("check_domain", "").strip()
             if not domain:
                 continue
+            prio = 0 if g.get("bidding_enabled") else 1   # 활성 그룹 우선
             for ki, kw in enumerate(g.get("keywords", [])):
-                targets.append((sb_key, bdata, gi, ki, kw["keyword"], domain))
+                raw.append((prio, sb_key, bdata, gi, ki, kw["keyword"], domain))
+
+    # 안정 정렬: 활성 그룹(prio=0)을 앞으로, 그룹 내 키워드 순서는 유지
+    raw.sort(key=lambda t: t[0])
+    targets = [t[1:] for t in raw]
 
     if not targets:
         print("\n⚠  순위 체크 대상 없음 — 5분 후 재시도")
