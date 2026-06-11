@@ -404,6 +404,26 @@ with st.sidebar:
                     unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # 광고비 페이백신청 — 핵심 메뉴 강조 (관리자·광고주 공통)
+    st.markdown("""
+<style>
+div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]) {
+    background: linear-gradient(135deg,#EFF6FF,#DBEAFE);
+    border: 1.5px solid #93C5FD;
+    border-left: 4px solid #2563EB;
+    border-radius: 10px;
+    margin: 3px 0;
+    box-shadow: 0 2px 6px rgba(37,99,235,0.14);
+}
+div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]):hover {
+    background: linear-gradient(135deg,#DBEAFE,#BFDBFE);
+}
+div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]) a {
+    color: #1D4ED8 !important;
+    font-weight: 800 !important;
+}
+</style>""", unsafe_allow_html=True)
+
     if auth_type == "admin":
         st.markdown('<span class="sb-label">스토어</span>', unsafe_allow_html=True)
         st.page_link("pages/전자책.py", label="📚  전자책 · 강의", use_container_width=True)
@@ -415,14 +435,6 @@ with st.sidebar:
 
         st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
         st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
-        st.markdown("""
-<style>
-div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1"]) a,
-div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%8E%98%EC%9D%B4%EB%B0%B1%EC%8B%A0%EC%B2%AD"]) a {
-    color: #1565C0 !important;
-    font-weight: 700 !important;
-}
-</style>""", unsafe_allow_html=True)
 
         st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
         st.page_link("pages/자동입찰.py",      label="📊  자동입찰 관리",    use_container_width=True)
