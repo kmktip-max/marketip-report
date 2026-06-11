@@ -229,10 +229,20 @@ def run():
 
             # 키워드별 실제 체크 시각 기록 (패스 시작 시각 아닌 실제 체크 시각)
             now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            bdata["groups"][gi]["keywords"][ki]["current_rank"]    = rank
-            bdata["groups"][gi]["keywords"][ki]["total_ad_slots"]  = total_slots
-            bdata["groups"][gi]["keywords"][ki]["rank_checked_at"] = now_str
-            bdata["groups"][gi]["keywords"][ki]["last_checked"]    = now_str
+            kwref = bdata["groups"][gi]["keywords"][ki]
+            kwref["current_rank"]    = rank
+            kwref["total_ad_slots"]  = total_slots
+            kwref["rank_checked_at"] = now_str
+            kwref["last_checked"]    = now_str
+            # 연속 미노출 카운터 (광고 로테이션 노이즈 방지용 — scheduler가 증액 판단에 사용)
+            if rank is not None:
+                kwref["miss_count"]     = 0
+                kwref["last_seen_rank"] = rank
+                kwref["last_seen_at"]   = now_str
+            elif total_slots and total_slots >= 1:
+                kwref["miss_count"] = int(kwref.get("miss_count", 0)) + 1   # 미노출(구좌 있음)
+            else:
+                kwref["miss_count"] = 0   # 구좌 0(노출 기회 없음) → 카운트 리셋
 
             # sb_key가 바뀌는 시점(=이전 클라이언트 데이터 완료)에 즉시 저장
             if prev_sb_key and prev_sb_key != sb_key and prev_sb_key not in saved_keys:

@@ -554,13 +554,18 @@ def run_cycle(client_id: str) -> list:
             # max_bid 까지 올려도 미노출이면 calc_bid가 '최대입찰 도달'로 멈춤 → 어쩔 수 없음.
             total_slots = kw.get("total_ad_slots")
             is_miss = False   # 미노출(가상순위로 증액 중) 여부 — 표시용
-            if rank is None and rank_fresh and total_slots and total_slots >= 1:
+            # 연속 미노출 횟수(rank_checker 기록). 1~2회는 광고 로테이션 누락일 수 있으므로
+            # MISS_THRESHOLD 이상 '지속' 미노출일 때만 증액 (실제 1위인데 max로 올리는 오탐 방지).
+            MISS_THRESHOLD = 3   # ~10분/패스 × 3 = 약 30분 연속 미노출
+            miss_count = int(kw.get("miss_count", 0))
+            if (rank is None and rank_fresh and total_slots and total_slots >= 1
+                    and miss_count >= MISS_THRESHOLD):
                 rank = total_slots + 1   # 목표보다 뒤(미노출)로 간주 → calc_bid가 증액 산출
                 is_miss = True
                 # 화면 '현재순위'에는 가상순위를 노출하지 않음(미노출이므로 빈칸 유지).
                 # e["current_rank"] 는 None 그대로 두고, 증액 계산에만 rank 사용.
                 if DEBUG_RANK:
-                    print(f"  {kw['keyword']}: 미노출(구좌{total_slots}개) → max까지 증액 시도 (가상순위 {rank})")
+                    print(f"  {kw['keyword']}: 미노출 {miss_count}회 연속(구좌{total_slots}개) → max까지 증액 (가상순위 {rank})")
 
             # 파워링크 구좌 자체가 없거나(노출 기회 없음) 전일노출0 → 입찰 올려도 의미없음 → 스킵
             elif rank is None and kid in zero_imp_kids:
