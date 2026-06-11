@@ -129,6 +129,25 @@ def _add(i):
     st.session_state["_scroll_buy"] = True
     st.rerun()
 
+# ── 박스 안 CTA(앵커) 처리 — 쿼리파라미터 기반 ──────────────────────────────────
+_cta = st.query_params.get("cta")
+if _cta:
+    try:
+        del st.query_params["cta"]
+    except Exception:
+        pass
+    if _cta == "payback":
+        try:
+            st.switch_page("pages/페이백신청.py")
+        except Exception:
+            pass
+    elif _cta.startswith("add_"):
+        try:
+            st.session_state[f"cart_{int(_cta.split('_')[1])}"] = True
+            st.session_state["_scroll_buy"] = True
+        except Exception:
+            pass
+
 # ══════════════════════════════════════════════════════════════════════════════
 # HERO (프로필 사진 포함)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -157,23 +176,6 @@ st.markdown(f"""
   </div>
   <div style="flex:0 0 auto;align-self:flex-end;">{_photo_html}</div>
 </div>
-""", unsafe_allow_html=True)
-
-# ── 박스에 붙는 CTA 버튼 스타일 (하단 액션바처럼) ─────────────────────────────
-st.markdown("""
-<style>
-.st-key-cta_payback, .st-key-b_agency, .st-key-b_eall { margin-top:-12px !important; }
-.st-key-cta_payback button, .st-key-b_agency button, .st-key-b_eall button {
-    width:100% !important; color:#fff !important; border:none !important;
-    font-weight:800 !important; padding:13px !important;
-}
-.st-key-cta_payback button { background:#B45309 !important; border-radius:0 0 16px 16px !important; }
-.st-key-cta_payback button:hover { background:#92400E !important; color:#fff !important; }
-.st-key-b_agency button { background:#2E7D32 !important; border-radius:0 0 18px 18px !important; }
-.st-key-b_agency button:hover { background:#1B5E20 !important; color:#fff !important; }
-.st-key-b_eall button { background:#2563EB !important; border-radius:0 0 12px 12px !important; }
-.st-key-b_eall button:hover { background:#1D4ED8 !important; color:#fff !important; }
-</style>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -249,11 +251,15 @@ e3.markdown(_ebook_card("linear-gradient(135deg,#7C3AED,#A855F7)", "STEP 3 · �
 if e3.button("🛒 구매하기", key="b_e3", use_container_width=True): _add(2)
 
 st.markdown("""
-<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-bottom:none;border-radius:12px 12px 0 0;padding:14px 18px;">
-  <span style="font-size:13.5px;color:#1E40AF;font-weight:700;">📦 3단계 올인원 패키지 — 199,000원</span>
-  <span style="font-size:12.5px;color:#3B82F6;"> (개별 합계 247,000원 → 약 19% 할인)</span>
+<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:14px 18px;
+            display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+  <div>
+    <span style="font-size:13.5px;color:#1E40AF;font-weight:700;">📦 3단계 올인원 패키지 — 199,000원</span>
+    <span style="font-size:12.5px;color:#3B82F6;"> (개별 합계 247,000원 → 약 19% 할인)</span>
+  </div>
+  <a href="?cta=add_3" target="_self" style="background:#2563EB;color:#fff;font-weight:800;font-size:13.5px;
+       padding:9px 18px;border-radius:9px;text-decoration:none;white-space:nowrap;">🛒 올인원 패키지 구매하기</a>
 </div>""", unsafe_allow_html=True)
-if st.button("🛒  올인원 패키지 구매하기", key="b_eall", use_container_width=True, type="secondary"): _add(3)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2) 광고 세팅 상품
@@ -292,8 +298,8 @@ if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _add(6)
 st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>🤝 성과보장 광고 운영대행 <span style='font-size:13px;color:#9CA3AF;font-weight:600;'>· 제안가(조정 가능)</span></h3>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#388E3C;border-radius:18px 18px 0 0;
-            padding:28px 30px;color:#fff;">
+<div style="background:#388E3C;border-radius:18px;
+            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(56,142,60,0.28);">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
     <div style="flex:1;min-width:280px;">
       <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:100px;
@@ -315,9 +321,11 @@ st.markdown("""
   <div style="font-size:13px;line-height:1.7;color:rgba(255,255,255,0.95);word-break:keep-all;">
     ✓ 전담 운영 + 주간 리포트　✓ 2개월 성과보장 + 미흡 시 리베이트　✓ 광고비 페이백 병행 가능
   </div>
+  <a href="?cta=add_7" target="_self" style="display:inline-block;margin-top:18px;background:#fff;color:#2E7D32;
+       font-weight:800;font-size:14px;padding:11px 24px;border-radius:10px;text-decoration:none;">
+    🤝 성과보장 대행 상담 신청 →</a>
 </div>
 """, unsafe_allow_html=True)
-if st.button("🤝  성과보장 대행 상담 신청", key="b_agency", use_container_width=True, type="secondary"): _add(7)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 후기
@@ -437,20 +445,18 @@ if st.session_state.pop("_scroll_buy", False):
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#D97706;border-radius:16px 16px 0 0;
-            padding:24px 28px 18px;color:#fff;">
+<div style="background:#D97706;border-radius:16px;padding:24px 28px 22px;color:#fff;
+            box-shadow:0 8px 22px rgba(217,119,6,0.22);">
   <div style="font-size:20px;font-weight:900;margin-bottom:8px;">💸 광고비, 그냥 쓰지 마세요</div>
   <div style="font-size:14.5px;line-height:1.75;color:rgba(255,255,255,0.96);word-break:keep-all;max-width:680px;">
     이미 집행 중인 광고비의 <b>일부를 매달 돌려받을 수 있습니다.</b>
     추가 비용도, 복잡한 절차도 없이 — 신청만 하시면 됩니다.
   </div>
+  <a href="?cta=payback" target="_self" style="display:inline-block;margin-top:16px;background:#fff;color:#B45309;
+       font-weight:800;font-size:14px;padding:11px 24px;border-radius:10px;text-decoration:none;">
+    💸 광고비 페이백 신청하러 가기 →</a>
 </div>
 """, unsafe_allow_html=True)
-if st.button("💸  광고비 페이백 신청하러 가기", key="cta_payback", use_container_width=True, type="secondary"):
-    try:
-        st.switch_page("pages/페이백신청.py")
-    except Exception:
-        st.info("왼쪽 메뉴 '광고비 페이백신청'에서 신청하실 수 있습니다.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 관리자 — 신청 현황
