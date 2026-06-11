@@ -246,8 +246,8 @@ if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _buy("�
 st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>🤝 성과보장 광고 운영대행 <span style='font-size:13px;color:#9CA3AF;font-weight:600;'>· 제안가(조정 가능)</span></h3>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:linear-gradient(135deg,#0F766E 0%,#10B981 100%);border-radius:18px;
-            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(16,185,129,0.25);">
+<div style="background:#0F766E;border-radius:18px;
+            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(15,118,110,0.25);">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
     <div style="flex:1;min-width:280px;">
       <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:100px;
@@ -358,8 +358,8 @@ if st.session_state.pop("_scroll_buy", False):
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:linear-gradient(135deg,#B45309 0%,#F59E0B 100%);border-radius:16px;
-            padding:24px 28px;color:#fff;box-shadow:0 8px 22px rgba(245,158,11,0.22);">
+<div style="background:#D97706;border-radius:16px;
+            padding:24px 28px;color:#fff;box-shadow:0 8px 22px rgba(217,119,6,0.22);">
   <div style="font-size:20px;font-weight:900;margin-bottom:8px;">💸 광고비, 그냥 쓰지 마세요</div>
   <div style="font-size:14.5px;line-height:1.75;color:rgba(255,255,255,0.96);word-break:keep-all;max-width:680px;">
     이미 집행 중인 광고비의 <b>일부를 매달 돌려받을 수 있습니다.</b>
