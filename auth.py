@@ -24,6 +24,7 @@ _SESSION_DAYS = 7
 
 # 광고주 권한 전체 목록 (key → (페이지경로, 표시명, 아이콘))
 PERM_CATALOG = {
+    "ebook_store":      ("pages/전자책.py",         "전자책·강의",          "📚"),
     "ad_analysis":      ("pages/광고분석컨설팅.py", "광고분석컨설팅",       "📈"),
     "monthly_report":   ("pages/월간보고서.py",     "월간보고서",           "📩"),
     "rebate":           ("pages/페이백신청.py",     "광고비 페이백신청",    "💸"),

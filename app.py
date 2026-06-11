@@ -338,6 +338,7 @@ auth_perms = st.session_state.get("auth_permissions", [])
 # ══════════════════════════════════════════════════════════════════════════════
 if auth_type == "admin":
     pg = st.navigation([
+        st.Page("pages/전자책.py",        title="전자책·강의"),
         st.Page("pages/광고분석컨설팅.py", title="광고구조 컨설팅"),
         st.Page("pages/월간보고서.py",    title="월간보고서"),
         st.Page("pages/페이백신청.py",    title="광고비 페이백신청"),
@@ -354,8 +355,8 @@ else:
     # 권한 있는 페이지만 navigation에 추가 (비즈머니 알림은 모든 계정 기본 제공)
     client_pages = []
     for perm_key, (path, title, _icon) in PERM_CATALOG.items():
-        # 비즈머니 알림 + 부정클릭 관리는 모든 계정 기본 제공
-        if perm_key in ("bizmoney_alert", "fraud_detect") or perm_key in auth_perms:
+        # 전자책·비즈머니 알림·부정클릭 관리는 모든 계정 기본 제공
+        if perm_key in ("ebook_store", "bizmoney_alert", "fraud_detect") or perm_key in auth_perms:
             client_pages.append(st.Page(path, title=title))
 
     if not client_pages:
@@ -404,6 +405,9 @@ with st.sidebar:
     st.markdown('</div>', unsafe_allow_html=True)
 
     if auth_type == "admin":
+        st.markdown('<span class="sb-label">스토어</span>', unsafe_allow_html=True)
+        st.page_link("pages/전자책.py", label="📚  전자책 · 강의", use_container_width=True)
+
         st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
         st.page_link("pages/광고분석컨설팅.py", label="📈  광고분석컨설팅", use_container_width=True)
         st.page_link("pages/월간보고서.py",     label="📩  월간보고서",     use_container_width=True)
@@ -443,6 +447,10 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
                 f'font-weight:700;color:#111;">{biz}</div>',
                 unsafe_allow_html=True,
             )
+
+        # 스토어 (전자책·강의 — 모든 광고주에게 노출)
+        st.markdown('<span class="sb-label">스토어</span>', unsafe_allow_html=True)
+        st.page_link("pages/전자책.py", label="📚  전자책 · 강의", use_container_width=True)
 
         # 광고구조 컨설팅
         _grp1 = [
