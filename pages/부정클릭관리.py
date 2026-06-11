@@ -331,23 +331,23 @@ with TAB_APPLY:
                 st.markdown("#### 스마트로그 서비스 신청")
                 st.caption("신청 후 담당자가 2~3 영업일 내 연락드립니다.")
                 with st.form("smartlog_form"):
-                    f_biz   = st.text_input("업체명 *",   value=biz_name)
-                    f_name  = st.text_input("담당자명 *", value=contact)
-                    f_phone = st.text_input("연락처 *",   value=phone, placeholder="010-0000-0000")
-                    f_memo  = st.text_area("요청사항 (선택)",
-                                           placeholder="광고 계정 ID, 주요 키워드 등 자유롭게 적어주세요.",
-                                           height=100)
+                    f_site   = st.text_input("사이트명 *",     value=biz_name,
+                                             placeholder="예: 마케팁")
+                    f_domain = st.text_input("대표 도메인 *",  placeholder="https://www.example.com")
+                    f_name   = st.text_input("성함 *",         value=contact)
+                    f_phone  = st.text_input("광고주 연락처 *", value=phone,
+                                             placeholder="010-0000-0000")
                     if st.form_submit_button("신청하기", type="primary", use_container_width=True):
-                        if not f_biz.strip() or not f_name.strip() or not f_phone.strip():
-                            st.error("업체명, 담당자명, 연락처는 필수입니다.")
+                        if not f_site.strip() or not f_domain.strip() or not f_name.strip() or not f_phone.strip():
+                            st.error("사이트명, 대표 도메인, 성함, 광고주 연락처는 필수입니다.")
                         else:
                             _save_application({
                                 "id":            str(uuid.uuid4()),
                                 "client_id":     username,
-                                "business_name": f_biz.strip(),
+                                "business_name": f_site.strip(),
+                                "domain":        f_domain.strip(),
                                 "contact_name":  f_name.strip(),
                                 "phone":         f_phone.strip(),
-                                "memo":          f_memo.strip(),
                                 "status":        "대기중",
                                 "created_at":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             })
@@ -373,11 +373,11 @@ if is_admin:
                 ):
                     col_l, col_r = st.columns([2, 1])
                     with col_l:
-                        st.markdown(f"**업체명:** {app.get('business_name','')}")
+                        st.markdown(f"**사이트명:** {app.get('business_name','')}")
+                        if app.get("domain"):
+                            st.markdown(f"**대표 도메인:** {app.get('domain','')}")
                         st.markdown(f"**담당자:** {app.get('contact_name','')}  |  {app.get('phone','')}")
                         st.markdown(f"**계정 ID:** `{app.get('client_id','')}`")
-                        if app.get("memo"):
-                            st.markdown(f"**요청사항:** {app.get('memo','')}")
                     with col_r:
                         new_st = st.selectbox(
                             "처리 상태",
