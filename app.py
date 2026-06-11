@@ -332,6 +332,52 @@ if _active_token and st.query_params.get("token", "") != _active_token:
 
 auth_type  = st.session_state.get("auth_type", "")
 auth_perms = st.session_state.get("auth_permissions", [])
+auth_username = st.session_state.get("auth_username", "")
+
+# ── 페이백 신청자 판별 (월간보고서 등록 OR 페이백 신청 기록) ────────────────────
+def _is_payback_applicant(username: str) -> bool:
+    """페이백 신청자 = rebate_accounts(owner_id) 또는 월간보고서(clients.json owner) 등록."""
+    if not username:
+        return False
+    cache = st.session_state.get("_payback_cache")
+    if isinstance(cache, dict) and username in cache:
+        return cache[username]
+    result = False
+    # 1) rebate_accounts — 페이백 신청 기록
+    try:
+        url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", ""))
+        key = (getattr(st, "secrets", {}).get("SUPABASE_KEY", "") or os.getenv("SUPABASE_KEY", ""))
+        if url and key:
+            from supabase import create_client
+            sb = create_client(url, key)
+            res = sb.table("rebate_accounts").select("id").eq("owner_id", username).limit(1).execute()
+            if res.data:
+                result = True
+    except Exception:
+        pass
+    # 2) 월간보고서(clients.json) 등록
+    if not result:
+        try:
+            from report_engine.storage import load_clients
+            if any(c.get("owner", "") == username for c in (load_clients() or [])):
+                result = True
+        except Exception:
+            pass
+    cache = cache if isinstance(cache, dict) else {}
+    cache[username] = result
+    st.session_state["_payback_cache"] = cache
+    return result
+
+# 관리자는 전체 접근. 광고주는 페이백 신청자일 때만 게이트 기능 기본 개방.
+_is_payback = True if auth_type == "admin" else _is_payback_applicant(auth_username)
+
+# 게이트 대상: 페이백 신청자 OR 관리자가 권한 부여한 계정만 사용 가능
+_GATED_KEYS = ("monthly_report", "bizmoney_alert", "bid_assist", "fraud_detect")
+
+def _can_use(perm_key: str) -> bool:
+    if perm_key in _GATED_KEYS:
+        return _is_payback or (perm_key in auth_perms)
+    return perm_key in auth_perms   # 그 외 메뉴는 기존대로 권한 기반
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 네비게이션 구성
@@ -355,8 +401,8 @@ else:
     # 권한 있는 페이지만 navigation에 추가 (비즈머니 알림은 모든 계정 기본 제공)
     client_pages = []
     for perm_key, (path, title, _icon) in PERM_CATALOG.items():
-        # 전자책·비즈머니 알림·부정클릭 관리는 모든 계정 기본 제공
-        if perm_key in ("ebook_store", "bizmoney_alert", "fraud_detect") or perm_key in auth_perms:
+        # 전자책은 모두 / 게이트 기능은 페이백 신청자·권한부여 계정만
+        if perm_key == "ebook_store" or _can_use(perm_key):
             client_pages.append(st.Page(path, title=title))
 
     if not client_pages:
@@ -470,30 +516,33 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
             ("ad_analysis",      "pages/광고분석컨설팅.py",    "📈  광고분석컨설팅"),
             ("monthly_report",   "pages/월간보고서.py",        "📩  월간보고서"),
         ]
-        _grp1_visible = [t for k, p, t in _grp1
-                         if k == "bizmoney_alert" or k in auth_perms]
+        _grp1_visible = [(k, p, t) for k, p, t in _grp1 if _can_use(k)]
         if _grp1_visible:
             st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
-            for k, p, label in _grp1:
-                if k == "bizmoney_alert" or k in auth_perms:
-                    st.page_link(p, label=label, use_container_width=True)
+            for k, p, label in _grp1_visible:
+                st.page_link(p, label=label, use_container_width=True)
 
         # 수수료 환급
         if "rebate" in auth_perms:
             st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
             st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
-        # 광고 운영 (부정클릭 관리는 항상 표시)
-        st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
-        if "bid_assist" in auth_perms:
-            st.page_link("pages/자동입찰.py",   label="📊  자동입찰 관리",        use_container_width=True)
-        st.page_link("pages/부정클릭관리.py",   label="🛡️  부정클릭 관리",        use_container_width=True)
+        # 광고 운영 (자동입찰·부정클릭은 페이백 신청자·권한부여 계정만)
+        _grp_ops = []
+        if _can_use("bid_assist"):
+            _grp_ops.append(("pages/자동입찰.py",   "📊  자동입찰 관리"))
+        if _can_use("fraud_detect"):
+            _grp_ops.append(("pages/부정클릭관리.py", "🛡️  부정클릭 관리"))
         if "keyword_tool" in auth_perms:
-            st.page_link("pages/키워드도구.py", label="🔍  키워드 추출",           use_container_width=True)
+            _grp_ops.append(("pages/키워드도구.py", "🔍  키워드 추출"))
         if "creative_tool" in auth_perms:
-            st.page_link("pages/광고소재.py",   label="✍️  광고소재 추출",         use_container_width=True)
+            _grp_ops.append(("pages/광고소재.py",   "✍️  광고소재 추출"))
         if "landing_analysis" in auth_perms:
-            st.page_link("pages/상세페이지.py", label="📐  랜딩페이지 기획/분석",  use_container_width=True)
+            _grp_ops.append(("pages/상세페이지.py", "📐  랜딩페이지 기획/분석"))
+        if _grp_ops:
+            st.markdown('<span class="sb-label">광고 운영</span>', unsafe_allow_html=True)
+            for _p, _label in _grp_ops:
+                st.page_link(_p, label=_label, use_container_width=True)
 
     st.markdown('<div class="sb-bottom">', unsafe_allow_html=True)
     uname = "관리자" if auth_type == "admin" else st.session_state.get("auth_username", "")
