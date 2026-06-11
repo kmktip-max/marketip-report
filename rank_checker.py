@@ -234,6 +234,12 @@ def run():
                 saved_keys.add(prev_sb_key)
             prev_sb_key = sb_key
 
+            # 중간 저장: 20개마다 현재 클라이언트 데이터를 즉시 반영
+            # (1021개 한 패스가 ~60분이라, 끝까지 기다리지 않고 점진적으로 순위 갱신)
+            if i % 20 == 0:
+                ok = sb_save(sb_key, bdata)
+                print(f"  [중간저장 {i}/{len(targets)}] {sb_key}: {'완료' if ok else '실패'}")
+
             # 키워드 간 딜레이 (봇 차단 방지)
             if i < len(targets):
                 delay = random.uniform(2.5, 4.5)
@@ -241,12 +247,11 @@ def run():
 
         browser.close()
 
-    # 마지막 클라이언트 저장
+    # 마지막 클라이언트 저장 (모든 키워드 최신화)
     print("\n결과 저장 중...")
     for sb_key, bdata in bdata_map.items():
-        if sb_key not in saved_keys:
-            ok = sb_save(sb_key, bdata)
-            print(f"  {sb_key}: {'저장 완료' if ok else '저장 실패'}")
+        ok = sb_save(sb_key, bdata)
+        print(f"  {sb_key}: {'저장 완료' if ok else '저장 실패'}")
 
     print(f"\n완료! ({len(targets)}개 키워드 조회)")
 
