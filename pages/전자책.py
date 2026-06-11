@@ -87,6 +87,38 @@ def _save_leads(leads):
     except Exception:
         pass
 
+# ── 사업자등록증 첨부 저장/조회 (계산서 발행용) ──────────────────────────────
+def _save_license(lead_id, filename, data_bytes):
+    payload = {"name": filename, "b64": base64.b64encode(data_bytes).decode()}
+    sb = _get_sb()
+    if sb:
+        try:
+            sb.table("app_data").upsert(
+                {"key": f"ebook_license_{lead_id}", "data": payload,
+                 "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
+                on_conflict="key").execute()
+        except Exception:
+            pass
+    try:
+        d = os.path.join(ROOT, "data", "licenses")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{lead_id}_{filename}"), "wb") as f:
+            f.write(data_bytes)
+    except Exception:
+        pass
+
+def _load_license(lead_id):
+    sb = _get_sb()
+    if sb:
+        try:
+            res = sb.table("app_data").select("data").eq("key", f"ebook_license_{lead_id}").execute()
+            if res.data:
+                d = res.data[0]["data"]
+                return d.get("name", "사업자등록증"), base64.b64decode(d.get("b64", ""))
+        except Exception:
+            pass
+    return None, None
+
 _is_admin = st.session_state.get("auth_type") == "admin"
 _username = st.session_state.get("auth_username", "")
 _client   = st.session_state.get("auth_client", {})
@@ -244,8 +276,8 @@ if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _add(6)
 st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>🤝 성과보장 광고 운영대행 <span style='font-size:13px;color:#9CA3AF;font-weight:600;'>· 제안가(조정 가능)</span></h3>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#6CC24A;border-radius:18px;
-            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(108,194,74,0.28);">
+<div style="background:#388E3C;border-radius:18px;
+            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(56,142,60,0.28);">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
     <div style="flex:1;min-width:280px;">
       <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:100px;
@@ -343,18 +375,33 @@ with _fcol, st.form("ebook_inquiry", clear_on_submit=False):
     q_depositor = st.text_input("입금자명 *", value=_client.get("contact_name", ""), placeholder="입금하신 분 성함")
     q_phone     = st.text_input("연락처 *", value=_client.get("phone", ""), placeholder="010-0000-0000")
     q_memo      = st.text_area("문의 내용 (선택)", placeholder="궁금한 점이나 현재 광고 상황을 적어주세요.", height=70)
+    st.markdown("<div style='border-top:1px solid #E5E8ED;margin:6px 0 2px;'></div>", unsafe_allow_html=True)
+    q_tax       = st.checkbox("🧾 세금계산서 발행 요청")
+    q_tax_email = st.text_input("계산서 발행 이메일", placeholder="세금계산서 받으실 이메일 (발행 시)")
+    q_license   = st.file_uploader("사업자등록증 첨부 (계산서 발행 시)", type=["pdf", "png", "jpg", "jpeg"])
     if st.form_submit_button("신청 완료", type="primary", use_container_width=True):
         if not _picked:
             st.error("신청할 상품을 1개 이상 선택해 주세요.")
         elif not q_depositor.strip() or not q_phone.strip():
             st.error("입금자명과 연락처는 필수입니다.")
+        elif q_tax and not q_tax_email.strip():
+            st.error("세금계산서 발행을 위해 발행 이메일을 입력해 주세요.")
         else:
+            _lead_id = str(uuid.uuid4())[:12]
+            _has_lic, _lic_name = False, ""
+            if q_license is not None:
+                _save_license(_lead_id, q_license.name, q_license.getvalue())
+                _has_lic, _lic_name = True, q_license.name
             leads = _load_leads()
             leads.append({
-                "id": str(uuid.uuid4())[:12],
+                "id": _lead_id,
                 "name": q_depositor.strip(), "phone": q_phone.strip(),
                 "interest": ", ".join(_picked), "amount": _amt_str,
                 "memo": q_memo.strip(),
+                "tax_invoice": bool(q_tax),
+                "tax_email": q_tax_email.strip(),
+                "has_license": _has_lic,
+                "license_name": _lic_name,
                 "from_user": _username or "비로그인",
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "status": "신규",
@@ -407,6 +454,14 @@ if _is_admin:
                 lc1.caption(f"{ld.get('interest','')} · 입금액 {ld.get('amount','-')} · {ld.get('created_at','')}")
                 lc2.write(ld.get("memo", "") or "—")
                 lc2.caption(f"신청자: {ld.get('from_user','')}")
+                if ld.get("tax_invoice"):
+                    lc2.caption(f"🧾 계산서 발행 요청 · {ld.get('tax_email','')}")
+                if ld.get("has_license"):
+                    _ln, _lb = _load_license(ld["id"])
+                    if _lb:
+                        lc2.download_button("📎 사업자등록증", _lb,
+                                            file_name=_ln or "사업자등록증",
+                                            key=f"lic_{ld['id']}")
                 if lc3.button("삭제", key=f"del_lead_{ld['id']}"):
                     _save_leads([x for x in _load_leads() if x.get("id") != ld["id"]])
                     st.rerun()
