@@ -88,16 +88,16 @@ st.markdown("""
 st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
 c1, c2, c3 = st.columns(3)
 _cards = [
-    ("🔰", "검색광고 초보자도", "복잡한 세팅·입찰을 도구가 자동으로. 클릭 몇 번이면 전문가 수준의 운영이 됩니다."),
-    ("💼", "프리랜서·예비창업자도", "광고를 몰라도 이 툴 하나로 <b>광고대행사 창업</b>이 가능합니다. 키워드·소재·보고서까지 자동."),
-    ("📈", "광고주도", "맡기지 않고도 전문가처럼. 데이터 기준으로 <b>광고비 낭비를 줄이고</b> 성과를 직접 만듭니다."),
+    ("🔰", "검색광고 초보자도", "복잡한 세팅·입찰은 도구가 자동으로.<br>클릭 몇 번이면 전문가급 운영이 됩니다."),
+    ("💼", "프리랜서·예비창업자도", "광고를 몰라도 이 툴 하나로 <b>광고대행사 창업</b>까지.<br>키워드·소재·보고서 자동 생성."),
+    ("📈", "광고주도", "맡기지 않고도 전문가처럼.<br><b>광고비 낭비는 줄이고</b> 성과는 직접."),
 ]
 for col, (ic, t, d) in zip([c1, c2, c3], _cards):
     col.markdown(f"""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;padding:22px 20px;height:100%;">
   <div style="font-size:30px;margin-bottom:10px;">{ic}</div>
-  <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:8px;">{t}</div>
-  <div style="font-size:13.5px;line-height:1.65;color:#4B5563;">{d}</div>
+  <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:8px;word-break:keep-all;">{t}</div>
+  <div style="font-size:13.5px;line-height:1.7;color:#4B5563;word-break:keep-all;">{d}</div>
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
