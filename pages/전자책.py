@@ -7,6 +7,9 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+# ── 외부 링크 ─────────────────────────────────────────────────────────────────
+FREE_CHECK_URL = "https://monumental-kangaroo-4f71e6.netlify.app/"
+
 # ── 입금 계좌 정보 ────────────────────────────────────────────────────────────
 BANK_NAME   = "카카오뱅크"
 BANK_NUM    = "3333-30-3495145"
@@ -227,7 +230,7 @@ def _svc_card(badge, badge_bg, badge_fg, name, price, sub, feats, highlight=Fals
 s1, s2, s3 = st.columns(3)
 s1.markdown(_svc_card("무료", "#DCFCE7", "#16A34A", "광고 무상 점검", "누구나 신청 가능", "0원",
     ["현재 계정 구조 진단", "광고비 누수 지점 분석", "맞춤 개선 리포트 제공"], highlight=True), unsafe_allow_html=True)
-if s1.button("🔍 무료 점검 신청", key="b_s1", use_container_width=True, type="primary"): _add(4)
+s1.link_button("🔍 무료 점검 신청", FREE_CHECK_URL, use_container_width=True, type="primary")
 s2.markdown(_svc_card("신규 광고주", "#DBEAFE", "#1D4ED8", "초기 광고 세팅", "처음 시작하는 분", "330,000원",
     ["계정·비즈채널 세팅", "캠페인·그룹·키워드 구성", "광고 소재 + 랜딩 점검"]), unsafe_allow_html=True)
 if s2.button("🛒 구매하기", key="b_s2", use_container_width=True): _add(5)
