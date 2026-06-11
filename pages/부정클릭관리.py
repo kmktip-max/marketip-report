@@ -330,7 +330,8 @@ with TAB_APPLY:
             else:
                 st.markdown("#### 스마트로그 서비스 신청")
                 st.caption("신청 후 담당자가 2~3 영업일 내 연락드립니다.")
-                with st.form("smartlog_form"):
+                _fcol, _ = st.columns([1, 1])
+                with _fcol, st.form("smartlog_form"):
                     f_site   = st.text_input("사이트명 *",     value=biz_name,
                                              placeholder="예: 마케팁")
                     f_domain = st.text_input("대표 도메인 *",  placeholder="https://www.example.com")
