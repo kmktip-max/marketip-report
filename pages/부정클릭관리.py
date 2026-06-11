@@ -115,9 +115,10 @@ st.title("🔍 스마트로그")
 st.caption("네이버 파워링크 부정클릭 탐지 서비스")
 
 if is_admin:
-    TAB_INTRO, TAB_APPLY, TAB_ADMIN = st.tabs(["서비스 소개", "신청 현황", "대상자 관리"])
+    TAB_INTRO, TAB_APPLY, TAB_STATUS, TAB_ADMIN = st.tabs(
+        ["서비스 소개", "신청하기", "신청 현황", "대상자 관리"])
 else:
-    TAB_INTRO, TAB_APPLY = st.tabs(["서비스 소개", "서비스 신청"])
+    TAB_INTRO, TAB_APPLY = st.tabs(["서비스 소개", "신청하기"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — 서비스 소개
@@ -249,10 +250,9 @@ with TAB_INTRO:
             st.markdown("[![스마트로그](https://smlog.co.kr/2020/img/sub01/p_sub_box02_img.png)](https://smlog.co.kr/2020/prevent.html)")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — 서비스 신청 (클라이언트)
+# TAB 2 — 신청하기 (모두 노출, 대상자만 제출 가능)
 # ══════════════════════════════════════════════════════════════════════════════
-if not is_admin:
-    with TAB_APPLY:
+with TAB_APPLY:
         if not eligible:
             st.markdown("""
 <div style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;
@@ -355,10 +355,10 @@ if not is_admin:
                             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2/3 — 어드민 전용
+# TAB 3/4 — 어드민 전용 (신청 현황 · 대상자 관리)
 # ══════════════════════════════════════════════════════════════════════════════
 if is_admin:
-    with TAB_APPLY:
+    with TAB_STATUS:
         apps = _load_applications()
         st.caption(f"총 {len(apps)}건")
         if not apps:
