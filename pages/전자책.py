@@ -244,8 +244,8 @@ if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _add(6)
 st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>🤝 성과보장 광고 운영대행 <span style='font-size:13px;color:#9CA3AF;font-weight:600;'>· 제안가(조정 가능)</span></h3>", unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#0F766E;border-radius:18px;
-            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(15,118,110,0.25);">
+<div style="background:#6CC24A;border-radius:18px;
+            padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(108,194,74,0.28);">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
     <div style="flex:1;min-width:280px;">
       <div style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:100px;
