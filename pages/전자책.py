@@ -316,8 +316,12 @@ _total = 0
 _negotiable = False
 _picked = []
 _ckcol = st.columns(2)
+_ck_idx = 0
 for i, (label, disp, amt) in enumerate(_CATALOG):
-    with _ckcol[i % 2]:
+    if amt == 0:   # 무료 상품(무상점검)은 외부 링크로 신청 → 목록 제외
+        continue
+    with _ckcol[_ck_idx % 2]:
+        _ck_idx += 1
         if st.checkbox(f"{label}  ·  {disp}", key=f"cart_{i}"):
             _picked.append(label)
             if amt is None:
