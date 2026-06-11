@@ -488,7 +488,7 @@ def run_cycle(client_id: str) -> list:
 
             # 실시간 순위(rank_checker.py) 우선, 없으면 avgRnk fallback
             # 단, 순위 데이터가 RANK_STALE_MIN분 이상 오래됐으면 무시 (오진 방지)
-            RANK_STALE_MIN = 90  # rank_checker 1패스(~60분) + 여유 30분
+            RANK_STALE_MIN = 30  # rank_checker가 활성 그룹만 측정(~10분/패스) → 30분이면 충분
             stored_rank = kw.get("current_rank")
             rank_last_checked = kw.get("rank_checked_at") or kw.get("last_checked")
             rank_fresh = False   # rank_checker 데이터가 최근(STALE 이내)인지
