@@ -77,9 +77,9 @@ _photo_html = (
 ) if _PROFILE else ""
 
 st.markdown(f"""
-<div style="background:linear-gradient(135deg,#1E3A8A 0%,#2563EB 55%,#3B82F6 100%);
+<div style="background:linear-gradient(135deg,#047857 0%,#10B981 52%,#6EE7B7 100%);
             border-radius:20px;padding:40px 40px 0;color:#fff;margin-bottom:8px;
-            box-shadow:0 12px 32px rgba(37,99,235,0.28);display:flex;align-items:flex-end;
+            box-shadow:0 12px 32px rgba(16,185,129,0.26);display:flex;align-items:flex-end;
             gap:20px;flex-wrap:wrap;overflow:hidden;">
   <div style="flex:1;min-width:320px;padding-bottom:40px;">
     <div style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.35);
