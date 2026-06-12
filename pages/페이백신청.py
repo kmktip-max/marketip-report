@@ -674,6 +674,10 @@ with right:
       <span class="notice-val">페이백 정산은 <em-red>2달 뒤</em-red> 진행됩니다. <span style="font-size:11px;color:#aaa;">(ex. 1월 → 3월 20~25일)</span></span>
     </div>
     <div class="notice-row">
+      <span class="notice-key">정산 방식</span>
+      <span class="notice-val">페이백은 광고주(업체)가 <em-red>세금계산서 발행 후</em-red> 지급됩니다.</span>
+    </div>
+    <div class="notice-row">
       <span class="notice-key">페이백 불가</span>
       <span class="notice-val">네이버 플레이스, 파워컨텐츠는 <em-red>불가</em-red>합니다.</span>
     </div>
