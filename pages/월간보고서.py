@@ -1155,7 +1155,7 @@ with tab_auto:
 if _is_admin:
  with tab_auto:
     st.subheader("🔄 자동 정기발송")
-    st.caption("매월 특정일에 지난달 보고서를 자동으로 발송합니다. (scheduler.py 실행 중일 때 동작)")
+    st.caption("업체별로 **매월**(지난달 보고서) 또는 **격주(2주마다)**(최근 2주 보고서) 자동발송을 선택할 수 있습니다. (scheduler.py 실행 중일 때 동작)")
     _auto_clients = load_clients()
     _auto_sched   = load_schedule()
     _auto_cfg     = _auto_sched.get("auto_monthly", {})
@@ -1165,44 +1165,57 @@ if _is_admin:
     else:
         with st.form("auto_monthly_cfg"):
             _gcol1, _gcol2 = st.columns(2)
-            _g_day  = _gcol1.number_input("매월 발송일",   1, 31, int(_auto_cfg.get("_global_day",  5)))
-            _g_hour = _gcol2.number_input("발송 시각(시)", 0, 23, int(_auto_cfg.get("_global_hour", 9)))
-            st.markdown("**광고주별 자동발송 활성화:**")
-            _toggles = {}
+            _g_day  = _gcol1.number_input("매월 발송일 (월간 발송용)", 1, 28, int(_auto_cfg.get("_global_day",  5)))
+            _g_hour = _gcol2.number_input("발송 시각(시)",            0, 23, int(_auto_cfg.get("_global_hour", 9)))
+            st.caption("격주 발송은 직전 발송일로부터 14일 경과 시 위 '발송 시각'에 자동 발송됩니다.")
+            st.markdown("**광고주별 자동발송 설정:**")
+            _hc1, _hc2 = st.columns([2, 2])
+            _hc1.markdown("<span style='font-size:12px;color:#6B7280;'>광고주 (체크 시 활성)</span>", unsafe_allow_html=True)
+            _hc2.markdown("<span style='font-size:12px;color:#6B7280;'>발송 주기</span>", unsafe_allow_html=True)
+            _settings = {}
             for _ac in _auto_clients:
-                _acid = _ac.get("id") or _ac.get("name", "")
-                _toggles[_acid] = st.checkbox(
-                    _ac["name"],
-                    value=bool(_auto_cfg.get(_acid, {}).get("enabled", False)),
-                    key=f"auto_tog_{_acid}",
+                _acid  = _ac.get("id") or _ac.get("name", "")
+                _cname = _ac.get("name", "")
+                _prev  = _auto_cfg.get(_cname, {})
+                _cc1, _cc2 = st.columns([2, 2])
+                _en = _cc1.checkbox(_cname, value=bool(_prev.get("enabled", False)), key=f"auto_tog_{_acid}")
+                _fr = _cc2.selectbox(
+                    "주기", ["매월", "격주(2주)"],
+                    index=(1 if _prev.get("freq", "monthly") == "biweekly" else 0),
+                    key=f"auto_freq_{_acid}", label_visibility="collapsed",
                 )
+                _settings[_cname] = (_en, "biweekly" if _fr.startswith("격주") else "monthly")
             if st.form_submit_button("💾 저장", type="primary"):
                 _migrated = {}
                 for _k, _v in _auto_cfg.items():
                     if _k.startswith("_"):
                         _migrated[_k] = _v
                         continue
-                    _cname = _v.get("client_name") or _k
-                    _migrated[_cname] = _v
+                    _cn = _v.get("client_name") or _k
+                    _migrated[_cn] = _v
                 _auto_cfg = _migrated
-                for _ac in _auto_clients:
-                    _acid = _ac.get("name", "")
-                    _prev = _auto_cfg.get(_acid, {})
-                    _auto_cfg[_acid] = {
-                        "enabled":         _toggles.get(_ac.get("id") or _ac.get("name",""), False),
+                for _cname, (_en, _freq) in _settings.items():
+                    _prev = _auto_cfg.get(_cname, {})
+                    _auto_cfg[_cname] = {
+                        "enabled":         _en,
+                        "freq":            _freq,
                         "send_day":        int(_g_day),
                         "send_hour":       int(_g_hour),
                         "last_sent_month": _prev.get("last_sent_month", ""),
+                        "last_sent_date":  _prev.get("last_sent_date", ""),
                     }
                 _auto_cfg["_global_day"]  = int(_g_day)
                 _auto_cfg["_global_hour"] = int(_g_hour)
                 _auto_sched["auto_monthly"] = _auto_cfg
                 save_schedule(_auto_sched)
-                st.success(f"✅ 저장됨 — 매월 {int(_g_day)}일 {int(_g_hour):02d}:00 자동 발송")
+                st.success(f"✅ 저장됨 — 발송 시각 {int(_g_hour):02d}:00 (매월 {int(_g_day)}일 / 격주 14일 주기)")
                 st.rerun()
 
-        _on_list = [_ac["name"] for _ac in _auto_clients
-                    if _auto_cfg.get(_ac.get("id") or _ac.get("name", ""), {}).get("enabled")]
+        _on_list = []
+        for _ac in _auto_clients:
+            _c = _auto_cfg.get(_ac.get("name", ""), {})
+            if _c.get("enabled"):
+                _on_list.append(f"{_ac['name']}({'격주' if _c.get('freq')=='biweekly' else '매월'})")
         if _on_list:
             st.info(f"🔄 자동발송 대상: {', '.join(_on_list)}")
 
@@ -1327,10 +1340,14 @@ if _is_admin:
         _tcc  = (_t5_auto.get(_tcid)
                  or _t5_auto.get(_tc.get("name", ""), {}))
         if _tcc.get("enabled"):
+            _is_bi = _tcc.get("freq") == "biweekly"
             _t5_on.append({
-                "광고주":        _tc["name"],
-                "발송일":        f"매월 {_tcc.get('send_day',5)}일 {_tcc.get('send_hour',9):02d}:00",
-                "마지막 발송월": _tcc.get("last_sent_month", "-"),
+                "광고주":      _tc["name"],
+                "주기":        "격주(2주)" if _is_bi else "매월",
+                "발송 스케줄":  (f"14일마다 {_tcc.get('send_hour',9):02d}:00" if _is_bi
+                               else f"매월 {_tcc.get('send_day',5)}일 {_tcc.get('send_hour',9):02d}:00"),
+                "마지막 발송":  (_tcc.get("last_sent_date", "-") if _is_bi
+                               else _tcc.get("last_sent_month", "-")),
             })
     if _t5_on:
         import pandas as _pd5b

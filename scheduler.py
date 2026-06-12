@@ -391,18 +391,45 @@ def run_scheduled_reports():
             continue
         if not cfg.get("enabled"):
             continue
-        if cfg.get("last_sent_month") == cur_month:
-            continue
 
-        send_day  = int(cfg.get("send_day", 5))
         send_hour = int(cfg.get("send_hour", 9))
-        if now.day != send_day or now.hour < send_hour:
-            continue
-
+        freq      = cfg.get("freq", "monthly")
         # cid가 이름일 수도 있고 ID일 수도 있음 — 둘 다 시도
         client = cmap.get(cid) or cmap.get(cfg.get("client_name", ""))
         if not client:
-            print(f"[보고서스케줄] 자동월보 광고주 미발견: {cid}")
+            print(f"[보고서스케줄] 자동발송 광고주 미발견: {cid}")
+            continue
+
+        # ── 격주(2주마다) ──────────────────────────────────────────
+        if freq == "biweekly":
+            if now.hour < send_hour:
+                continue
+            _last = cfg.get("last_sent_date", "")
+            if _last:
+                try:
+                    _last_d = datetime.strptime(_last, "%Y-%m-%d")
+                    if (now.date() - _last_d.date()).days < 14:
+                        continue
+                except Exception:
+                    pass
+            until_d = now - timedelta(days=1)
+            since_d = until_d - timedelta(days=13)   # 최근 14일
+            since_s = since_d.strftime("%Y-%m-%d")
+            until_s = until_d.strftime("%Y-%m-%d")
+            print(f"[보고서스케줄] 격주발송: {client.get('name')} ({since_s}~{until_s})")
+            try:
+                _send_one_report(client, since_s, until_s, "biweekly", history, smtp)
+                cfg["last_sent_date"] = now.strftime("%Y-%m-%d")
+                changed = True
+            except Exception as e:
+                print(f"[보고서스케줄] 격주발송 실패: {client.get('name')} — {e}")
+            continue
+
+        # ── 매월 ───────────────────────────────────────────────────
+        if cfg.get("last_sent_month") == cur_month:
+            continue
+        send_day = int(cfg.get("send_day", 5))
+        if now.day != send_day or now.hour < send_hour:
             continue
 
         first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

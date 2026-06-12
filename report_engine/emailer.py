@@ -21,7 +21,7 @@ def send_report(to_email, client_name, period, since, until, html_body,
     host = smtp_host or SMTP_HOST
     port = smtp_port or SMTP_PORT
 
-    period_label = "주간" if period == "weekly" else "월간"
+    period_label = {"weekly": "주간", "biweekly": "격주", "monthly": "월간"}.get(period, "월간")
     subject = f"[광고 성과 보고서] {client_name} | {period_label} ({since} ~ {until})"
     filename = f"광고보고서_{client_name}_{since[:7]}.html"
 
