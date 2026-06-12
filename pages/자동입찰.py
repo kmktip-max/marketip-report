@@ -23,6 +23,9 @@ if auth_type not in ("admin", "client"):
     st.error("🔒 로그인이 필요합니다.")
     st.stop()
 
+from auth import feature_access_guard
+feature_access_guard("bid_assist", "자동입찰 관리")
+
 # ── 클라이언트 ID 결정 ─────────────────────────────────────────────────────
 if auth_type == "admin":
     accounts  = sb_load("client_accounts", os.path.join(ROOT, "client_accounts.json")) or []

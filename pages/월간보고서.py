@@ -169,6 +169,9 @@ st.session_state.report_admin_auth = True
 _is_admin = st.session_state.get("auth_type", "") == "admin"
 _username = st.session_state.get("auth_username", "")
 
+from auth import feature_access_guard
+feature_access_guard("monthly_report", "월간보고서")
+
 # ── 헤더 ──────────────────────────────────────────────────────────────
 st.title("📊 광고 보고서 관리")
 if not _is_admin:

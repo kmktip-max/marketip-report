@@ -43,6 +43,92 @@ _LEGACY_MAP = {
     "payback":              "rebate",
 }
 
+
+# ── 페이백 신청자 판별 + 기능 접근 가드 ────────────────────────────────────────
+def is_payback_applicant(username: str) -> bool:
+    """페이백 신청자 = rebate_accounts(owner_id) 또는 월간보고서(clients.json owner) 등록."""
+    if not username:
+        return False
+    _st = None
+    try:
+        import streamlit as _st
+        cache = _st.session_state.get("_payback_cache")
+        if isinstance(cache, dict) and username in cache:
+            return cache[username]
+    except Exception:
+        cache = None
+
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_KEY", "")
+    try:
+        if _st is not None:
+            url = url or str(_st.secrets.get("SUPABASE_URL", ""))
+            key = key or str(_st.secrets.get("SUPABASE_KEY", ""))
+    except Exception:
+        pass
+
+    result = False
+    # 1) rebate_accounts — 페이백 신청 기록
+    try:
+        if url and key:
+            from supabase import create_client
+            sb = create_client(url, key)
+            res = sb.table("rebate_accounts").select("id").eq("owner_id", username).limit(1).execute()
+            if res.data:
+                result = True
+    except Exception:
+        pass
+    # 2) 월간보고서(clients.json) 등록
+    if not result:
+        try:
+            from report_engine.storage import load_clients
+            if any(c.get("owner", "") == username for c in (load_clients() or [])):
+                result = True
+        except Exception:
+            pass
+
+    try:
+        if _st is not None:
+            cache = cache if isinstance(cache, dict) else {}
+            cache[username] = result
+            _st.session_state["_payback_cache"] = cache
+    except Exception:
+        pass
+    return result
+
+
+def feature_access_guard(perm_key: str, label: str = "이 기능"):
+    """페이지 상단 가드 — 관리자/페이백 신청자/권한부여 계정만 통과, 그 외엔 안내 후 정지."""
+    import streamlit as st
+    if st.session_state.get("auth_type") == "admin":
+        return
+    perms = st.session_state.get("auth_permissions", []) or []
+    user  = st.session_state.get("auth_username", "")
+    if perm_key in perms or is_payback_applicant(user):
+        return
+    st.markdown(
+        f"""
+<div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:16px;
+            padding:30px 32px;text-align:center;margin-top:10px;">
+  <div style="font-size:34px;margin-bottom:8px;">🔒</div>
+  <div style="font-size:18px;font-weight:800;color:#9A3412;margin-bottom:8px;">
+    {label}은(는) 광고비 페이백 신청 대상자만 이용할 수 있습니다.
+  </div>
+  <div style="font-size:14px;color:#7C2D12;line-height:1.7;">
+    광고비 페이백을 신청하시면 이 기능이 자동으로 열립니다.<br>
+    이미 신청하셨다면 담당자에게 문의해 주세요.
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+    if st.button("💸  광고비 페이백 신청하러 가기", type="primary"):
+        try:
+            st.switch_page("pages/페이백신청.py")
+        except Exception:
+            st.info("왼쪽 메뉴 '광고비 페이백신청'에서 신청하실 수 있습니다.")
+    st.stop()
+
 def _secret():
     try:
         import streamlit as st

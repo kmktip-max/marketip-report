@@ -334,50 +334,10 @@ auth_type  = st.session_state.get("auth_type", "")
 auth_perms = st.session_state.get("auth_permissions", [])
 auth_username = st.session_state.get("auth_username", "")
 
-# ── 페이백 신청자 판별 (월간보고서 등록 OR 페이백 신청 기록) ────────────────────
-def _is_payback_applicant(username: str) -> bool:
-    """페이백 신청자 = rebate_accounts(owner_id) 또는 월간보고서(clients.json owner) 등록."""
-    if not username:
-        return False
-    cache = st.session_state.get("_payback_cache")
-    if isinstance(cache, dict) and username in cache:
-        return cache[username]
-    result = False
-    # 1) rebate_accounts — 페이백 신청 기록
-    try:
-        url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", ""))
-        key = (getattr(st, "secrets", {}).get("SUPABASE_KEY", "") or os.getenv("SUPABASE_KEY", ""))
-        if url and key:
-            from supabase import create_client
-            sb = create_client(url, key)
-            res = sb.table("rebate_accounts").select("id").eq("owner_id", username).limit(1).execute()
-            if res.data:
-                result = True
-    except Exception:
-        pass
-    # 2) 월간보고서(clients.json) 등록
-    if not result:
-        try:
-            from report_engine.storage import load_clients
-            if any(c.get("owner", "") == username for c in (load_clients() or [])):
-                result = True
-        except Exception:
-            pass
-    cache = cache if isinstance(cache, dict) else {}
-    cache[username] = result
-    st.session_state["_payback_cache"] = cache
-    return result
-
-# 관리자는 전체 접근. 광고주는 페이백 신청자일 때만 게이트 기능 기본 개방.
-_is_payback = True if auth_type == "admin" else _is_payback_applicant(auth_username)
-
-# 게이트 대상: 페이백 신청자 OR 관리자가 권한 부여한 계정만 사용 가능
-_GATED_KEYS = ("monthly_report", "bizmoney_alert", "bid_assist", "fraud_detect")
-
-def _can_use(perm_key: str) -> bool:
-    if perm_key in _GATED_KEYS:
-        return _is_payback or (perm_key in auth_perms)
-    return perm_key in auth_perms   # 그 외 메뉴는 기존대로 권한 기반
+# 메뉴는 모두 노출(숨기지 않음). 실제 이용 제한은 각 페이지 상단 가드
+# (auth.feature_access_guard)에서 "페이백 대상자만 이용 가능" 안내로 처리한다.
+# 전자책 + 게이트 기능 4종은 항상 노출.
+_ALWAYS_SHOW = ("ebook_store", "monthly_report", "bizmoney_alert", "bid_assist", "fraud_detect")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 네비게이션 구성
@@ -401,8 +361,8 @@ else:
     # 권한 있는 페이지만 navigation에 추가 (비즈머니 알림은 모든 계정 기본 제공)
     client_pages = []
     for perm_key, (path, title, _icon) in PERM_CATALOG.items():
-        # 전자책은 모두 / 게이트 기능은 페이백 신청자·권한부여 계정만
-        if perm_key == "ebook_store" or _can_use(perm_key):
+        # 항상 노출 메뉴(전자책+게이트 4종) + 권한 부여된 메뉴 (이용 제한은 페이지 가드)
+        if perm_key in _ALWAYS_SHOW or perm_key in auth_perms:
             client_pages.append(st.Page(path, title=title))
 
     if not client_pages:
@@ -516,7 +476,8 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
             ("ad_analysis",      "pages/광고분석컨설팅.py",    "📈  광고분석컨설팅"),
             ("monthly_report",   "pages/월간보고서.py",        "📩  월간보고서"),
         ]
-        _grp1_visible = [(k, p, t) for k, p, t in _grp1 if _can_use(k)]
+        _grp1_visible = [(k, p, t) for k, p, t in _grp1
+                         if k in ("bizmoney_alert", "monthly_report") or k in auth_perms]
         if _grp1_visible:
             st.markdown('<span class="sb-label">광고구조 컨설팅</span>', unsafe_allow_html=True)
             for k, p, label in _grp1_visible:
@@ -527,12 +488,11 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
             st.markdown('<span class="sb-label">수수료 환급</span>', unsafe_allow_html=True)
             st.page_link("pages/페이백신청.py", label="💸  광고비 페이백신청", use_container_width=True)
 
-        # 광고 운영 (자동입찰·부정클릭은 페이백 신청자·권한부여 계정만)
-        _grp_ops = []
-        if _can_use("bid_assist"):
-            _grp_ops.append(("pages/자동입찰.py",   "📊  자동입찰 관리"))
-        if _can_use("fraud_detect"):
-            _grp_ops.append(("pages/부정클릭관리.py", "🛡️  부정클릭 관리"))
+        # 광고 운영 (자동입찰·부정클릭은 모두 노출 — 이용 제한은 페이지 가드)
+        _grp_ops = [
+            ("pages/자동입찰.py",     "📊  자동입찰 관리"),
+            ("pages/부정클릭관리.py", "🛡️  부정클릭 관리"),
+        ]
         if "keyword_tool" in auth_perms:
             _grp_ops.append(("pages/키워드도구.py", "🔍  키워드 추출"))
         if "creative_tool" in auth_perms:

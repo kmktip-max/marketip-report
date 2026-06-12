@@ -32,6 +32,9 @@ KST = timezone(timedelta(hours=9))
 _is_admin = st.session_state.get("auth_type") == "admin"
 _username = st.session_state.get("auth_username", "")
 
+from auth import feature_access_guard
+feature_access_guard("bizmoney_alert", "비즈머니 알림")
+
 st.title("비즈머니 잔액 알림 관리")
 st.caption("광고주 정보(API 키·Customer ID)는 월간보고서 광고주 등록 데이터를 사용합니다.")
 
