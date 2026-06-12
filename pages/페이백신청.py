@@ -741,6 +741,17 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:12px;padding:16px 20px;margin-top:12px;">
+  <div style="font-size:13px;font-weight:800;color:#9A3412;margin-bottom:8px;">✅ 지원 자격 — 아래 조건을 모두 충족해야 합니다</div>
+  <div style="font-size:13.5px;line-height:1.85;color:#7C2D12;word-break:keep-all;">
+    · 검색광고를 <b>직접 운영·컨트롤</b>할 수 있는 분<br>
+    · 광고주와 <b>직접 커뮤니케이션</b>이 가능한 분<br>
+    · <b>영업력</b>을 갖추고 <b>기존 광고주를 보유</b>하신 분
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 with st.expander("🤝 프리랜서 파트너 신청하기"):
     with st.form("freelancer_apply", clear_on_submit=True):
         _fcol1, _fcol2 = st.columns(2)
@@ -749,15 +760,19 @@ with st.expander("🤝 프리랜서 파트너 신청하기"):
         _f_exp   = st.selectbox("광고 운영 경험", ["없음(입문)", "1년 미만", "1~3년", "3년 이상"])
         _f_cnt   = st.text_input("현재 관리 중인 광고주 수 (선택)", placeholder="예: 0 / 3개 / 미정")
         _f_msg   = st.text_area("간단한 소개 / 문의 (선택)", height=80)
+        _f_agree = st.checkbox("위 지원 자격(직접 운영·광고주 커뮤니케이션·영업/기존 광고주 보유)을 모두 충족합니다 *")
         if st.form_submit_button("파트너 신청", type="primary", use_container_width=True):
             if not _f_name.strip() or not _f_phone.strip():
                 st.error("성함과 연락처는 필수입니다.")
+            elif not _f_agree:
+                st.error("지원 자격 충족 확인에 동의해 주세요.")
             else:
                 _ok = _save_freelancer_app({
                     "id": str(uuid.uuid4())[:12],
                     "name": _f_name.strip(), "phone": _f_phone.strip(),
                     "experience": _f_exp, "client_count": _f_cnt.strip(),
                     "message": _f_msg.strip(),
+                    "qualified": True,
                     "from_user": st.session_state.get("auth_username", "") or "비로그인",
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "status": "신규",
