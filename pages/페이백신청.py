@@ -685,6 +685,98 @@ with right:
 </div>
 """, unsafe_allow_html=True)
 
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 프리랜서 파트너 프로그램 (광고주 유치 → 페이백 수익 공유)
+# ═════════════════════════════════════════════════════════════════════════════
+def _load_freelancer_apps():
+    try:
+        res = _get_sb().table("app_data").select("data").eq("key", "freelancer_applications").execute()
+        if res.data and isinstance(res.data[0]["data"], list):
+            return res.data[0]["data"]
+    except Exception:
+        pass
+    return []
+
+def _save_freelancer_app(rec):
+    try:
+        sb = _get_sb()
+        data = _load_freelancer_apps()
+        data.append(rec)
+        sb.table("app_data").upsert(
+            {"key": "freelancer_applications", "data": data,
+             "updated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")},
+            on_conflict="key").execute()
+        return True
+    except Exception:
+        return False
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("""
+<div style="background:#0F172A;border-radius:16px;padding:26px 30px;color:#fff;">
+  <div style="display:inline-block;background:rgba(255,255,255,0.14);border-radius:100px;
+              padding:5px 14px;font-size:12px;font-weight:800;margin-bottom:12px;">🤝 프리랜서 파트너 프로그램</div>
+  <div style="font-size:21px;font-weight:900;margin-bottom:10px;word-break:keep-all;">
+    검색광고를 몰라도, 광고주를 모아 <span style="color:#6EE7B7;">페이백 수익</span>을 함께 나누세요</div>
+  <div style="font-size:14px;line-height:1.7;color:rgba(255,255,255,0.9);word-break:keep-all;max-width:780px;">
+    마케팁 자동화 도구(키워드·소재·입찰·보고서)로 광고주를 직접 운영하거나 유치하면,
+    해당 광고주 광고비를 기준으로 <b>파트너 수익</b>을 정산해 드립니다.
+    복잡한 세팅·정산은 마케팁이 대신 처리합니다.
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
+    <div style="flex:1;min-width:190px;background:rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
+      <div style="font-weight:800;font-size:13px;color:#93C5FD;margin-bottom:4px;">① 도구 무료 활용</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.8);">전문가 수준 운영을 클릭 몇 번으로</div></div>
+    <div style="flex:1;min-width:190px;background:rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
+      <div style="font-weight:800;font-size:13px;color:#6EE7B7;margin-bottom:4px;">② 페이백 수익 공유</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.8);">관리 광고주 광고비 기반 수익 정산</div></div>
+    <div style="flex:1;min-width:190px;background:rgba(255,255,255,0.08);border-radius:10px;padding:14px;">
+      <div style="font-weight:800;font-size:13px;color:#FCD34D;margin-bottom:4px;">③ 정산 대행</div>
+      <div style="font-size:12.5px;color:rgba(255,255,255,0.8);">세무·정산은 마케팁이 처리</div></div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+with st.expander("🤝 프리랜서 파트너 신청하기"):
+    with st.form("freelancer_apply", clear_on_submit=True):
+        _fcol1, _fcol2 = st.columns(2)
+        _f_name  = _fcol1.text_input("성함 *")
+        _f_phone = _fcol2.text_input("연락처 *", placeholder="010-0000-0000")
+        _f_exp   = st.selectbox("광고 운영 경험", ["없음(입문)", "1년 미만", "1~3년", "3년 이상"])
+        _f_cnt   = st.text_input("현재 관리 중인 광고주 수 (선택)", placeholder="예: 0 / 3개 / 미정")
+        _f_msg   = st.text_area("간단한 소개 / 문의 (선택)", height=80)
+        if st.form_submit_button("파트너 신청", type="primary", use_container_width=True):
+            if not _f_name.strip() or not _f_phone.strip():
+                st.error("성함과 연락처는 필수입니다.")
+            else:
+                _ok = _save_freelancer_app({
+                    "id": str(uuid.uuid4())[:12],
+                    "name": _f_name.strip(), "phone": _f_phone.strip(),
+                    "experience": _f_exp, "client_count": _f_cnt.strip(),
+                    "message": _f_msg.strip(),
+                    "from_user": st.session_state.get("auth_username", "") or "비로그인",
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "status": "신규",
+                })
+                if _ok:
+                    st.success("파트너 신청이 접수되었습니다. 빠르게 연락드리겠습니다! 🙏")
+                else:
+                    st.error("일시적 오류로 접수에 실패했습니다. 카카오채널로 문의해 주세요.")
+
+if st.session_state.get("auth_type") == "admin":
+    _fr_apps = _load_freelancer_apps()
+    with st.expander(f"🔔 프리랜서 파트너 신청 현황 ({len(_fr_apps)}건)"):
+        if not _fr_apps:
+            st.info("아직 접수된 파트너 신청이 없습니다.")
+        else:
+            for _fa in reversed(_fr_apps):
+                _fr1, _fr2 = st.columns([3, 4])
+                _fr1.markdown(f"**{_fa.get('name','')}** · {_fa.get('phone','')}")
+                _fr1.caption(f"경험: {_fa.get('experience','-')} · 관리 광고주: {_fa.get('client_count','-') or '-'}")
+                _fr2.write(_fa.get("message", "") or "—")
+                _fr2.caption(f"{_fa.get('created_at','')} · 신청자: {_fa.get('from_user','')}")
+                st.divider()
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ── 계정 리스트 (로그인 사용자 기준 필터링) ───────────────────────────────────
