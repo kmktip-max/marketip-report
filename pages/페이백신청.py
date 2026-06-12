@@ -758,7 +758,9 @@ with st.expander("🤝 프리랜서 파트너 신청하기"):
         _f_name  = _fcol1.text_input("성함 *")
         _f_phone = _fcol2.text_input("연락처 *", placeholder="010-0000-0000")
         _f_exp   = st.selectbox("광고 운영 경험", ["없음(입문)", "1년 미만", "1~3년", "3년 이상"])
-        _f_cnt   = st.text_input("현재 관리 중인 광고주 수 (선택)", placeholder="예: 0 / 3개 / 미정")
+        _frc1, _frc2 = st.columns(2)
+        _f_cnt   = _frc1.text_input("현재 관리 광고주 수 (선택)", placeholder="예: 3개 / 미정")
+        _f_rev   = _frc2.text_input("월 예상 매출 (선택)",       placeholder="예: 월 500만원 / 미정")
         _f_msg   = st.text_area("간단한 소개 / 문의 (선택)", height=80)
         _f_agree = st.checkbox("위 지원 자격(직접 운영·광고주 커뮤니케이션·영업/기존 광고주 보유)을 모두 충족합니다 *")
         if st.form_submit_button("파트너 신청", type="primary", use_container_width=True):
@@ -771,6 +773,7 @@ with st.expander("🤝 프리랜서 파트너 신청하기"):
                     "id": str(uuid.uuid4())[:12],
                     "name": _f_name.strip(), "phone": _f_phone.strip(),
                     "experience": _f_exp, "client_count": _f_cnt.strip(),
+                    "monthly_revenue": _f_rev.strip(),
                     "message": _f_msg.strip(),
                     "qualified": True,
                     "from_user": st.session_state.get("auth_username", "") or "비로그인",
@@ -791,7 +794,7 @@ if st.session_state.get("auth_type") == "admin":
             for _fa in reversed(_fr_apps):
                 _fr1, _fr2 = st.columns([3, 4])
                 _fr1.markdown(f"**{_fa.get('name','')}** · {_fa.get('phone','')}")
-                _fr1.caption(f"경험: {_fa.get('experience','-')} · 관리 광고주: {_fa.get('client_count','-') or '-'}")
+                _fr1.caption(f"경험: {_fa.get('experience','-')} · 광고주 {_fa.get('client_count','-') or '-'} · 월매출 {_fa.get('monthly_revenue','-') or '-'}")
                 _fr2.write(_fa.get("message", "") or "—")
                 _fr2.caption(f"{_fa.get('created_at','')} · 신청자: {_fa.get('from_user','')}")
                 st.divider()
