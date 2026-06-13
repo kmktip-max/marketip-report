@@ -37,9 +37,6 @@ def _img_b64(path):
     except Exception:
         return ""
 _PROFILE = _img_b64(os.path.join(ROOT, "profile_nobg.png"))
-_IMG_PROBLEM = _img_b64(os.path.join(ROOT, "static", "ebook_problem.jpg"))   # 직접운영 vs 대행 고민
-_IMG_AGENCY  = _img_b64(os.path.join(ROOT, "static", "ebook_solution.jpg"))  # 전문가 제안서
-_IMG_SUCCESS = _img_b64(os.path.join(ROOT, "static", "ebook_success.jpg"))   # 손님 맞이(성공)
 
 # ── Supabase (구매/상담 신청 저장) ───────────────────────────────────────────
 def _get_sb():
@@ -203,16 +200,20 @@ for col, (ic, t, d) in zip([c1, c2, c3], _cards):
 # 문제 → 해결
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
-if _IMG_PROBLEM:
-    st.markdown(
-        f'<img src="data:image/jpeg;base64,{_IMG_PROBLEM}" '
-        f'style="width:100%;border-radius:16px;display:block;box-shadow:0 4px 16px rgba(0,0,0,0.08);" />',
-        unsafe_allow_html=True)
 st.markdown("""
-<div style="text-align:center;font-size:15.5px;line-height:1.75;color:#1E3A8A;font-weight:700;
-            margin-top:16px;word-break:keep-all;">
-  👉 광고는 안 팔리는 상품을 팔아주는 마법이 아닙니다.<br>
-  잘 팔리는 상품을 <b>더 싸게 · 더 많이 노출</b>시키는 '구조'를 아는 사람이 이깁니다.
+<div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:16px;padding:26px 28px;">
+  <div style="font-size:18px;font-weight:800;color:#9A3412;margin-bottom:14px;">😮‍💨 혹시 이런 상황이신가요?</div>
+  <div style="font-size:14.5px;line-height:1.9;color:#7C2D12;word-break:keep-all;">
+    · 광고비는 매달 쓰는데 <b>매출이 안 나옵니다</b><br>
+    · 대행사에 맡겼지만 <b>뭘 해주는지 모르겠습니다</b><br>
+    · 직접 하자니 <b>키워드·입찰·소재</b> 어디서 시작할지 막막합니다<br>
+    · 광고비의 <b>일부를 돌려받을 수 있다</b>는 걸 몰랐습니다
+  </div>
+  <div style="border-top:1px dashed #FDBA74;margin:18px 0;"></div>
+  <div style="font-size:15px;line-height:1.8;color:#1E3A8A;font-weight:600;word-break:keep-all;">
+    👉 광고는 <b>안 팔리는 상품을 팔아주는 마법이 아닙니다.</b>
+    잘 팔리는 상품을 <b>더 싸게, 더 많이 노출</b>시키는 '구조'를 아는 사람이 이깁니다.
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -296,13 +297,8 @@ if s3.button("🛒 구매하기", key="b_s3", use_container_width=True): _add(6)
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:36px;'></div>", unsafe_allow_html=True)
 st.markdown("<h3 style='font-weight:900;color:#111827;'>🤝 성과보장 광고 운영대행 <span style='font-size:13px;color:#9CA3AF;font-weight:600;'>· 제안가(조정 가능)</span></h3>", unsafe_allow_html=True)
-if _IMG_AGENCY:
-    st.markdown(
-        f'<img src="data:image/jpeg;base64,{_IMG_AGENCY}" '
-        f'style="width:100%;height:230px;object-fit:cover;border-radius:18px 18px 0 0;display:block;" />',
-        unsafe_allow_html=True)
 st.markdown("""
-<div style="background:#388E3C;border-radius:0 0 18px 18px;
+<div style="background:#388E3C;border-radius:18px;
             padding:28px 30px;color:#fff;box-shadow:0 10px 28px rgba(56,142,60,0.28);">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
     <div style="flex:1;min-width:280px;">
@@ -332,21 +328,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 결과 비주얼 + 후기
+# 후기
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("<div style='height:30px;'></div>", unsafe_allow_html=True)
-if _IMG_SUCCESS:
-    st.markdown(
-        f'<div style="position:relative;border-radius:16px;overflow:hidden;'
-        f'box-shadow:0 6px 18px rgba(0,0,0,0.10);">'
-        f'<img src="data:image/jpeg;base64,{_IMG_SUCCESS}" style="width:100%;height:240px;object-fit:cover;display:block;" />'
-        f'<div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,0.6),rgba(0,0,0,0.05));"></div>'
-        f'<div style="position:absolute;left:30px;top:50%;transform:translateY(-50%);color:#fff;max-width:62%;">'
-        f'<div style="font-size:23px;font-weight:900;line-height:1.3;word-break:keep-all;">광고는 맡기고,<br>사장님은 본업에 집중하세요</div>'
-        f'<div style="font-size:13.5px;margin-top:8px;color:rgba(255,255,255,0.92);">성과는 데이터로, 운영은 자동화로.</div>'
-        f'</div></div>',
-        unsafe_allow_html=True)
-st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 st.markdown("""
 <div style="background:#fff;border:1.5px solid #E5E8ED;border-radius:16px;padding:22px 26px;">
   <div style="font-size:16px;font-weight:800;color:#111827;">⭐ 평점 5.0 <span style="font-size:13px;color:#6B7280;font-weight:600;">(실구매 후기 기준)</span></div>
