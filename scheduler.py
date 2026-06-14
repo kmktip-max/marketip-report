@@ -383,14 +383,19 @@ def run_scheduled_reports():
         changed = True
 
     # ── 2. 자동 정기발송 처리 ────────────────────────────────────────
+    import calendar as _cal
+    from utils.sched_dates import shift_to_weekday
     auto_cfg  = sched.get("auto_monthly", {})
     cur_month = now.strftime("%Y-%m")
+    _is_weekend = now.weekday() >= 5   # 토/일엔 자동 정기발송 안 함
 
     for cid, cfg in auto_cfg.items():
         if cid.startswith("_"):
             continue
         if not cfg.get("enabled"):
             continue
+        if _is_weekend:
+            continue   # 주말엔 발송하지 않음 (예정일이 주말이면 월요일로 밀림)
 
         send_hour = int(cfg.get("send_hour", 9))
         freq      = cfg.get("freq", "monthly")
@@ -405,13 +410,15 @@ def run_scheduled_reports():
             if now.hour < send_hour:
                 continue
             _last = cfg.get("last_sent_date", "")
+            _base = now.date()
             if _last:
                 try:
-                    _last_d = datetime.strptime(_last, "%Y-%m-%d")
-                    if (now.date() - _last_d.date()).days < 14:
-                        continue
+                    _base = datetime.strptime(_last, "%Y-%m-%d").date() + timedelta(days=14)
                 except Exception:
                     pass
+            _target = shift_to_weekday(_base)   # 주말이면 월요일로 밀기
+            if now.date() < _target:
+                continue
             until_d = now - timedelta(days=1)
             since_d = until_d - timedelta(days=13)   # 최근 14일
             since_s = since_d.strftime("%Y-%m-%d")
@@ -429,7 +436,9 @@ def run_scheduled_reports():
         if cfg.get("last_sent_month") == cur_month:
             continue
         send_day = int(cfg.get("send_day", 5))
-        if now.day != send_day or now.hour < send_hour:
+        _day = min(send_day, _cal.monthrange(now.year, now.month)[1])
+        _target = shift_to_weekday(datetime(now.year, now.month, _day).date())
+        if now.date() < _target or now.hour < send_hour:
             continue
 
         first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

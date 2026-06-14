@@ -1336,31 +1336,34 @@ if _is_admin:
     _t5_auto   = _t5_sched.get("auto_monthly", {})
     _t5_clients = load_clients()
     import calendar as _cal5
+    from utils.sched_dates import shift_to_weekday
     _now5 = datetime.now()
 
+    def _fmt5(d, hour):
+        return shift_to_weekday(d).strftime("%Y-%m-%d") + f" {hour:02d}:00"
+
     def _next_send(cfg):
-        """다음 발송 예정일시 문자열 계산."""
+        """다음 발송 예정일시 문자열 계산 (주말이면 월요일로 보정)."""
         hour = int(cfg.get("send_hour", 9))
         if cfg.get("freq") == "biweekly":
             _last = cfg.get("last_sent_date", "")
             if _last:
                 try:
-                    nxt = datetime.strptime(_last, "%Y-%m-%d") + timedelta(days=14)
-                    return nxt.strftime("%Y-%m-%d") + f" {hour:02d}:00"
+                    nxt = (datetime.strptime(_last, "%Y-%m-%d") + timedelta(days=14)).date()
+                    return _fmt5(nxt, hour)
                 except Exception:
                     pass
             return "발송 시각 도달 시 (첫 발송 대기)"
         # 매월
         day = int(cfg.get("send_day", 5))
         def _mk(y, m):
-            d = min(day, _cal5.monthrange(y, m)[1])
-            return datetime(y, m, d, hour, 0)
+            return datetime(y, m, min(day, _cal5.monthrange(y, m)[1])).date()
         if cfg.get("last_sent_month") == _now5.strftime("%Y-%m"):
             ny, nm = (_now5.year + 1, 1) if _now5.month == 12 else (_now5.year, _now5.month + 1)
-            return _mk(ny, nm).strftime("%Y-%m-%d") + f" {hour:02d}:00"
+            return _fmt5(_mk(ny, nm), hour)
         this_send = _mk(_now5.year, _now5.month)
-        if _now5 <= this_send:
-            return this_send.strftime("%Y-%m-%d") + f" {hour:02d}:00"
+        if _now5.date() <= shift_to_weekday(this_send):
+            return _fmt5(this_send, hour)
         return "곧 발송 예정 (이번 달 미발송)"
 
     _t5_on = []
