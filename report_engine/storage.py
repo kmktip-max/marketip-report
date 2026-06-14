@@ -40,19 +40,26 @@ def _local_path():
     )
 
 
-# ── Supabase ──────────────────────────────────────────────────────────────────
+# ── Supabase (모듈 전역 싱글톤 — 스트림릿/스케줄러 양쪽에서 1회만 생성) ─────────
+_SB_CLIENT = None
+_SB_TRIED  = False
+
 def _sb():
+    global _SB_CLIENT, _SB_TRIED
+    if _SB_TRIED:
+        return _SB_CLIENT
+    _SB_TRIED = True
     try:
         url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "")
                or os.getenv("SUPABASE_URL", ""))
         key = (getattr(st, "secrets", {}).get("SUPABASE_KEY", "")
                or os.getenv("SUPABASE_KEY", ""))
-        if not url or not key:
-            return None
-        from supabase import create_client
-        return create_client(url, key)
+        if url and key:
+            from supabase import create_client
+            _SB_CLIENT = create_client(url, key)
     except Exception:
-        return None
+        _SB_CLIENT = None
+    return _SB_CLIENT
 
 
 def _sb_load_clients(sb):

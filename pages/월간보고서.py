@@ -88,6 +88,7 @@ SCHEDULE_PATH = os.path.join(ROOT, "data", "report_schedule.json")
 _SB_KEY = "report_schedule"
 
 
+@st.cache_resource
 def _get_sb():
     try:
         url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "")

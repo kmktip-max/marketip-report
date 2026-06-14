@@ -10,6 +10,7 @@ sys.path.insert(0, ROOT)
 from components.style import PAYBACK_CSS, badge, STATUS_LIST
 
 # ── Storage (Supabase) ────────────────────────────────────────────────────────
+@st.cache_resource
 def _get_sb():
     from supabase import create_client
     return create_client(get_secret("SUPABASE_URL"), get_secret("SUPABASE_KEY"))

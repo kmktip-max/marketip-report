@@ -16,6 +16,7 @@ except ImportError:
     pass
 
 # ── Supabase 헬퍼 ─────────────────────────────────────────────────────────────
+@st.cache_resource
 def _get_sb():
     try:
         import streamlit as _st

@@ -39,6 +39,7 @@ def _img_b64(path):
 _PROFILE = _img_b64(os.path.join(ROOT, "profile_nobg.png"))
 
 # ── Supabase (구매/상담 신청 저장) ───────────────────────────────────────────
+@st.cache_resource
 def _get_sb():
     try:
         url = (getattr(st, "secrets", {}).get("SUPABASE_URL", "") or os.getenv("SUPABASE_URL", ""))
