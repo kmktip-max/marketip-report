@@ -1335,6 +1335,34 @@ if _is_admin:
     st.subheader("🔄 자동 정기발송 현황")
     _t5_auto   = _t5_sched.get("auto_monthly", {})
     _t5_clients = load_clients()
+    import calendar as _cal5
+    _now5 = datetime.now()
+
+    def _next_send(cfg):
+        """다음 발송 예정일시 문자열 계산."""
+        hour = int(cfg.get("send_hour", 9))
+        if cfg.get("freq") == "biweekly":
+            _last = cfg.get("last_sent_date", "")
+            if _last:
+                try:
+                    nxt = datetime.strptime(_last, "%Y-%m-%d") + timedelta(days=14)
+                    return nxt.strftime("%Y-%m-%d") + f" {hour:02d}:00"
+                except Exception:
+                    pass
+            return "발송 시각 도달 시 (첫 발송 대기)"
+        # 매월
+        day = int(cfg.get("send_day", 5))
+        def _mk(y, m):
+            d = min(day, _cal5.monthrange(y, m)[1])
+            return datetime(y, m, d, hour, 0)
+        if cfg.get("last_sent_month") == _now5.strftime("%Y-%m"):
+            ny, nm = (_now5.year + 1, 1) if _now5.month == 12 else (_now5.year, _now5.month + 1)
+            return _mk(ny, nm).strftime("%Y-%m-%d") + f" {hour:02d}:00"
+        this_send = _mk(_now5.year, _now5.month)
+        if _now5 <= this_send:
+            return this_send.strftime("%Y-%m-%d") + f" {hour:02d}:00"
+        return "곧 발송 예정 (이번 달 미발송)"
+
     _t5_on = []
     for _tc in _t5_clients:
         _tcid = _tc.get("id") or _tc.get("name", "")
@@ -1347,6 +1375,7 @@ if _is_admin:
                 "주기":        "격주(2주)" if _is_bi else "매월",
                 "발송 스케줄":  (f"14일마다 {_tcc.get('send_hour',9):02d}:00" if _is_bi
                                else f"매월 {_tcc.get('send_day',5)}일 {_tcc.get('send_hour',9):02d}:00"),
+                "다음 발송 예정": _next_send(_tcc),
                 "마지막 발송":  (_tcc.get("last_sent_date", "-") if _is_bi
                                else _tcc.get("last_sent_month", "-")),
             })
