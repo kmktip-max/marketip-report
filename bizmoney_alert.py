@@ -563,19 +563,16 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
             actions.append({"type": alert_type, "status": r.get("status"),
                              "detail": r.get("error", f"{phone} 발송")})
             _record_history(s, phone, alert_type, balance, threshold, r)
-        # 관리자 동시 알림 (요약 SMS) — 광고주 발송 내역을 관리자도 확인
-        if admin_phone and not dry_run:
-            _lbl = "소진(2차)" if alert_type == "depleted" else "1차 경고"
-            _txt = (
-                "[마케팁 관리자] 비즈머니 알림 발송\n"
-                f"광고주: {s.get('advertiser_name','')}\n"
-                f"단계: {_lbl}\n"
-                f"잔액: {balance:,}원 (기준 {threshold:,}원)\n"
-                f"수신: {', '.join(phones) or '-'}"
+        # 관리자 동시 알림 — 광고주에게 보낸 것과 동일한 알림톡(카카오)을 관리자도 수신.
+        # 수신자 목록에 관리자 번호가 이미 있으면(담당자=관리자) 중복 발송하지 않음.
+        _admin_norm = admin_phone.replace("-", "")
+        if admin_phone and _admin_norm not in [p.replace("-", "") for p in phones]:
+            ar = send_kakao_alerttalk(
+                admin_phone, template_code, _build_vars(s, balance, threshold),
+                dry_run=dry_run
             )
-            ar = send_sms_notification(admin_phone, _txt)
             actions.append({"type": "admin_copy", "status": ar.get("status"),
-                             "detail": ar.get("error", f"관리자({admin_phone}) 요약 발송")})
+                             "detail": ar.get("error", f"관리자({admin_phone}) 알림톡 사본")})
 
     # notification_config.json 에서 실제 Kakao 템플릿 ID 로드
     try:
