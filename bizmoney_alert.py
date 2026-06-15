@@ -546,13 +546,16 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
     phones = list(dict.fromkeys(filter(None, [
         s.get("advertiser_phone"), s.get("manager_phone")
     ])))
+    admin_phone = _secret("ADMIN_NOTIFY_PHONE", "010-2797-3164")
 
     def _send(alert_type: str, template_code: str, threshold: int):
+        # 중복 체크는 광고주 단위 1일 1회 (수신자별로 중복 적용하지 않음 — 담당자 스킵 버그 수정)
+        if _already_sent_today(history, cid, alert_type):
+            actions.append({"type": alert_type, "status": "skipped",
+                             "detail": "오늘 이미 발송됨"})
+            return
+        # 광고주 + 담당자 알림톡
         for phone in phones:
-            if _already_sent_today(history, cid, alert_type):
-                actions.append({"type": alert_type, "status": "skipped",
-                                 "detail": f"{phone} — 오늘 이미 발송됨"})
-                continue
             r = send_kakao_alerttalk(
                 phone, template_code, _build_vars(s, balance, threshold),
                 dry_run=dry_run
@@ -560,6 +563,19 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
             actions.append({"type": alert_type, "status": r.get("status"),
                              "detail": r.get("error", f"{phone} 발송")})
             _record_history(s, phone, alert_type, balance, threshold, r)
+        # 관리자 동시 알림 (요약 SMS) — 광고주 발송 내역을 관리자도 확인
+        if admin_phone and not dry_run:
+            _lbl = "소진(2차)" if alert_type == "depleted" else "1차 경고"
+            _txt = (
+                "[마케팁 관리자] 비즈머니 알림 발송\n"
+                f"광고주: {s.get('advertiser_name','')}\n"
+                f"단계: {_lbl}\n"
+                f"잔액: {balance:,}원 (기준 {threshold:,}원)\n"
+                f"수신: {', '.join(phones) or '-'}"
+            )
+            ar = send_sms_notification(admin_phone, _txt)
+            actions.append({"type": "admin_copy", "status": ar.get("status"),
+                             "detail": ar.get("error", f"관리자({admin_phone}) 요약 발송")})
 
     # notification_config.json 에서 실제 Kakao 템플릿 ID 로드
     try:
