@@ -1180,12 +1180,14 @@ if _is_admin:
                 _prev  = _auto_cfg.get(_cname, {})
                 _cc1, _cc2 = st.columns([2, 2])
                 _en = _cc1.checkbox(_cname, value=bool(_prev.get("enabled", False)), key=f"auto_tog_{_acid}")
+                _opts5 = ["매월", "격주(2주)", "매월 + 격주(2주)"]
+                _fidx  = {"monthly": 0, "biweekly": 1, "both": 2}.get(_prev.get("freq", "monthly"), 0)
                 _fr = _cc2.selectbox(
-                    "주기", ["매월", "격주(2주)"],
-                    index=(1 if _prev.get("freq", "monthly") == "biweekly" else 0),
+                    "주기", _opts5, index=_fidx,
                     key=f"auto_freq_{_acid}", label_visibility="collapsed",
                 )
-                _settings[_cname] = (_en, "biweekly" if _fr.startswith("격주") else "monthly")
+                _freq5 = {"매월": "monthly", "격주(2주)": "biweekly", "매월 + 격주(2주)": "both"}[_fr]
+                _settings[_cname] = (_en, _freq5)
             if st.form_submit_button("💾 저장", type="primary"):
                 _migrated = {}
                 for _k, _v in _auto_cfg.items():
@@ -1339,48 +1341,64 @@ if _is_admin:
     from utils.sched_dates import shift_to_weekday
     _now5 = datetime.now()
 
-    def _fmt5(d, hour):
-        return shift_to_weekday(d).strftime("%Y-%m-%d") + f" {hour:02d}:00"
+    def _bi_next_date(cfg):
+        _last = cfg.get("last_sent_date", "")
+        if not _last:
+            return None   # 첫 발송 대기
+        try:
+            return shift_to_weekday((datetime.strptime(_last, "%Y-%m-%d") + timedelta(days=14)).date())
+        except Exception:
+            return None
 
-    def _next_send(cfg):
-        """다음 발송 예정일시 문자열 계산 (주말이면 월요일로 보정)."""
-        hour = int(cfg.get("send_hour", 9))
-        if cfg.get("freq") == "biweekly":
-            _last = cfg.get("last_sent_date", "")
-            if _last:
-                try:
-                    nxt = (datetime.strptime(_last, "%Y-%m-%d") + timedelta(days=14)).date()
-                    return _fmt5(nxt, hour)
-                except Exception:
-                    pass
-            return "발송 시각 도달 시 (첫 발송 대기)"
-        # 매월
+    def _mon_next_date(cfg):
         day = int(cfg.get("send_day", 5))
         def _mk(y, m):
             return datetime(y, m, min(day, _cal5.monthrange(y, m)[1])).date()
         if cfg.get("last_sent_month") == _now5.strftime("%Y-%m"):
             ny, nm = (_now5.year + 1, 1) if _now5.month == 12 else (_now5.year, _now5.month + 1)
-            return _fmt5(_mk(ny, nm), hour)
-        this_send = _mk(_now5.year, _now5.month)
-        if _now5.date() <= shift_to_weekday(this_send):
-            return _fmt5(this_send, hour)
-        return "곧 발송 예정 (이번 달 미발송)"
+            return shift_to_weekday(_mk(ny, nm))
+        this = shift_to_weekday(_mk(_now5.year, _now5.month))
+        return this if this >= _now5.date() else shift_to_weekday(_now5.date())
+
+    def _next_send(cfg):
+        hour = int(cfg.get("send_hour", 9))
+        freq = cfg.get("freq", "monthly")
+        cands = []
+        if freq in ("biweekly", "both"):
+            d = _bi_next_date(cfg)
+            if d:
+                cands.append(d)
+        if freq in ("monthly", "both"):
+            cands.append(_mon_next_date(cfg))
+        if not cands:
+            return "발송 시각 도달 시 (첫 발송 대기)"
+        return min(cands).strftime("%Y-%m-%d") + f" {hour:02d}:00"
+
+    _FREQ_LBL = {"monthly": "매월", "biweekly": "격주(2주)", "both": "매월+격주"}
 
     _t5_on = []
     for _tc in _t5_clients:
         _tcid = _tc.get("id") or _tc.get("name", "")
-        _tcc  = (_t5_auto.get(_tcid)
-                 or _t5_auto.get(_tc.get("name", ""), {}))
+        _tcc  = (_t5_auto.get(_tcid) or _t5_auto.get(_tc.get("name", ""), {}))
         if _tcc.get("enabled"):
-            _is_bi = _tcc.get("freq") == "biweekly"
+            _freq = _tcc.get("freq", "monthly")
+            _hh   = _tcc.get("send_hour", 9)
+            _sd   = _tcc.get("send_day", 5)
+            if _freq == "both":
+                _sched_txt = f"매월 {_sd}일 + 14일마다 {_hh:02d}:00"
+                _last_txt  = f"월 {_tcc.get('last_sent_month','-') or '-'} / 격주 {_tcc.get('last_sent_date','-') or '-'}"
+            elif _freq == "biweekly":
+                _sched_txt = f"14일마다 {_hh:02d}:00"
+                _last_txt  = _tcc.get("last_sent_date", "-") or "-"
+            else:
+                _sched_txt = f"매월 {_sd}일 {_hh:02d}:00"
+                _last_txt  = _tcc.get("last_sent_month", "-") or "-"
             _t5_on.append({
-                "광고주":      _tc["name"],
-                "주기":        "격주(2주)" if _is_bi else "매월",
-                "발송 스케줄":  (f"14일마다 {_tcc.get('send_hour',9):02d}:00" if _is_bi
-                               else f"매월 {_tcc.get('send_day',5)}일 {_tcc.get('send_hour',9):02d}:00"),
+                "광고주":       _tc["name"],
+                "주기":         _FREQ_LBL.get(_freq, "매월"),
+                "발송 스케줄":   _sched_txt,
                 "다음 발송 예정": _next_send(_tcc),
-                "마지막 발송":  (_tcc.get("last_sent_date", "-") if _is_bi
-                               else _tcc.get("last_sent_month", "-")),
+                "마지막 발송":   _last_txt,
             })
     if _t5_on:
         import pandas as _pd5b
