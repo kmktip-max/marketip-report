@@ -295,11 +295,19 @@ def _save_schedule_data(data):
 def _send_one_report(client, since, until, period_key, history, smtp_cfg):
     from report_engine.naver_api import NaverAdAPI
     from report_engine.emailer import send_report
-    from report_engine.report_html import generate_html
 
     api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
     data = api.fetch_report(period=period_key, since=since, until=until)
-    html = generate_html(data, client["name"], now_kst().strftime("%Y-%m-%d"))
+    _rdate = now_kst().strftime("%Y-%m-%d")
+    # 자동 발송은 항상 V2 보고서로. 실패 시에만 V1 폴백.
+    try:
+        from report_engine.report_html_v2 import build_monthly_report_v2, fetch_v2_extra
+        _v2x = fetch_v2_extra(api, data["since"], data["until"])
+        html = build_monthly_report_v2(data, client["name"], _rdate, v2_extra=_v2x)
+    except Exception as _e:
+        from report_engine.report_html import generate_html
+        print(f"[보고서스케줄] V2 생성 실패 → V1 폴백: {client.get('name')} — {_e}")
+        html = generate_html(data, client["name"], _rdate)
     send_report(
         to_email=client["email"],
         client_name=client["name"],
