@@ -1354,11 +1354,12 @@ if _is_admin:
         day = int(cfg.get("send_day", 5))
         def _mk(y, m):
             return datetime(y, m, min(day, _cal5.monthrange(y, m)[1])).date()
-        if cfg.get("last_sent_month") == _now5.strftime("%Y-%m"):
-            ny, nm = (_now5.year + 1, 1) if _now5.month == 12 else (_now5.year, _now5.month + 1)
-            return shift_to_weekday(_mk(ny, nm))
         this = shift_to_weekday(_mk(_now5.year, _now5.month))
-        return this if this >= _now5.date() else shift_to_weekday(_now5.date())
+        # 이번 달 미발송 + 발송일 안 지났으면 이번 달, 아니면 다음 달
+        if cfg.get("last_sent_month") != _now5.strftime("%Y-%m") and this >= _now5.date():
+            return this
+        ny, nm = (_now5.year + 1, 1) if _now5.month == 12 else (_now5.year, _now5.month + 1)
+        return shift_to_weekday(_mk(ny, nm))
 
     def _next_send(cfg):
         hour = int(cfg.get("send_hour", 9))

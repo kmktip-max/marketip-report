@@ -414,42 +414,53 @@ def run_scheduled_reports():
         # ── 격주(2주마다) — 최근 14일 데이터 ───────────────────────
         if do_bi:
             _last = cfg.get("last_sent_date", "")
-            _base = now.date()
-            if _last:
+            if not _last:
+                # 최초 설정 → 즉시 발송하지 않고 오늘을 기준점으로 (다음 발송 14일 후)
+                cfg["last_sent_date"] = now.strftime("%Y-%m-%d")
+                changed = True
+                print(f"[보고서스케줄] 격주 최초설정 — 기준점만 등록(다음 발송 14일 후): {client.get('name')}")
+            else:
                 try:
                     _base = datetime.strptime(_last, "%Y-%m-%d").date() + timedelta(days=14)
                 except Exception:
-                    pass
-            if now.date() >= shift_to_weekday(_base):   # 주말이면 월요일로 밀림
-                until_d = now - timedelta(days=1)
-                since_d = until_d - timedelta(days=13)
-                since_s = since_d.strftime("%Y-%m-%d")
-                until_s = until_d.strftime("%Y-%m-%d")
-                print(f"[보고서스케줄] 격주발송: {client.get('name')} ({since_s}~{until_s})")
-                try:
-                    _send_one_report(client, since_s, until_s, "biweekly", history, smtp)
-                    cfg["last_sent_date"] = now.strftime("%Y-%m-%d")
-                    changed = True
-                except Exception as e:
-                    print(f"[보고서스케줄] 격주발송 실패: {client.get('name')} — {e}")
+                    _base = now.date()
+                if now.date() >= shift_to_weekday(_base):   # 주말이면 월요일로 밀림
+                    until_d = now - timedelta(days=1)
+                    since_d = until_d - timedelta(days=13)
+                    since_s = since_d.strftime("%Y-%m-%d")
+                    until_s = until_d.strftime("%Y-%m-%d")
+                    print(f"[보고서스케줄] 격주발송: {client.get('name')} ({since_s}~{until_s})")
+                    try:
+                        _send_one_report(client, since_s, until_s, "biweekly", history, smtp)
+                        cfg["last_sent_date"] = now.strftime("%Y-%m-%d")
+                        changed = True
+                    except Exception as e:
+                        print(f"[보고서스케줄] 격주발송 실패: {client.get('name')} — {e}")
 
         # ── 매월 — 전월 기준 보고서 ────────────────────────────────
         if do_monthly and cfg.get("last_sent_month") != cur_month:
             send_day = int(cfg.get("send_day", 5))
             _day = min(send_day, _cal.monthrange(now.year, now.month)[1])
-            if now.date() >= shift_to_weekday(datetime(now.year, now.month, _day).date()):
-                first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                until_d    = first_this - timedelta(days=1)
-                since_d    = until_d.replace(day=1)
-                since_s    = since_d.strftime("%Y-%m-%d")
-                until_s    = until_d.strftime("%Y-%m-%d")
-                print(f"[보고서스케줄] 자동월보: {client.get('name')} ({since_s}~{until_s})")
-                try:
-                    _send_one_report(client, since_s, until_s, "monthly", history, smtp)
+            _mtarget = shift_to_weekday(datetime(now.year, now.month, _day).date())
+            if now.date() >= _mtarget:
+                if not cfg.get("last_sent_month") and now.date() > _mtarget:
+                    # 최초 설정인데 이번 달 발송일이 이미 지남 → 건너뛰고 다음 달부터
                     cfg["last_sent_month"] = cur_month
                     changed = True
-                except Exception as e:
-                    print(f"[보고서스케줄] 자동월보 실패: {client.get('name')} — {e}")
+                    print(f"[보고서스케줄] 자동월보 최초설정 — 이번 달 발송일 지나 건너뜀(다음 달부터): {client.get('name')}")
+                else:
+                    first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                    until_d    = first_this - timedelta(days=1)
+                    since_d    = until_d.replace(day=1)
+                    since_s    = since_d.strftime("%Y-%m-%d")
+                    until_s    = until_d.strftime("%Y-%m-%d")
+                    print(f"[보고서스케줄] 자동월보: {client.get('name')} ({since_s}~{until_s})")
+                    try:
+                        _send_one_report(client, since_s, until_s, "monthly", history, smtp)
+                        cfg["last_sent_month"] = cur_month
+                        changed = True
+                    except Exception as e:
+                        print(f"[보고서스케줄] 자동월보 실패: {client.get('name')} — {e}")
 
     if changed:
         _save_schedule_data(sched)
