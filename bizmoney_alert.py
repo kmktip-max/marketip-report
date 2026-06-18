@@ -549,6 +549,15 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
     admin_phone = _secret("ADMIN_NOTIFY_PHONE", "010-2797-3164")
 
     def _send(alert_type: str, template_code: str, threshold: int):
+        # ── 심야/새벽 발송 차단 — KST 08:00~21:00 에만 발송 (새벽 카톡 방지) ──
+        # dry_run(테스트)이거나 BIZMONEY_IGNORE_QUIET=1 이면 무시.
+        if not dry_run and os.getenv("BIZMONEY_IGNORE_QUIET", "") != "1":
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            _hour = _dt.now(_tz(_td(hours=9))).hour
+            if not (8 <= _hour < 21):
+                actions.append({"type": alert_type, "status": "skipped",
+                                 "detail": f"심야/새벽 발송 보류({_hour}시 — 08~21시에만 발송)"})
+                return
         # 중복 체크는 광고주 단위 1일 1회 (수신자별로 중복 적용하지 않음 — 담당자 스킵 버그 수정)
         if _already_sent_today(history, cid, alert_type):
             actions.append({"type": alert_type, "status": "skipped",

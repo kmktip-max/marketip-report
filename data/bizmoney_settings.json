@@ -2,15 +2,57 @@
   {
     "customer_id": "2815366",
     "alert_enabled": true,
+    "first_alert_amount": 15000,
+    "second_alert_amount": 10000,
+    "first_alert_sent": true,
+    "second_alert_sent": true,
+    "advertiser_phone": "010-2797-3164",
+    "manager_name": "권혁우",
+    "manager_phone": "010-2797-3164",
+    "last_bizmoney_balance": 8129,
+    "last_checked_at": "2026-06-19T04:07:58.652700+09:00",
+    "memo": "마케팁"
+  },
+  {
+    "customer_id": "928704",
+    "alert_enabled": true,
+    "first_alert_amount": 20000,
+    "second_alert_amount": 0,
+    "first_alert_sent": false,
+    "second_alert_sent": false,
+    "advertiser_phone": "010-3399-5425",
+    "manager_name": "권혁우",
+    "manager_phone": "010-2797-3164",
+    "last_bizmoney_balance": 28913,
+    "last_checked_at": "2026-06-19T04:07:58.996425+09:00",
+    "memo": ""
+  },
+  {
+    "customer_id": "830109",
+    "alert_enabled": true,
+    "first_alert_amount": 2000,
+    "second_alert_amount": 0,
+    "first_alert_sent": false,
+    "second_alert_sent": false,
+    "advertiser_phone": "010-9057-4329",
+    "manager_name": "권혁우",
+    "manager_phone": "010-2797-3164",
+    "last_bizmoney_balance": 39961,
+    "last_checked_at": "2026-06-19T04:07:59.374402+09:00",
+    "memo": ""
+  },
+  {
+    "customer_id": "366052",
+    "alert_enabled": false,
     "first_alert_amount": 50000,
     "second_alert_amount": 0,
     "first_alert_sent": false,
     "second_alert_sent": false,
-    "advertiser_phone": "01027973164",
-    "manager_name": "권혁우",
-    "manager_phone": "01027973164",
-    "last_bizmoney_balance": 752,
-    "last_checked_at": "2026-05-27T13:22:08.628216+09:00",
-    "memo": "test"
+    "advertiser_phone": "010-7107-5777",
+    "manager_name": "",
+    "manager_phone": "",
+    "last_bizmoney_balance": 575805,
+    "last_checked_at": "2026-06-16T00:30:12.161405+09:00",
+    "memo": ""
   }
 ]

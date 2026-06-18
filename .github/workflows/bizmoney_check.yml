@@ -22,7 +22,7 @@ jobs:
           python-version: '3.11'
 
       - name: 패키지 설치
-        run: pip install requests
+        run: pip install requests python-dotenv supabase
 
       - name: 비즈머니 잔액 체크 및 알림 발송
         env:
@@ -30,5 +30,9 @@ jobs:
           SOLAPI_API_SECRET:     ${{ secrets.SOLAPI_API_SECRET }}
           SOLAPI_SENDER_ID:      ${{ secrets.SOLAPI_SENDER_ID }}
           SOLAPI_KAKAO_PF_ID:    ${{ secrets.SOLAPI_KAKAO_PF_ID }}
+          # 현재 설정·중복방지 상태를 Supabase에서 읽고/저장 (클라우드 상태 유지)
+          SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:          ${{ secrets.SUPABASE_KEY }}
+          ADMIN_NOTIFY_PHONE:    ${{ secrets.ADMIN_NOTIFY_PHONE }}
         run: |
           python scripts/check_bizmoney_alerts.py --send

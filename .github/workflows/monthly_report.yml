@@ -1,0 +1,41 @@
+name: 월간보고서 자동 정기발송
+
+on:
+  schedule:
+    # 매일 한국시간 09:00, 13:00, 17:00 실행 (UTC 00:00, 04:00, 08:00)
+    # 자동 정기발송은 주말 자동 스킵, 예약발송은 예약시각 지나면 발송
+    - cron: '0 0 * * *'
+    - cron: '0 4 * * *'
+    - cron: '0 8 * * *'
+  workflow_dispatch:  # 수동 실행 버튼
+
+jobs:
+  send-reports:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 패키지 설치
+        run: pip install requests python-dotenv supabase
+
+      - name: 월간보고서 예약/정기 발송
+        env:
+          SMTP_USER:        ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD:    ${{ secrets.SMTP_PASSWORD }}
+          SMTP_HOST:        ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:        ${{ secrets.SMTP_PORT }}
+          SUPABASE_URL:     ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:     ${{ secrets.SUPABASE_KEY }}
+          SOLAPI_API_KEY:     ${{ secrets.SOLAPI_API_KEY }}
+          SOLAPI_API_SECRET:  ${{ secrets.SOLAPI_API_SECRET }}
+          SOLAPI_SENDER_ID:   ${{ secrets.SOLAPI_SENDER_ID }}
+          SOLAPI_KAKAO_PF_ID: ${{ secrets.SOLAPI_KAKAO_PF_ID }}
+        run: |
+          python scripts/send_scheduled_reports.py

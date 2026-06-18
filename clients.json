@@ -1,1 +1,64 @@
-[]
+[
+  {
+    "id": "20260512074618",
+    "memo": "",
+    "name": "마케팁",
+    "email": "mktip@naver.com",
+    "phone": "010-2797-3164",
+    "api_key": "01000000000fb23661b448c245ec38f31a6c9d9049529a49b20822b080a49059b463f381b5",
+    "created_at": "2026-05-12",
+    "secret_key": "AQAAAAAPsjZhtEjCRew48xpsnZBJLcPoEQyUTp3wovN7mGfP7g==",
+    "customer_id": "2815366"
+  },
+  {
+    "id": "20260529054106",
+    "memo": "",
+    "name": "강산이엔지",
+    "email": "kangsan2100@naver.com",
+    "phone": "010-3399-5425",
+    "api_key": "010000000046238e8f22c95b8e7c4acca8a03944deeb101aaf19ac2ac443093d418cfe2fab",
+    "created_at": "2026-05-29",
+    "secret_key": "AQAAAABGI46PIslbjnxKzKigOUTeE43aNv46AYaBf69rgdyn0Q==",
+    "customer_id": "928704"
+  },
+  {
+    "id": "20260529080121",
+    "memo": "",
+    "name": "수헬렌",
+    "email": "dlsdl113@naver.com",
+    "phone": "010-9057-4329",
+    "api_key": "0100000000b1a84145e28ce6cd1149a6e4714a69ccbad8cd5c95b74ee34aa9f1b548a8c214",
+    "created_at": "2026-05-29",
+    "secret_key": "AQAAAACxqEFF4ozmzRFJpuRxSmnMRVs9NMrsjEy7NsrKqe2tBQ==",
+    "customer_id": "830109"
+  },
+  {
+    "id": "20260601084351",
+    "memo": "",
+    "name": "유니스토어",
+    "email": "forchefs@somangfnc.com",
+    "phone": "010-7107-5777",
+    "api_key": "0100000000af219fd27e4dd3f2bbe6e9d605fa96a60696ad252e9d1dfdbcb07e377ccf42c4",
+    "created_at": "2026-06-01",
+    "secret_key": "AQAAAACvIZ/Sfk3T8rvm6dYF+pamGRxVG3QjboalqQG+XFTYVQ==",
+    "customer_id": "366052"
+  },
+  {
+    "id": "20260619035312",
+    "memo": "구글 전용 (G&G 557-105-1142)",
+    "name": "법무법인재현",
+    "email": "mktip@naver.com",
+    "owner": null,
+    "phone": "",
+    "api_key": "",
+    "approved": true,
+    "created_at": "2026-06-19",
+    "secret_key": "",
+    "customer_id": "",
+    "google_enabled": true,
+    "google_customer_id": "5571051142",
+    "google_account_name": "법무법인재현",
+    "google_report_email": "mktip@naver.com",
+    "google_login_customer_id": ""
+  }
+]
