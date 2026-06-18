@@ -106,27 +106,40 @@ def feature_access_guard(perm_key: str, label: str = "이 기능"):
     user  = st.session_state.get("auth_username", "")
     if perm_key in perms or is_payback_applicant(user):
         return
+    # 기능별 초대형 마이크로카피 ('벽'이 아니라 '문')
+    _MICROCOPY = {
+        "monthly_report": "매주 보고서가 메일·카톡으로 자동 도착",
+        "bizmoney_alert": "잔액 부족 전에 미리 알림 받기",
+        "bid_assist":     "목표 순위를 자동으로 지키기",
+        "fraud_detect":   "지금 새는 부정클릭 차단 시작",
+        "ad_analysis":    "광고 구조 진단부터 개선안까지",
+        "rebate":         "네이버·카카오·당근 광고비 페이백",
+        "keyword_tool":   "경쟁사 기반 고효율 키워드 발굴",
+        "creative_tool":  "AI가 광고 제목·설명 자동 생성",
+        "landing_analysis": "랜딩페이지 진단 및 개선안 제안",
+    }
+    _hook = _MICROCOPY.get(perm_key, f"{label} 기능")
     st.markdown(
         f"""
-<div style="background:#FFF7ED;border:1.5px solid #FED7AA;border-radius:16px;
+<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:16px;
             padding:30px 32px;text-align:center;margin-top:10px;">
   <div style="font-size:34px;margin-bottom:8px;">🔒</div>
-  <div style="font-size:18px;font-weight:800;color:#9A3412;margin-bottom:8px;">
-    {label}은(는) 광고비 페이백 신청 대상자만 이용할 수 있습니다.
+  <div style="font-size:18px;font-weight:800;color:#1E3A8A;margin-bottom:8px;">
+    {_hook}
   </div>
-  <div style="font-size:14px;color:#7C2D12;line-height:1.7;">
-    광고비 페이백을 신청하시면 이 기능이 자동으로 열립니다.<br>
-    이미 신청하셨다면 담당자에게 문의해 주세요.
+  <div style="font-size:14px;color:#1D4ED8;line-height:1.7;">
+    이 기능은 운영 계정에 연결되면 바로 열려요.<br>
+    지금 연결하면 <b>무료로 바로 시작</b>할 수 있어요.
   </div>
 </div>
 """,
         unsafe_allow_html=True,
     )
-    if st.button("💸  광고비 페이백 신청하러 가기", type="primary"):
+    if st.button("🚀  무료로 OPEN 하기", type="primary"):
         try:
             st.switch_page("pages/페이백신청.py")
         except Exception:
-            st.info("왼쪽 메뉴 '광고비 페이백신청'에서 신청하실 수 있습니다.")
+            st.info("왼쪽 메뉴 '광고비 페이백신청'에서 연결하실 수 있습니다.")
     st.stop()
 
 def _secret():

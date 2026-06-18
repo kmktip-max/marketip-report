@@ -510,7 +510,7 @@ with t_extract:
                                     key="ex_industry")
         ex_hints = st.text_area(
             "키워드 요청 (선택)",
-            placeholder="예:\n- 이혼 관련 키워드 뽑아줘\n- 양육권 키워드 위주로\n- 광고대행 문의형 키워드\n- 피부과 시술 관련 키워드\n- 강남 지역 병원 키워드\n- 검색량 높은 변호사 키워드\n\n비워도 URL 기반으로 자동 분석됩니다.",
+            placeholder="예:\n- 우리 업종 핵심 키워드 뽑아줘\n- 경쟁사 키워드 위주로\n- 지역+업종 키워드\n- 문의형 키워드\n- 검색량 높은 키워드\n\n비워도 URL 기반으로 자동 분석됩니다.",
             height=160, key="ex_hints",
         )
 

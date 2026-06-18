@@ -111,4 +111,4 @@ padding:18px 22px;margin-bottom:28px;">
     )
 
     st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
-    st.caption("클릭 시 전용 GPT 소재 생성 페이지로 새 창 이동합니다.")
+    st.caption("전용 분석 페이지에서 결과를 확인합니다.")

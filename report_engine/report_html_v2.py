@@ -920,8 +920,8 @@ def build_monthly_report_v2(
             f'<table style="width:100%;border-collapse:collapse;font-size:11px;">'
             f'{_thead}<tbody>{total_row}{product_rows}</tbody></table>'
             f'<div style="font-size:10px;color:#666;padding:4px 8px;line-height:1.8;">'
-            f'※ Naver 검색광고 계정 전체 (파워링크·쇼핑검색·브랜드검색 등) | GFA/성과형DA: 별도 API 미연동'
-            f'<br>※ 전환매출액/ROAS는 API 수집값과 관리자 화면 값이 불일치하여 자동 보고서에서는 제외했습니다.'
+            f'※ Naver 검색광고 기준 집계 (파워링크·쇼핑검색·브랜드검색 등)'
+            f'<br>※ 전환매출·ROAS는 별도 정밀 리포트로 제공됩니다.'
             f'</div>'
         )
 
@@ -1213,7 +1213,7 @@ def build_monthly_report_v2(
             )
     _tab_buttons += (
         '<span style="font-size:10px;color:#999;margin-left:8px;">'
-        'GFA/성과형DA: 별도 API 미연동</span>'
+        '검색광고 기준 집계</span>'
     )
 
     _filter_section_html = (
@@ -1515,7 +1515,7 @@ canvas{{width:100%!important;max-width:100%!important;}}
       </tbody>
     </table>
     <div style='font-size:10px;color:#999;margin-top:6px;'>
-      ※ 전환매출액/ROAS는 API 수집값과 관리자 화면 값이 불일치하여 제외했습니다.
+      ※ 전환매출·ROAS는 별도 정밀 리포트로 제공됩니다.
       전환 성과는 전환수와 전환당비용 기준으로 확인해 주세요.
     </div>
   </div>

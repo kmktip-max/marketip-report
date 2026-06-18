@@ -188,7 +188,7 @@ section[data-testid="stSidebar"] { display: none !important; }
   <div style="padding:10px 12px;background:#F8FAFC;border-radius:6px;
               border-left:3px solid #6366F1;">
     <div style="font-size:11px;color:#475569;line-height:1.5;">
-      🔒 모든 서비스는 <b>로그인 후</b> 이용 가능합니다.
+      로그인하면 <b>무료 진단</b>부터 바로 시작할 수 있어요.
     </div>
   </div>
 </div>
@@ -472,9 +472,9 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
 
         # 광고구조 컨설팅
         _grp1 = [
-            ("bizmoney_alert",   "pages/비즈머니알림.py",      "💰  비즈머니 알림"),
             ("ad_analysis",      "pages/광고분석컨설팅.py",    "📈  광고분석컨설팅"),
             ("monthly_report",   "pages/월간보고서.py",        "📩  월간보고서"),
+            ("bizmoney_alert",   "pages/비즈머니알림.py",      "💰  비즈머니 알림"),
         ]
         _grp1_visible = [(k, p, t) for k, p, t in _grp1
                          if k in ("bizmoney_alert", "monthly_report") or k in auth_perms]
