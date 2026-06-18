@@ -336,7 +336,13 @@ def run_scheduled_reports():
         return
 
     sched   = _load_schedule_data()
-    clients = _rpt_load(_CLIENTS_PATH, [])
+    # 광고주 목록은 Supabase(공유 DB)에서 — 웹에서 새로 등록한 광고주도 자동 포함.
+    # (streamlit 없는 클라우드에서도 동작. 실패 시 로컬 clients.json 폴백)
+    try:
+        from report_engine.storage import load_clients as _load_clients_sb
+        clients = _load_clients_sb() or _rpt_load(_CLIENTS_PATH, [])
+    except Exception:
+        clients = _rpt_load(_CLIENTS_PATH, [])
     history = _rpt_load(_HISTORY_PATH, [])
 
     # ID와 이름 양쪽으로 조회 가능하게 맵 구성

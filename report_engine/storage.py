@@ -11,7 +11,12 @@ import json
 import os
 from datetime import datetime
 
-import streamlit as st
+# streamlit은 선택적 — GitHub Actions/cron 등 streamlit 없는 환경에서도
+# Supabase를 환경변수로 읽어 동작하게 한다. (st=None이면 getattr 기본값 {} 사용)
+try:
+    import streamlit as st
+except Exception:
+    st = None
 
 _SB_CLIENTS_KEY  = "report_clients"
 _SB_MIGRATED_KEY = "report_clients_migrated"   # Sheets→Supabase 1회 이관 완료 표식
