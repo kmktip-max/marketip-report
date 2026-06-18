@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+import csv
 import json
 import os
 import hashlib
@@ -32,6 +33,54 @@ _TOKEN_SECRET = "marketip_internal_2024"
 
 def _make_token(user_id, name):
     return hashlib.md5(f"{user_id}{name}{_TOKEN_SECRET}".encode()).hexdigest()[:20]
+
+
+def _robust_text_to_df(content, prefer_tab=False):
+    """CSV/붙여넣기 텍스트를 표로 변환.
+
+    네이버 보고서는 1행이 '제목 행'(예: "전환 보고서(...),1157581")인 경우가 많고,
+    캠페인·키워드 값에 쉼표가 들어가기도 한다. 단순히 구분자 개수를 세면
+    따옴표 안 쉼표 때문에 데이터 행을 헤더로 오인하므로, csv 모듈로 따옴표를
+    인식(quote-aware)해 필드 수가 가장 많은 첫 행을 실제 헤더로 잡는다.
+    컬럼 순서가 바뀌어도 이후 이름 기반 매칭으로 인식한다.
+    """
+    lines = [l for l in content.splitlines() if l.strip()]
+    if not lines:
+        raise ValueError("내용이 비어 있습니다.")
+
+    def _field_counts(rows, delim):
+        # 빈 칸을 제외한 '실제 값이 든 필드 수'로 센다.
+        # (네이버 제목 행은 "전환 보고서(...)",,,, 처럼 빈 쉼표로 패딩돼
+        #  단순 필드 수로는 진짜 헤더와 같아지므로 비어있지 않은 값만 카운트)
+        try:
+            return [sum(1 for cell in r if str(cell).strip())
+                    for r in csv.reader(rows, delimiter=delim)]
+        except Exception:
+            return [sum(1 for cell in row.split(delim) if cell.strip())
+                    for row in rows]
+
+    # 구분자 감지: 따옴표 무시하고 필드 수가 가장 많아지는 구분자 선택
+    seps = ["\t", ",", ";"] if prefer_tab else [",", "\t", ";"]
+    sep, best_fields = seps[0], 0
+    for s in seps:
+        mx = max(_field_counts(lines[:10], s), default=0)
+        if mx > best_fields:
+            best_fields, sep = mx, s
+
+    # 실제 헤더 행: quote-aware 필드 수가 가장 많은 첫 번째 행
+    field_counts = _field_counts(lines, sep)
+    max_cols = max(field_counts, default=0)
+    header_idx = next((i for i, c in enumerate(field_counts) if c == max_cols), 0)
+
+    df = pd.read_csv(
+        io.StringIO("\n".join(lines)),
+        sep=sep,
+        skiprows=header_idx,
+        header=0,
+        on_bad_lines="skip",
+    )
+    df.columns = [str(c).strip() for c in df.columns]
+    return df.dropna(how="all").reset_index(drop=True)
 
 # ────────────────────────────────────────────
 # 페이지 설정
@@ -2862,9 +2911,10 @@ def show_results(adf, api_key, model):
                                        marker_line_width=2,
                                        marker_line_color="rgba(255,255,255,0.65)",
                                        opacity=0.92, width=0.45)
+                    # x축에 이미 매체명(PC/모바일·검색/콘텐츠)이 표시되므로
+                    # 범례는 중복 + 제목과 겹쳐 글씨를 가린다 → 숨김
                     _fig.update_layout(**{**CL,
-                                          "showlegend": True,
-                                          "legend": dict(orientation="h", y=1.15, font=dict(size=11)),
+                                          "showlegend": False,
                                           "dragmode": False, "height": 340})
                     return _fig
 
@@ -3276,23 +3326,36 @@ def show_results(adf, api_key, model):
     honey_df = tbl[tbl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
     waste_df  = tbl[tbl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
 
+    # 화면 표시 행수 제한 — 수만 행을 브라우저로 통째 전송하면
+    # 렌더링 중 프론트엔드가 죽는다("Oh no"). 전체 데이터는 엑셀 다운로드로 제공.
+    _TABLE_CAP = 1000
+
+    def _show_table(_df, _empty_msg=None, _empty_kind="info"):
+        if _df.empty:
+            if _empty_msg:
+                (st.success if _empty_kind == "success" else st.info)(_empty_msg)
+            return
+        _view = _df[disp].reset_index(drop=True)
+        if len(_view) > _TABLE_CAP:
+            st.caption(f"표시 행이 많아 상위 {_TABLE_CAP:,}개만 표시합니다 "
+                       f"(전체 {len(_view):,}개 — 아래 엑셀 다운로드로 전체 확인 가능).")
+            _view = _view.head(_TABLE_CAP)
+        st.dataframe(_view, use_container_width=True, height=360)
+
+    # 전체 탭: 광고비 큰 순으로 정렬해 상위만 노출 (의미 있는 키워드 우선)
+    tbl_all = tbl.sort_values("광고비", ascending=False) if "광고비" in tbl.columns else tbl
+
     tab_all, tab_honey, tab_waste = st.tabs([
         f"📋 전체 키워드 ({len(tbl)}개)",
         f"🍯 꿀통 키워드 ({len(honey_df)}개)",
         f"🚨 낭비 키워드 ({len(waste_df)}개)",
     ])
     with tab_all:
-        st.dataframe(tbl[disp].reset_index(drop=True), use_container_width=True, height=360)
+        _show_table(tbl_all)
     with tab_honey:
-        if honey_df.empty:
-            st.info("꿀통 키워드가 없습니다.")
-        else:
-            st.dataframe(honey_df[disp].reset_index(drop=True), use_container_width=True, height=360)
+        _show_table(honey_df, "꿀통 키워드가 없습니다.")
     with tab_waste:
-        if waste_df.empty:
-            st.success("낭비 키워드가 없습니다.")
-        else:
-            st.dataframe(waste_df[disp].reset_index(drop=True), use_container_width=True, height=360)
+        _show_table(waste_df, "낭비 키워드가 없습니다.", "success")
 
     # ── AI 채팅 (다운로드 바로 위) ──
     st.markdown("""
@@ -3372,10 +3435,14 @@ def show_results(adf, api_key, model):
                 with st.spinner("마케팁 AI가 분석 중입니다..."):
                     try:
                         result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
-                        if _ai_limited:
-                            add_monthly_cost(_ai_uid, _cost)
+                        # 응답을 먼저 저장 — 비용 집계 실패가 메시지 유실로 이어지지 않게
                         st.session_state.chat_messages.append({"role": "assistant", "content": result})
                         st.session_state.chat_api.append({"role": "assistant", "content": result})
+                        if _ai_limited:
+                            try:
+                                add_monthly_cost(_ai_uid, _cost)
+                            except Exception:
+                                pass
                         st.rerun()
                     except Exception as e:
                         st.error(f"AI 분석 오류: {e}")
@@ -3437,10 +3504,14 @@ def show_results(adf, api_key, model):
                 with st.spinner("AI 분석 중..."):
                     try:
                         result, _cost = run_ai(system_context + st.session_state.chat_api, api_key, model)
-                        if _ai_limited:
-                            add_monthly_cost(_ai_uid, _cost)
+                        # 응답을 먼저 저장 — 비용 집계 실패가 메시지 유실로 이어지지 않게
                         st.session_state.chat_messages.append({"role": "assistant", "content": result})
                         st.session_state.chat_api.append({"role": "assistant", "content": result})
+                        if _ai_limited:
+                            try:
+                                add_monthly_cost(_ai_uid, _cost)
+                            except Exception:
+                                pass
                         st.rerun()
                     except Exception as e:
                         st.error(f"AI 오류: {e}")
@@ -3482,6 +3553,11 @@ def show_results(adf, api_key, model):
             from openpyxl.formatting.rule import ColorScaleRule
             from openpyxl.utils import get_column_letter
 
+            # 대용량 시트(수만 행)는 셀 단위 줄무늬/테두리를 생략한다.
+            # 셀당 PatternFill/Border 객체 생성이 84만 셀에서 40초+ 걸리기 때문.
+            # 헤더 스타일·열너비·색상 조건부서식(범위 룰, 셀수 무관하게 저렴)은 항상 적용.
+            _ZEBRA_MAX = 2000
+
             def _style_ws(ws, df, color_cols=None):
                 hdr_fill = PatternFill("solid", fgColor="0D47A1")
                 hdr_font = Font(color="FFFFFF", bold=True, size=10)
@@ -3491,13 +3567,16 @@ def show_results(adf, api_key, model):
                     cell.fill = hdr_fill; cell.font = hdr_font
                     cell.alignment = Alignment(horizontal="center", vertical="center")
                     cell.border = bdr
-                for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), 2):
-                    bg = "F8F9FA" if ri % 2 == 0 else "FFFFFF"
-                    for cell in row:
-                        cell.fill = PatternFill("solid", fgColor=bg)
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-                        cell.border = bdr
-                for col in ws.columns:
+                if ws.max_row <= _ZEBRA_MAX:
+                    for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), 2):
+                        bg = "F8F9FA" if ri % 2 == 0 else "FFFFFF"
+                        for cell in row:
+                            cell.fill = PatternFill("solid", fgColor=bg)
+                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                            cell.border = bdr
+                # 열 너비: 헤더 + 상위 200행만 샘플링 (전체 순회 방지)
+                _w_max = min(ws.max_row, 201)
+                for col in ws.iter_cols(min_row=1, max_row=_w_max):
                     ml = max((len(str(c.value or "")) for c in col), default=8)
                     ws.column_dimensions[get_column_letter(col[0].column)].width = min(ml + 4, 30)
                 if color_cols and df is not None:
@@ -3513,40 +3592,61 @@ def show_results(adf, api_key, model):
                             if ws.max_row > 2:
                                 ws.conditional_formatting.add(f"{cl}2:{cl}{ws.max_row}", rule)
 
-            _seg_dfs_dl = st.session_state.get("segment_dfs", {})
-            _tbl_dl = adf.copy()
-            _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
-            _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"] if c in _tbl_dl.columns]
-            _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
-            _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
-            _sheets = [
-                ("전체 키워드",  _tbl_dl[_dcols], ["CTR","전환율","ROAS"]),
-                ("꿀통 키워드",  _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
-                ("낭비 키워드",  _waste_dl[_dcols] if not _waste_dl.empty else pd.DataFrame(columns=_dcols), ["광고비","CTR"]),
-            ]
-            _sc_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
-                       "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
-                       "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
-            _xbuf = io.BytesIO()
-            with pd.ExcelWriter(_xbuf, engine="openpyxl") as _xw:
-                for sn, sdf, cc in _sheets:
-                    sdf.to_excel(_xw, sheet_name=sn[:31], index=False)
-                    _style_ws(_xw.sheets[sn[:31]], sdf, color_cols=cc)
-                for st_type, st_sdf in _seg_dfs_dl.items():
-                    if st_sdf is None or st_sdf.empty:
-                        continue
-                    cn = st_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
-                    st_sdf.to_excel(_xw, sheet_name=cn, index=False)
-                    cc2 = next((v for k,v in _sc_map.items() if k in cn), [])
-                    _style_ws(_xw.sheets[cn], st_sdf, color_cols=cc2)
-            st.download_button(
-                "📥 엑셀 다운로드 (멀티시트)",
-                data=_xbuf.getvalue(),
-                file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="dl_excel_btn",
-            )
+            def _build_xlsx():
+                """전체 데이터(행 제한 없음)로 멀티시트 엑셀 생성."""
+                _seg_dfs_dl = st.session_state.get("segment_dfs", {})
+                _dcols = [c for c in ["키워드","노출수","클릭수","CTR","광고비","전환수","전환율","CPA","ROAS","상태"]
+                          if c in adf.columns or c == "상태"]
+                _tbl_dl = adf.copy()
+                _tbl_dl["상태"] = _tbl_dl.apply(make_badge, axis=1)
+                _dcols = [c for c in _dcols if c in _tbl_dl.columns]
+                _all_dl   = _tbl_dl.sort_values("광고비", ascending=False) if "광고비" in _tbl_dl.columns else _tbl_dl
+                _honey_dl = _tbl_dl[_tbl_dl.apply(is_honey, axis=1)].sort_values("ROAS", ascending=False, na_position="last")
+                _waste_dl = _tbl_dl[_tbl_dl.apply(is_waste, axis=1)].sort_values("광고비", ascending=False)
+                _sheets = [
+                    ("전체 키워드",  _all_dl[_dcols], ["CTR","전환율","ROAS"]),
+                    ("꿀통 키워드",  _honey_dl[_dcols] if not _honey_dl.empty else pd.DataFrame(columns=_dcols), ["ROAS","전환율"]),
+                    ("낭비 키워드",  _waste_dl[_dcols] if not _waste_dl.empty else pd.DataFrame(columns=_dcols), ["광고비","CTR"]),
+                ]
+                _sc_map = {"요일":["ROAS","전환수","광고비"],"시간":["ROAS","전환수","광고비"],
+                           "연령":["ROAS","전환수","광고비"],"기기":["ROAS","전환수","광고비"],
+                           "성별":["ROAS","전환수","광고비"],"지역":["ROAS","전환수","광고비"]}
+                _xbuf = io.BytesIO()
+                with pd.ExcelWriter(_xbuf, engine="openpyxl") as _xw:
+                    for sn, sdf, cc in _sheets:
+                        sdf.to_excel(_xw, sheet_name=sn[:31], index=False)
+                        _style_ws(_xw.sheets[sn[:31]], sdf, color_cols=cc)
+                    for st_type, st_sdf in _seg_dfs_dl.items():
+                        if st_sdf is None or st_sdf.empty:
+                            continue
+                        cn = st_type.replace("📅","").replace("⏰","").replace("👤","").replace("📱","").replace("📍","").replace("👫","").strip()[:31]
+                        st_sdf.to_excel(_xw, sheet_name=cn, index=False)
+                        cc2 = next((v for k,v in _sc_map.items() if k in cn), [])
+                        _style_ws(_xw.sheets[cn], st_sdf, color_cols=cc2)
+                return _xbuf.getvalue()
+
+            # 데이터 해시로 캐시 — PDF처럼 버튼 클릭 시에만 '전체 데이터' 엑셀 생성.
+            # (매 렌더링 재생성 방지 + 평소 페이지는 빠르게 유지)
+            _seg_n = len(st.session_state.get("segment_dfs", {}))
+            _xlsx_key = f"{st.session_state.get('last_df_hash','')}|seg{_seg_n}"
+            _xlsx_ready = (st.session_state.get("_xlsx_bytes")
+                           and st.session_state.get("_xlsx_key") == _xlsx_key)
+            if _xlsx_ready:
+                st.download_button(
+                    "📥 엑셀 다운로드 (전체 데이터·멀티시트)",
+                    data=st.session_state["_xlsx_bytes"],
+                    file_name=f"마케팁_광고분석_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True, type="primary", key="dl_excel_btn",
+                )
+                st.caption(f"전체 {len(adf):,}행 모두 포함 (필터 없음).")
+            else:
+                if st.button("📄 엑셀 보고서 생성 (전체 데이터)", use_container_width=True,
+                             type="primary", key="gen_excel_btn"):
+                    with st.spinner("엑셀 생성 중... (전체 데이터, 행 수에 따라 5~20초)"):
+                        st.session_state["_xlsx_bytes"] = _build_xlsx()
+                        st.session_state["_xlsx_key"]   = _xlsx_key
+                        st.rerun()
         except Exception as _xl_err:
             st.button("📥 엑셀 다운로드 (오류)", disabled=True,
                       use_container_width=True, key="dl_excel_disabled")
@@ -3764,30 +3864,7 @@ def main():
         if content is None:
             content = raw_bytes.decode("utf-8", errors="replace")
 
-        lines = [l for l in content.splitlines() if l.strip()]
-
-        # 구분자 감지 (가장 많은 컬럼을 가진 구분자 선택)
-        sep = ","
-        for s in [",", "\t", ";"]:
-            counts = [line.count(s) for line in lines[:5]]
-            if max(counts, default=0) > 1:
-                sep = s
-                break
-
-        # 실제 헤더 행: 구분자 개수가 가장 많은 첫 번째 행
-        col_counts = [line.count(sep) for line in lines]
-        max_cols = max(col_counts, default=0)
-        header_idx = next((i for i, c in enumerate(col_counts) if c == max_cols), 0)
-
-        df = pd.read_csv(
-            io.StringIO(content),
-            sep=sep,
-            skiprows=header_idx,
-            header=0,
-            on_bad_lines="skip",
-        )
-        df.columns = [str(c).strip() for c in df.columns]
-        return df.dropna(how="all").reset_index(drop=True)
+        return _robust_text_to_df(content)
 
     def detect_file_type(df):
         cols = " ".join(df.columns.astype(str).str.lower())
@@ -3872,11 +3949,8 @@ def main():
                               key="paste_area")
         if pasted.strip():
             try:
-                # 구분자 자동 감지 (탭 우선, 없으면 콤마)
-                sep = "\t" if pasted.count("\t") > pasted.count(",") else ","
-                df_preview = pd.read_csv(io.StringIO(pasted), sep=sep, on_bad_lines="skip")
-                df_preview.columns = [str(c).strip() for c in df_preview.columns]
-                df_preview = df_preview.dropna(how="all").reset_index(drop=True)
+                # 제목 행/따옴표 안 쉼표까지 처리하는 견고한 파서 사용 (탭 우선)
+                df_preview = _robust_text_to_df(pasted, prefer_tab=True)
 
                 ftype = detect_file_type(df_preview)
                 st.success(f"{ftype} · {len(df_preview):,}행 · {len(df_preview.columns)}컬럼 인식됨")
@@ -3918,11 +3992,17 @@ def main():
         none = "(없음)"
         cols = df.columns.tolist()
 
+        norm = {col: col.replace(" ", "").lower() for col in cols}
+
         def find(keywords, exclude=None):
-            for col in cols:
-                c = col.replace(" ", "").lower()
-                for kw in keywords:
-                    if kw.replace(" ", "").lower() in c:
+            # 키워드 우선순위로 탐색 — 앞쪽 키워드일수록 더 정확한 매칭.
+            # (예: 매체는 'PC/모바일 매체'보다 '검색/콘텐츠 매체'를 먼저 잡도록)
+            # 컬럼 순서가 바뀌어도 이름만 맞으면 인식한다.
+            for kw in keywords:
+                k = kw.replace(" ", "").lower()
+                for col in cols:
+                    c = norm[col]
+                    if k in c:
                         if exclude and any(ex.replace(" ", "").lower() in c for ex in exclude):
                             continue
                         return col
