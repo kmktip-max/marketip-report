@@ -255,7 +255,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                     st.error("아이디 또는 비밀번호를 확인해주세요.")
 
         with tab_client:
-            c_id = st.text_input("아이디", key="lc_id", placeholder="발급받은 아이디")
+            c_id = st.text_input("아이디(이메일)", key="lc_id",
+                                 placeholder="가입한 이메일 또는 아이디")
             c_pw = st.text_input("비밀번호", type="password", key="lc_pw",
                                  placeholder="발급받은 비밀번호")
             if st.button("로그인", type="primary", use_container_width=True, key="lc_btn"):
@@ -287,27 +288,29 @@ section[data-testid="stSidebar"] { display: none !important; }
         with tab_join:
             st.caption("가입 신청 후 관리자 승인을 받으면 서비스를 이용할 수 있습니다.")
             with st.form("join_form", clear_on_submit=True):
+                # 순서: 성함 → 전화번호 → 이메일 → 비밀번호. 아이디 = 이메일.
                 j_contact = st.text_input("성함 *",     placeholder="예: 홍길동")
-                j_id      = st.text_input("아이디 *",   placeholder="영문+숫자 조합")
-                j_pw1     = st.text_input("비밀번호 *", type="password")
-                j_email   = st.text_input("이메일 *",   placeholder="example@email.com")
                 j_phone   = st.text_input("전화번호 *", placeholder="010-0000-0000")
+                j_email   = st.text_input("이메일 *",   placeholder="example@email.com",
+                                          help="이메일이 로그인 아이디로 사용됩니다.")
+                j_pw1     = st.text_input("비밀번호 *", type="password")
+                j_id      = j_email   # 아이디 = 이메일
 
                 if st.form_submit_button("가입 신청", type="primary",
                                          use_container_width=True):
                     if not j_contact.strip():
                         st.error("성함을 입력해주세요.")
-                    elif not j_id.strip():
-                        st.error("아이디를 입력해주세요.")
-                    elif not j_pw1:
-                        st.error("비밀번호를 입력해주세요.")
-                    elif not j_email.strip():
-                        st.error("이메일을 입력해주세요.")
                     elif not j_phone.strip():
                         st.error("전화번호를 입력해주세요.")
+                    elif not j_email.strip():
+                        st.error("이메일을 입력해주세요.")
+                    elif "@" not in j_email:
+                        st.error("올바른 이메일 주소를 입력해주세요.")
+                    elif not j_pw1:
+                        st.error("비밀번호를 입력해주세요.")
                     else:
                         ok, msg = register_pending(
-                            j_contact, j_id, j_pw1, j_contact,
+                            j_contact, j_email.strip(), j_pw1, j_contact,
                             phone=j_phone, email=j_email,
                         )
                         if ok:
