@@ -47,6 +47,19 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════════════════
 # 로그인 / 회원가입 화면
 # ══════════════════════════════════════════════════════════════════════════════
+def _smtp_creds():
+    """SMTP 자격증명 — st.secrets(배포) 우선, 환경변수(로컬) 폴백."""
+    import os as _os
+    def g(k, d=""):
+        try:
+            v = st.secrets.get(k, "")
+        except Exception:
+            v = ""
+        return v or _os.getenv(k, d)
+    return (g("SMTP_USER"), g("SMTP_PASSWORD"),
+            g("SMTP_HOST", "smtp.naver.com"), g("SMTP_PORT", "465"))
+
+
 def _login_page():
     st.markdown("""
 <style>
@@ -287,39 +300,80 @@ section[data-testid="stSidebar"] { display: none !important; }
 
         with tab_join:
             st.caption("가입 신청 후 관리자 승인을 받으면 서비스를 이용할 수 있습니다.")
-            with st.form("join_form", clear_on_submit=True):
-                # 순서: 성함 → 전화번호 → 이메일 → 비밀번호. 아이디 = 이메일.
-                j_contact = st.text_input("성함 *",     placeholder="예: 홍길동")
-                j_phone   = st.text_input("전화번호 *", placeholder="010-0000-0000")
-                j_email   = st.text_input("이메일 *",   placeholder="example@email.com",
-                                          help="이메일이 로그인 아이디로 사용됩니다.")
-                j_pw1     = st.text_input("비밀번호 *", type="password")
-                j_id      = j_email   # 아이디 = 이메일
+            # 순서: 성함 → 전화번호 → 이메일(인증) → 비밀번호. 아이디 = 이메일.
+            # st.form 미사용(인증코드 발송/확인 버튼이 중간에 필요하므로 일반 위젯)
+            j_contact = st.text_input("성함 *", key="j_contact", placeholder="예: 홍길동")
+            j_phone   = st.text_input("전화번호 *", key="j_phone", placeholder="010-0000-0000")
+            j_email   = st.text_input("이메일 * (로그인 아이디)", key="j_email",
+                                      placeholder="example@email.com")
+            _em = j_email.strip()
+            _verified = bool(_em) and st.session_state.get("_ev_verified_email") == _em
 
-                if st.form_submit_button("가입 신청", type="primary",
-                                         use_container_width=True):
-                    if not j_contact.strip():
-                        st.error("성함을 입력해주세요.")
-                    elif not j_phone.strip():
-                        st.error("전화번호를 입력해주세요.")
-                    elif not j_email.strip():
-                        st.error("이메일을 입력해주세요.")
-                    elif "@" not in j_email:
-                        st.error("올바른 이메일 주소를 입력해주세요.")
-                    elif not j_pw1:
-                        st.error("비밀번호를 입력해주세요.")
+            evc1, evc2 = st.columns([1, 1])
+            with evc1:
+                if st.button("📧 인증코드 받기", key="ev_send",
+                             use_container_width=True, disabled=_verified):
+                    if not _em or "@" not in _em:
+                        st.error("올바른 이메일을 입력하세요.")
                     else:
-                        ok, msg = register_pending(
-                            j_contact, j_email.strip(), j_pw1, j_contact,
-                            phone=j_phone, email=j_email,
+                        import random, time as _t
+                        _code = f"{random.randint(0, 999999):06d}"
+                        try:
+                            from report_engine.emailer import send_verification_email
+                            su, sp, sh, spo = _smtp_creds()
+                            send_verification_email(_em, _code, su, sp, sh, spo)
+                            st.session_state["_ev_code"]  = _code
+                            st.session_state["_ev_email"] = _em
+                            st.session_state["_ev_time"]  = _t.time()
+                            st.session_state.pop("_ev_verified_email", None)
+                            st.success(f"{_em} 로 인증코드를 보냈습니다. 메일함을 확인하세요. (10분 유효)")
+                        except Exception as _e:
+                            st.error(f"메일 발송 실패: {_e}")
+            with evc2:
+                _vcode_in = st.text_input("인증코드 6자리", key="j_vcode",
+                                          placeholder="이메일로 받은 코드", disabled=_verified)
+
+            if _verified:
+                st.success("✅ 이메일 인증 완료")
+            elif st.session_state.get("_ev_code"):
+                if st.button("✅ 코드 확인", key="ev_verify"):
+                    import time as _t2
+                    if (st.session_state.get("_ev_email") == _em
+                            and _vcode_in.strip() == st.session_state.get("_ev_code")
+                            and _t2.time() - st.session_state.get("_ev_time", 0) < 600):
+                        st.session_state["_ev_verified_email"] = _em
+                        st.success("✅ 이메일 인증 완료")
+                        st.rerun()
+                    else:
+                        st.error("인증코드가 일치하지 않거나 만료(10분)됐습니다. 다시 받아주세요.")
+
+            j_pw1 = st.text_input("비밀번호 *", type="password", key="j_pw1")
+
+            if st.button("가입 신청", type="primary",
+                         use_container_width=True, key="join_submit"):
+                if not j_contact.strip():
+                    st.error("성함을 입력해주세요.")
+                elif not j_phone.strip():
+                    st.error("전화번호를 입력해주세요.")
+                elif not _em or "@" not in _em:
+                    st.error("올바른 이메일을 입력해주세요.")
+                elif st.session_state.get("_ev_verified_email") != _em:
+                    st.error("이메일 인증을 먼저 완료해주세요. (인증코드 받기 → 코드 확인)")
+                elif not j_pw1:
+                    st.error("비밀번호를 입력해주세요.")
+                else:
+                    ok, msg = register_pending(
+                        j_contact, _em, j_pw1, j_contact, phone=j_phone, email=_em,
+                    )
+                    if ok:
+                        st.success(
+                            "✅ 가입 신청이 완료됐습니다.\n\n"
+                            "관리자 승인 후 로그인 탭에서 접속하세요."
                         )
-                        if ok:
-                            st.success(
-                                "✅ 가입 신청이 완료됐습니다.\n\n"
-                                "관리자 승인 후 로그인 탭에서 접속하세요."
-                            )
-                        else:
-                            st.error(msg)
+                        for _k in ("_ev_code", "_ev_email", "_ev_time", "_ev_verified_email"):
+                            st.session_state.pop(_k, None)
+                    else:
+                        st.error(msg)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 세션 복원

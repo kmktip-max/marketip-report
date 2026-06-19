@@ -52,3 +52,33 @@ admarketip | {user}"""
     with smtplib.SMTP_SSL(host, port, local_hostname="localhost", timeout=30) as smtp:
         smtp.login(user, password)
         smtp.sendmail(user, to_email, msg.as_string())
+
+
+def send_verification_email(to_email, code,
+                            smtp_user=None, smtp_password=None,
+                            smtp_host=None, smtp_port=None):
+    """가입 이메일 인증코드 발송 (6자리)."""
+    user     = smtp_user or SMTP_USER
+    password = smtp_password or SMTP_PASSWORD
+    host     = smtp_host or SMTP_HOST
+    port     = int(smtp_port or SMTP_PORT)
+    if not user or not password:
+        raise RuntimeError("SMTP 설정(SMTP_USER/SMTP_PASSWORD)이 없습니다.")
+
+    subject = "[마케팁] 이메일 인증코드"
+    body = (
+        "안녕하세요, 마케팁입니다.\n\n"
+        f"가입 이메일 인증코드는 [ {code} ] 입니다.\n"
+        "가입 화면 인증코드 입력칸에 위 6자리를 입력해 주세요. (10분간 유효)\n\n"
+        "본 메일을 요청하지 않으셨다면 무시하셔도 됩니다.\n\n"
+        "마케팁"
+    )
+    msg = MIMEMultipart()
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"]    = user
+    msg["To"]      = to_email
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    with smtplib.SMTP_SSL(host, port, local_hostname="localhost", timeout=30) as smtp:
+        smtp.login(user, password)
+        smtp.sendmail(user, to_email, msg.as_string())
