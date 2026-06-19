@@ -226,10 +226,11 @@ section[data-testid="stSidebar"] { display: none !important; }
 </div>
 """, unsafe_allow_html=True)
 
-        tab_admin, tab_client, tab_join = st.tabs([
-            "🔑  관리자 로그인",
+        # 광고주 우선 — 관리자 로그인은 맨 뒤
+        tab_client, tab_join, tab_admin = st.tabs([
             "🏢  광고주 로그인",
             "📝  광고주 가입 신청",
+            "🔑  관리자 로그인",
         ])
 
         with tab_admin:
