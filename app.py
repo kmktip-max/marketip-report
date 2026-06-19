@@ -277,7 +277,8 @@ section[data-testid="stSidebar"] { display: none !important; }
                 j_contact = st.text_input("성함 *",     placeholder="예: 홍길동")
                 j_id      = st.text_input("아이디 *",   placeholder="영문+숫자 조합")
                 j_pw1     = st.text_input("비밀번호 *", type="password")
-                j_phone   = st.text_input("이메일 *",   placeholder="example@email.com")
+                j_email   = st.text_input("이메일 *",   placeholder="example@email.com")
+                j_phone   = st.text_input("전화번호 *", placeholder="010-0000-0000")
 
                 if st.form_submit_button("가입 신청", type="primary",
                                          use_container_width=True):
@@ -287,11 +288,14 @@ section[data-testid="stSidebar"] { display: none !important; }
                         st.error("아이디를 입력해주세요.")
                     elif not j_pw1:
                         st.error("비밀번호를 입력해주세요.")
-                    elif not j_phone.strip():
+                    elif not j_email.strip():
                         st.error("이메일을 입력해주세요.")
+                    elif not j_phone.strip():
+                        st.error("전화번호를 입력해주세요.")
                     else:
                         ok, msg = register_pending(
-                            j_contact, j_id, j_pw1, j_contact, j_phone
+                            j_contact, j_id, j_pw1, j_contact,
+                            phone=j_phone, email=j_email,
                         )
                         if ok:
                             st.success(

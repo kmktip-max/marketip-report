@@ -212,7 +212,7 @@ def verify_client(username, password):
             return acc
     return None
 
-def register_pending(business_name, username, password, contact_name="", phone=""):
+def register_pending(business_name, username, password, contact_name="", phone="", email=""):
     """광고주 자가 가입 — 승인 대기 상태로 저장"""
     accounts = load_accounts()
     if any(a.get("username") == username for a in accounts):
@@ -224,6 +224,7 @@ def register_pending(business_name, username, password, contact_name="", phone="
         "username":      username.strip(),
         "contact_name":  contact_name.strip(),
         "phone":         phone.strip(),
+        "email":         email.strip(),
         "password_hash": _hash(password),
         "is_active":     False,
         "approved":      False,
