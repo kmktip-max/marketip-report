@@ -64,7 +64,7 @@ section[data-testid="stSidebar"] { display: none !important; }
     # ── 카카오톡 채널 상담 창구 (로그인 화면 플로팅 버튼) ──────────────────
     st.markdown("""
 <a href="https://pf.kakao.com/_wMLIn" target="_blank" rel="noopener noreferrer"
-   style="position:fixed;right:22px;bottom:22px;z-index:99999;
+   style="position:fixed;right:22px;bottom:78px;z-index:99999;
           display:flex;align-items:center;gap:8px;background:#FEE500;color:#191919;
           padding:13px 20px;border-radius:30px;font-weight:800;font-size:15px;
           text-decoration:none;box-shadow:0 6px 18px rgba(0,0,0,0.22);
