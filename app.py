@@ -532,54 +532,13 @@ div[data-testid="stSidebarContent"] [data-testid="stPageLink"]:has(a[href*="%ED%
 # 카카오 문의 플로팅 버튼 (모든 페이지 공통)
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
-<style>
-.kakao-float {
-    position: fixed;
-    bottom: 88px;
-    right: 28px;
-    z-index: 99999;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    text-decoration: none;
-    cursor: pointer;
-    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.22));
-    transition: transform 0.15s ease;
-}
-.kakao-float:hover { transform: scale(1.08); }
-.kakao-float-circle {
-    width: 56px;
-    height: 56px;
-    background: #FEE500;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.kakao-float-circle svg {
-    width: 30px;
-    height: 30px;
-}
-.kakao-float-label {
-    background: #3C1E1E;
-    color: #FEE500;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 0 0 6px 6px;
-    letter-spacing: 0.5px;
-    margin-top: -2px;
-}
-</style>
-<a class="kakao-float" href="https://pf.kakao.com/_wMLIn" target="_blank" title="카카오 문의">
-  <div class="kakao-float-circle">
-    <!-- 카카오톡 말풍선 아이콘 -->
-    <svg viewBox="0 0 24 24" fill="#3C1E1E" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 3C6.477 3 2 6.582 2 11c0 2.709 1.534 5.105 3.898 6.618L4.5 21l4.197-2.173A11.76 11.76 0 0 0 12 19c5.523 0 10-3.582 10-8s-4.477-8-10-8z"/>
-    </svg>
-  </div>
-  <span class="kakao-float-label">문의</span>
+<a href="https://pf.kakao.com/_wMLIn" target="_blank" rel="noopener noreferrer"
+   style="position:fixed;right:22px;bottom:78px;z-index:99999;
+          display:flex;align-items:center;gap:8px;background:#FEE500;color:#191919;
+          padding:13px 20px;border-radius:30px;font-weight:800;font-size:15px;
+          text-decoration:none;box-shadow:0 6px 18px rgba(0,0,0,0.22);
+          font-family:'Pretendard',-apple-system,sans-serif;">
+  <span style="font-size:18px;line-height:1;">💬</span> 카카오톡 상담
 </a>
 """, unsafe_allow_html=True)
 
