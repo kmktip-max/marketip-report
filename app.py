@@ -307,12 +307,15 @@ section[data-testid="stSidebar"] { display: none !important; }
             j_email   = st.text_input("이메일 * (로그인 아이디)", key="j_email",
                                       placeholder="example@email.com")
             _em = j_email.strip()
-            _verified = bool(_em) and st.session_state.get("_ev_verified_email") == _em
+            _verified  = bool(_em) and st.session_state.get("_ev_verified_email") == _em
+            _code_sent = bool(st.session_state.get("_ev_code")) and st.session_state.get("_ev_email") == _em
 
-            evc1, evc2 = st.columns([1, 1])
-            with evc1:
-                if st.button("📧 인증코드 받기", key="ev_send",
-                             use_container_width=True, disabled=_verified):
+            # ── 이메일 인증 (세로 정렬, 단계별 표시) ──
+            if _verified:
+                st.success("✅ 이메일 인증 완료")
+            else:
+                if st.button("📧 인증코드 다시 받기" if _code_sent else "📧 인증코드 받기",
+                             key="ev_send", use_container_width=True):
                     if not _em or "@" not in _em:
                         st.error("올바른 이메일을 입력하세요.")
                     else:
@@ -326,26 +329,22 @@ section[data-testid="stSidebar"] { display: none !important; }
                             st.session_state["_ev_email"] = _em
                             st.session_state["_ev_time"]  = _t.time()
                             st.session_state.pop("_ev_verified_email", None)
-                            st.success(f"{_em} 로 인증코드를 보냈습니다. 메일함을 확인하세요. (10분 유효)")
+                            st.rerun()
                         except Exception as _e:
                             st.error(f"메일 발송 실패: {_e}")
-            with evc2:
-                _vcode_in = st.text_input("인증코드 6자리", key="j_vcode",
-                                          placeholder="이메일로 받은 코드", disabled=_verified)
 
-            if _verified:
-                st.success("✅ 이메일 인증 완료")
-            elif st.session_state.get("_ev_code"):
-                if st.button("✅ 코드 확인", key="ev_verify"):
-                    import time as _t2
-                    if (st.session_state.get("_ev_email") == _em
-                            and _vcode_in.strip() == st.session_state.get("_ev_code")
-                            and _t2.time() - st.session_state.get("_ev_time", 0) < 600):
-                        st.session_state["_ev_verified_email"] = _em
-                        st.success("✅ 이메일 인증 완료")
-                        st.rerun()
-                    else:
-                        st.error("인증코드가 일치하지 않거나 만료(10분)됐습니다. 다시 받아주세요.")
+                if _code_sent:
+                    st.caption(f"📩 {_em} 로 인증코드를 보냈습니다. 메일함을 확인하세요. (10분 유효)")
+                    _vcode_in = st.text_input("인증코드 6자리", key="j_vcode",
+                                              placeholder="이메일로 받은 6자리 코드")
+                    if st.button("✅ 코드 확인", key="ev_verify", use_container_width=True):
+                        import time as _t2
+                        if (_vcode_in.strip() == st.session_state.get("_ev_code")
+                                and _t2.time() - st.session_state.get("_ev_time", 0) < 600):
+                            st.session_state["_ev_verified_email"] = _em
+                            st.rerun()
+                        else:
+                            st.error("인증코드가 일치하지 않거나 만료(10분)됐습니다. 다시 받아주세요.")
 
             j_pw1 = st.text_input("비밀번호 *", type="password", key="j_pw1")
 
