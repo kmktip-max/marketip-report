@@ -249,7 +249,14 @@ st.markdown("""
         padding: 0.9rem 1.1rem;
     }
     [data-testid="metric-container"] label { color: #6c757d !important; font-size: 0.82rem !important; font-weight: 600 !important; }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] { color: #0D47A1 !important; font-size: 1.3rem !important; font-weight: 800 !important; }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] { color: #0D47A1 !important; font-size: 1.05rem !important; font-weight: 800 !important; }
+    /* 긴 숫자(₩12,700,000 등)가 5열 카드에서 잘리지 않도록 말줄임 해제 + 자동 줄바꿈 허용 */
+    [data-testid="metric-container"] [data-testid="stMetricValue"],
+    [data-testid="metric-container"] [data-testid="stMetricValue"] > div {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
 
     /* ── 데이터프레임 ── */
     .stDataFrame { border-radius: 10px; overflow: hidden; border: 1.5px solid #e9ecef; }
