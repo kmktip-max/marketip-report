@@ -9,3 +9,10 @@ config.json
 scripts/.refresh_token.txt
 client_secret*.json
 scripts/_gen_refresh_tmp.py
+
+# 파일명에 비밀값이 들어간 파일 차단 (API 키/시크릿/토큰)
+*API_KEY=*.env
+*SECRET=*.env
+*TOKEN=*.env
+*.key
+*.secret
