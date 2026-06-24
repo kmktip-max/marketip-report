@@ -19,3 +19,6 @@ gspread>=6.0.0
 google-auth>=2.0.0
 fastapi>=0.100.0
 uvicorn>=0.20.0
+
+# Google Ads API (구글 월간보고서)
+google-ads>=24.0.0

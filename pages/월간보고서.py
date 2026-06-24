@@ -18,6 +18,46 @@ from report_engine.report_data_adapters import normalize_naver_data
 from report_engine.storage import load_clients, save_clients
 
 
+# ── 매체 분기 ──────────────────────────────────────────────────────────
+def _norm_cid(raw: str) -> str:
+    """Customer ID 정규화 — 하이픈 등 제거하고 숫자만 남김. (123-456-7890 → 1234567890)"""
+    import re as _re
+    return _re.sub(r"\D", "", (raw or "").strip())
+
+
+def _media_key(platform: str) -> str:
+    """플랫폼 표시값(네이버/구글/카카오/당근 또는 영문) → 표준 키."""
+    p = (platform or "").strip().lower()
+    if p in ("네이버", "naver"):  return "naver"
+    if p in ("구글", "google"):   return "google"
+    if p in ("카카오", "kakao"):  return "kakao"
+    if p in ("당근", "daangn", "당근마켓"): return "daangn"
+    return p or "naver"
+
+
+# 매체 키 → 실행 함수명(디버그 표시용). 네이버 외에는 별도 수집 경로.
+_MEDIA_FUNC = {
+    "naver":  "NaverAdAPI.fetch_report",
+    "google": "fetch_google_monthly_report_data",
+    "kakao":  "(미구현)",
+    "daangn": "(미구현)",
+}
+
+
+def _render_media_debug(media: str, client_name: str, customer_id: str,
+                        report_type: str, since: str, until: str,
+                        debug_mode: bool = True):
+    """보고서 추출 전 디버그 정보 표시 (debug_mode=False면 숨김)."""
+    if not debug_mode:
+        return
+    st.caption(
+        f"🐛 디버그 — 선택 매체: **{media}** · 실행 함수: "
+        f"`{_MEDIA_FUNC.get(media, '?')}` · 광고주: {client_name} · "
+        f"Customer ID: {customer_id or '-'} · 형식: {report_type} · "
+        f"조회: {since} ~ {until}"
+    )
+
+
 # ── 유틸 ──────────────────────────────────────────────────────────────
 def _fmt_phone(raw: str) -> str:
     """숫자만 추출 후 한국 휴대폰 번호 형식(010-XXXX-XXXX)으로 변환."""
@@ -178,6 +218,14 @@ st.title("📊 광고 보고서 관리")
 if not _is_admin:
     st.caption(f"👤 {_username} 님 | 본인 데이터만 열람 가능합니다.")
 
+# 디버그 표시 토글 — 관리자만, 기본 OFF. 광고주에겐 항상 숨김.
+_show_debug = False
+if _is_admin:
+    _show_debug = st.checkbox(
+        "🐛 디버그 정보 표시 (관리자 전용)", value=False, key="mr_show_debug",
+        help="선택 매체·실행 함수 등 기술정보 표시. 광고주 화면엔 항상 숨겨집니다.",
+    )
+
 with st.expander("📖 이용안내 — 처음 사용하시는 분께", expanded=False):
     st.markdown("""
 **순서대로 따라하면 바로 시작할 수 있어요!**
@@ -210,7 +258,7 @@ tab1, tab2, tab_auto, tab3, tab4, tab5 = st.tabs(["👥 광고주 관리", "📋
 # ═══════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader("새 광고주 추가")
-    with st.form("add_client", clear_on_submit=True):
+    with st.form("add_client", clear_on_submit=False):
         fc1, fc2 = st.columns(2)
         with fc1:
             name       = st.text_input("광고주명 *")
@@ -223,20 +271,48 @@ with tab1:
             secret_key = st.text_input("Secret Key *", type="password")
             memo       = st.text_input("메모")
 
+        with st.expander("🟦 구글 광고 계정 (선택 — 구글 월간보고서용)"):
+            g_enabled  = st.checkbox("구글 보고서 사용", value=False, key="add_g_enabled")
+            ga1, ga2 = st.columns(2)
+            with ga1:
+                g_cid      = st.text_input("Google Customer ID",
+                                           placeholder="123-456-7890 또는 1234567890",
+                                           help="하이픈 있어도/없어도 됨 — 저장 시 숫자만 남김")
+                g_login    = st.text_input("Login Customer ID (MCC)",
+                                           placeholder="비우면 환경변수 GOOGLE_ADS_LOGIN_CUSTOMER_ID 사용")
+            with ga2:
+                g_acct     = st.text_input("구글 광고 계정명")
+                g_email    = st.text_input("구글 보고서 수신 이메일")
+
         if st.form_submit_button("➕ 추가", type="primary"):
-            if not all([name, cust_id, email, api_key, secret_key]):
-                st.error("* 항목을 모두 입력해주세요.")
+            # 네이버 정보 또는 구글 정보 중 하나만 있어도 추가 가능 (구글 전용 광고주 허용)
+            _has_naver  = all([cust_id.strip(), api_key.strip(), secret_key.strip()])
+            _has_google = bool(g_enabled and g_cid.strip())
+            _eff_email  = email.strip() or g_email.strip()
+            if not name.strip():
+                st.error("광고주명을 입력해주세요.")
+            elif not (_has_naver or _has_google):
+                st.error("네이버 API(Customer ID·API Access License·Secret Key) 또는 "
+                         "구글 계정(구글 보고서 사용 체크 + Google Customer ID) 중 하나는 입력해야 합니다.")
+            elif not _eff_email:
+                st.error("수신 이메일(네이버 또는 구글)을 입력해주세요.")
             else:
                 _all_c = load_clients()
                 _all_c.append({
                     "id":           datetime.now().strftime("%Y%m%d%H%M%S"),
                     "name":         name.strip(),
                     "customer_id":  cust_id.strip(),
-                    "email":        email.strip(),
+                    "email":        _eff_email,
                     "phone":        _fmt_phone(phone),
                     "api_key":      api_key.strip(),
                     "secret_key":   secret_key.strip(),
                     "memo":         memo,
+                    # ── 구글 광고 계정 (기본값으로 기존 네이버 데이터 무손상) ──
+                    "google_customer_id":       _norm_cid(g_cid),
+                    "google_login_customer_id": _norm_cid(g_login),
+                    "google_account_name":      g_acct.strip(),
+                    "google_report_email":      g_email.strip(),
+                    "google_enabled":           bool(g_enabled),
                     "created_at":   datetime.now().strftime("%Y-%m-%d"),
                     "owner":        _username,
                     "approved":     _is_admin,  # 관리자 추가 시 즉시 승인
@@ -310,6 +386,34 @@ with tab1:
                         save_clients([c for c in _all_c2 if c["id"] != cl["id"]])
                         st.rerun()
 
+                # ── 구글 계정 정보 + 연결 테스트 ──
+                _g_cid_cur = cl.get("google_customer_id", "")
+                if _g_cid_cur or cl.get("google_enabled"):
+                    gtc1, gtc2 = st.columns([4, 1])
+                    gtc1.caption(
+                        f"🟦 구글: {cl.get('google_account_name','-') or '-'} | "
+                        f"Customer ID: {_g_cid_cur or '❌ 미등록'} | "
+                        f"수신: {cl.get('google_report_email','-') or '-'} | "
+                        f"사용: {'✅' if cl.get('google_enabled') else '⛔'}"
+                    )
+                    if gtc2.button("🟦 구글 테스트", key=f"gtest_{i}"):
+                        if not _g_cid_cur:
+                            st.error("Google Customer ID가 등록되어 있지 않습니다.")
+                        else:
+                            from report_engine.google_ads_api import test_google_connection
+                            with st.spinner("구글 API 확인 중..."):
+                                _gt = test_google_connection(
+                                    _g_cid_cur, cl.get("google_login_customer_id", ""))
+                            if _gt["ok"]:
+                                _gs = _gt["summary"]
+                                st.success(
+                                    f"✅ 구글 API 연결 성공 — Customer ID {_gs['customer_id']} | "
+                                    f"캠페인 {_gs['campaigns']}개 | 최근 30일 노출 {_gs['impressions']:,} | "
+                                    f"클릭 {_gs['clicks']:,} | 비용 ₩{_gs['cost']:,.0f}"
+                                )
+                            else:
+                                st.error(f"❌ 구글 API 연결 실패 — {_gt['message']}")
+
                 if st.session_state.get(f"editing_{i}"):
                     st.divider()
                     with st.form(key=f"edit_form_{i}"):
@@ -325,6 +429,27 @@ with tab1:
                                                      type="password", key=f"e_secret_{i}")
                             e_memo   = st.text_input("메모", value=cl.get("memo", ""),            key=f"e_memo_{i}")
 
+                        with st.expander("🟦 구글 광고 계정"):
+                            e_g_enabled = st.checkbox("구글 보고서 사용",
+                                                      value=bool(cl.get("google_enabled", False)),
+                                                      key=f"e_g_enabled_{i}")
+                            eg1, eg2 = st.columns(2)
+                            with eg1:
+                                e_g_cid   = st.text_input("Google Customer ID",
+                                                          value=cl.get("google_customer_id", ""),
+                                                          placeholder="123-456-7890",
+                                                          key=f"e_g_cid_{i}")
+                                e_g_login = st.text_input("Login Customer ID (MCC)",
+                                                          value=cl.get("google_login_customer_id", ""),
+                                                          key=f"e_g_login_{i}")
+                            with eg2:
+                                e_g_acct  = st.text_input("구글 광고 계정명",
+                                                          value=cl.get("google_account_name", ""),
+                                                          key=f"e_g_acct_{i}")
+                                e_g_email = st.text_input("구글 보고서 수신 이메일",
+                                                          value=cl.get("google_report_email", ""),
+                                                          key=f"e_g_email_{i}")
+
                         esub1, esub2 = st.columns(2)
                         _save   = esub1.form_submit_button("💾 저장", type="primary", use_container_width=True)
                         _cancel = esub2.form_submit_button("취소", use_container_width=True)
@@ -339,6 +464,11 @@ with tab1:
                                         "api_key":    e_apikey.strip(),
                                         "secret_key": e_secret.strip(),
                                         "memo":       e_memo,
+                                        "google_customer_id":       _norm_cid(e_g_cid),
+                                        "google_login_customer_id": _norm_cid(e_g_login),
+                                        "google_account_name":      e_g_acct.strip(),
+                                        "google_report_email":      e_g_email.strip(),
+                                        "google_enabled":           bool(e_g_enabled),
                                     })
                             save_clients(_all_c2)
                             st.session_state.pop(f"editing_{i}", None)
@@ -388,14 +518,9 @@ with tab2:
 
         _fmt_col, _plt_col = st.columns([1, 1])
         with _fmt_col:
-            report_fmt_single = st.radio(
-                "보고서 형식",
-                ["기존 보고서", "월간보고서 V2"],
-                index=0,
-                horizontal=True,
-                key="report_fmt_single",
-                help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
-            )
+            # 보고서 형식은 V2 표준 단일 (V1 '기존 보고서'는 선택지에서 제거)
+            report_fmt_single = "월간보고서 V2"
+            st.caption("📋 보고서 형식: **월간보고서 V2** (표준)")
         with _plt_col:
             platform_single = st.radio(
                 "플랫폼",
@@ -403,7 +528,7 @@ with tab2:
                 index=0,
                 horizontal=True,
                 key="platform_single",
-                help="현재 네이버만 지원. 구글/카카오/당근은 준비 중.",
+                help="네이버·구글 지원. 카카오/당근은 준비 중.",
             ) if report_fmt_single == "월간보고서 V2" else "네이버"
 
         if not selected_names:
@@ -415,6 +540,19 @@ with tab2:
             if st.button("🔍 보고서 데이터 수집 및 미리보기 생성", type="secondary", use_container_width=True):
                 import pandas as pd
                 results = []
+                # ── 선택 매체 명시 (항상 보이게) ──
+                _sel_plt   = (platform_single if report_fmt_single == "월간보고서 V2" else "네이버")
+                _sel_media = _media_key(_sel_plt)
+                # 광고주에겐 매체명만, 실행 함수 등 기술정보는 디버그 ON일 때만
+                if _show_debug:
+                    st.info(f"📡 **{_sel_plt}** 보고서로 추출합니다 — 실행 함수 `{_MEDIA_FUNC.get(_sel_media, '?')}`")
+                else:
+                    st.info(f"📡 **{_sel_plt}** 보고서로 추출합니다")
+                if _sel_media in ("kakao", "daangn"):
+                    st.warning(
+                        "카카오 월간보고서 API 연동은 아직 구현되지 않았습니다. "
+                        "현재는 네이버/구글 보고서만 지원합니다. (네이버 데이터로 대체하지 않음)"
+                    )
                 for client in selected_clients:
                     with st.status(
                         f"📡 {client['name']} 데이터 수집 중...",
@@ -426,36 +564,93 @@ with tab2:
                             _el.write(msg)
 
                         try:
-                            api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
-                            data = api.fetch_report(period_key, on_step=_on_step)
-                            _rpt_date = datetime.now().strftime("%Y-%m-%d")
-                            if report_fmt_single == "월간보고서 V2":
-                                _plt = st.session_state.get("platform_single", "네이버")
-                                if _plt != "네이버":
-                                    st.warning(f"⚠️ {_plt} 플랫폼은 준비 중입니다. 네이버로 대체합니다.")
-                                _on_step("V2: 주차별/전월 데이터 수집 중 (5회 API 호출)...")
-                                _v2e = fetch_v2_extra(api, data["since"], data["until"])
-                                # debug 출력
-                                for _dbg in _v2e.get("debug", []):
-                                    _on_step(f"  ↳ {_dbg}")
-                                _norm = normalize_naver_data(data, _v2e)
-                                html = build_monthly_report_v2(
-                                    data, client["name"], _rpt_date, v2_extra=_v2e
+                            _plt   = (platform_single if report_fmt_single == "월간보고서 V2" else "네이버")
+                            _media = _media_key(_plt)
+                            _since, _until = _get_period_range(period_key)
+                            # 디버그(실행 함수·기술정보)는 관리자가 토글 ON일 때만
+                            _render_media_debug(_media, client["name"],
+                                                client.get("customer_id", ""),
+                                                report_fmt_single, _since, _until,
+                                                debug_mode=_show_debug)
+
+                            # ── 네이버 (기존 로직 그대로 유지) ──
+                            if _media == "naver":
+                                api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
+                                data = api.fetch_report(period_key, on_step=_on_step)
+                                _rpt_date = datetime.now().strftime("%Y-%m-%d")
+                                if report_fmt_single == "월간보고서 V2":
+                                    _on_step("V2: 주차별/전월 데이터 수집 중 (5회 API 호출)...")
+                                    _v2e = fetch_v2_extra(api, data["since"], data["until"])
+                                    for _dbg in _v2e.get("debug", []):
+                                        _on_step(f"  ↳ {_dbg}")
+                                    _norm = normalize_naver_data(data, _v2e)
+                                    html = build_monthly_report_v2(
+                                        data, client["name"], _rpt_date, v2_extra=_v2e
+                                    )
+                                else:
+                                    html = generate_html(data, client["name"], _rpt_date)
+                                results.append({"client": client, "data": data, "html": html, "status": "ok"})
+                                sm = data.get("summary", {})
+                                _col_status.update(
+                                    label=(
+                                        f"✅ {client['name']} 완료 — "
+                                        f"캠페인 {data['total_campaigns']}개 | "
+                                        f"키워드 {data['total_keywords']}개 | "
+                                        f"클릭 {sm.get('clicks', 0):,}회"
+                                    ),
+                                    state="complete", expanded=False,
                                 )
+
+                            # ── 구글 (네이버 API 절대 호출 안 함) ──
+                            elif _media == "google":
+                                from report_engine.google_ads_api import (
+                                    fetch_google_monthly_report_data, build_google_report_html,
+                                )
+                                _g_cid = _norm_cid(client.get("google_customer_id", ""))
+                                if not _g_cid:
+                                    # Customer ID 없음 → 네이버 customer_id 대체 금지, API 미호출
+                                    results.append({"client": client,
+                                                    "error": "구글 Customer ID 미등록", "status": "error"})
+                                    _col_status.update(label=f"⚠️ {client['name']} — 구글 ID 미등록", state="error")
+                                    st.warning(
+                                        f"🟦 {client['name']}: 이 광고주는 Google Ads Customer ID가 "
+                                        "등록되어 있지 않습니다. 광고주 관리에서 먼저 등록해주세요."
+                                    )
+                                    continue
+                                # 기술정보(Customer ID·Login CID·함수명)는 디버그 ON일 때만
+                                if _show_debug:
+                                    st.caption(
+                                        f"🟦 구글 보고서 — 광고주: **{client['name']}** · "
+                                        f"Google Customer ID: `{_g_cid}` · "
+                                        f"Login CID: `{client.get('google_login_customer_id','') or '(환경변수)'}` · "
+                                        f"수신: {client.get('google_report_email','') or client.get('email','')} · "
+                                        f"기간: {_since} ~ {_until} · 함수: `fetch_google_monthly_report_data`"
+                                    )
+                                _gres = fetch_google_monthly_report_data(
+                                    _g_cid, _since, _until,
+                                    advertiser_name=client["name"],
+                                    login_customer_id=client.get("google_login_customer_id", ""),
+                                    on_step=_on_step,
+                                )
+                                if not _gres.get("ok"):
+                                    # 미설정/미구현 — 네이버 데이터로 대체 금지, 안내만
+                                    results.append({"client": client, "error": _gres.get("message", ""), "status": "error"})
+                                    _col_status.update(label=f"⚠️ {client['name']} — 구글 미설정", state="error")
+                                    st.warning(f"🟦 {client['name']} · 구글 보고서: {_gres.get('message', '')}")
+                                else:
+                                    _rpt_date = datetime.now().strftime("%Y-%m-%d")
+                                    html = build_google_report_html(_gres["report_data"], _rpt_date)
+                                    results.append({"client": client, "data": _gres["report_data"], "html": html, "status": "ok"})
+                                    _col_status.update(label=f"✅ {client['name']} (구글) 완료", state="complete", expanded=False)
+
+                            # ── 카카오/당근 (미구현, 네이버 실행 금지) ──
                             else:
-                                html = generate_html(data, client["name"], _rpt_date)
-                            results.append({"client": client, "data": data, "html": html, "status": "ok"})
-                            sm = data.get("summary", {})
-                            _col_status.update(
-                                label=(
-                                    f"✅ {client['name']} 완료 — "
-                                    f"캠페인 {data['total_campaigns']}개 | "
-                                    f"키워드 {data['total_keywords']}개 | "
-                                    f"클릭 {sm.get('clicks', 0):,}회"
-                                ),
-                                state="complete",
-                                expanded=False,
-                            )
+                                results.append({"client": client, "error": "카카오/당근 미구현", "status": "error"})
+                                _col_status.update(label=f"⚠️ {client['name']} — 미구현 매체", state="error")
+                                st.warning(
+                                    "카카오 월간보고서 API 연동은 아직 구현되지 않았습니다. "
+                                    "현재는 네이버/구글 보고서만 지원합니다."
+                                )
                         except Exception as e:
                             results.append({"client": client, "error": str(e), "status": "error"})
                             _col_status.update(
@@ -713,20 +908,15 @@ with tab2:
             period_key = "weekly" if "주간" in period_label else "monthly"
             since, until = _get_period_range(period_key)
             st.caption(f"분석 기간: **{since} ~ {until}**")
-            report_fmt_bulk = st.radio(
-                "보고서 형식",
-                ["기존 보고서", "월간보고서 V2"],
-                index=0,
-                horizontal=True,
-                key="report_fmt_bulk",
-                help="V2: 일자별/주차별/키워드 TOP10 분석 보고서 (기존 보고서가 기본값)",
-            )
+            # 보고서 형식은 V2 표준 단일 (V1 '기존 보고서'는 선택지에서 제거)
+            report_fmt_bulk = "월간보고서 V2"
+            st.caption("📋 보고서 형식: **월간보고서 V2** (표준)")
             if report_fmt_bulk == "월간보고서 V2":
                 platform_bulk = st.radio(
                     "플랫폼",
                     ["네이버", "구글", "카카오", "당근"],
                     index=0, horizontal=True, key="platform_bulk",
-                    help="현재 네이버만 지원",
+                    help="네이버·구글 지원. 카카오/당근 준비 중.",
                 )
         with bc2:
             dedup_on = st.checkbox(
@@ -863,6 +1053,75 @@ with tab2:
                         continue
 
                     try:
+                        _plt_b   = (st.session_state.get("platform_bulk", "네이버")
+                                    if report_fmt_bulk == "월간보고서 V2" else "네이버")
+                        _media_b = _media_key(_plt_b)
+
+                        # ── 구글: 네이버 API 절대 호출 안 함 (미설정 시 네이버 대체 금지) ──
+                        if _media_b == "google":
+                            from report_engine.google_ads_api import (
+                                fetch_google_monthly_report_data, build_google_report_html,
+                            )
+                            _g_cid_b = _norm_cid(client.get("google_customer_id", ""))
+                            if not _g_cid_b:
+                                fail_list.append(f"{client['name']} — 구글 Customer ID 미등록")
+                                log_list.append(f"⚠️ {client['name']}: 구글 Customer ID 미등록 (네이버 대체 안 함)")
+                                history.append({
+                                    "client": client["name"], "email": client.get("email", ""),
+                                    "period": period_key, "since": since, "until": until,
+                                    "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "status": "실패: 구글 ID 미등록", "send_mode": "bulk",
+                                })
+                                continue
+                            _gres_b = fetch_google_monthly_report_data(
+                                _g_cid_b, since, until,
+                                advertiser_name=client["name"],
+                                login_customer_id=client.get("google_login_customer_id", ""),
+                            )
+                            if not _gres_b.get("ok"):
+                                fail_list.append(f"{client['name']} — 구글 미설정")
+                                log_list.append(f"⚠️ {client['name']}: 구글 미설정 — {_gres_b.get('message','')} (네이버 대체 안 함)")
+                                history.append({
+                                    "client": client["name"], "email": client.get("email", ""),
+                                    "period": period_key, "since": since, "until": until,
+                                    "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "status": "실패: 구글 미설정", "send_mode": "bulk",
+                                })
+                                continue
+                            _to_g  = test_email if test_mode else client["email"]
+                            _html_g = build_google_report_html(
+                                _gres_b["report_data"], datetime.now().strftime("%Y-%m-%d"))
+                            status_box.info(f"📧 {idx+1}/{total_sel} — **{client['name']}** (구글) → {_to_g} 발송 중...")
+                            if not test_mode or _to_g:
+                                send_report(
+                                    to_email=_to_g,
+                                    client_name=f"[테스트] {client['name']}" if test_mode else client["name"],
+                                    period=period_key, since=since, until=until,
+                                    html_body=_html_g, **smtp_cfg,
+                                )
+                            success_list.append(f"{client['name']} (구글→{_to_g})")
+                            log_list.append(f"✅ {client['name']}: 구글 {'테스트 완료' if test_mode else '발송 완료'} → {_to_g}")
+                            history.append({
+                                "client": client["name"], "email": _to_g,
+                                "period": period_key, "since": since, "until": until,
+                                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "status": "테스트" if test_mode else "성공", "send_mode": "bulk",
+                            })
+                            continue
+
+                        # ── 카카오/당근: 미구현 (네이버 실행 금지) ──
+                        if _media_b in ("kakao", "daangn"):
+                            fail_list.append(f"{client['name']} — {_plt_b} 미구현")
+                            log_list.append(f"⚠️ {client['name']}: {_plt_b} 미구현 (네이버 대체 안 함)")
+                            history.append({
+                                "client": client["name"], "email": client.get("email", ""),
+                                "period": period_key, "since": since, "until": until,
+                                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                "status": f"미구현: {_plt_b}", "send_mode": "bulk",
+                            })
+                            continue
+
+                        # ── 네이버 (기존 로직 그대로 유지) ──
                         api  = NaverAdAPI(client["api_key"], client["secret_key"], client["customer_id"])
                         data = api.fetch_report(period_key)
                         _rpt_date_b = datetime.now().strftime("%Y-%m-%d")
@@ -1006,6 +1265,25 @@ with tab4:
 if _is_admin:
  with tab4:
     st.success("✅ 월간보고서 알림톡 설정 UI v1 적용됨")
+
+    # ── 🟦 구글 Ads API 연동 상태 진단 ──────────────────────────────
+    st.subheader("🟦 구글 Ads API 연동 상태")
+    from report_engine.google_ads_api import (
+        REQUIRED_ENV_KEYS as _G_KEYS, check_google_env as _g_check,
+        is_library_available as _g_lib, _get_secret as _g_secret,
+    )
+    _g_ok, _g_missing = _g_check()
+    for _k in _G_KEYS:
+        _set = bool(_g_secret(_k))   # 값 자체는 노출하지 않고 설정 여부만
+        st.write(f"- `{_k}`: " + ("✅ 설정됨" if _set else "❌ 미설정"))
+    st.write(f"- google-ads 라이브러리: " + ("✅ 설치됨" if _g_lib() else "❌ 미설치 (`pip install google-ads`)"))
+    if _g_missing:
+        st.warning("누락된 환경변수: " + ", ".join(_g_missing)
+                   + " — 구글 보고서는 API를 호출하지 않고 안내만 표시합니다. (네이버 fallback 없음)")
+    elif _g_ok and _g_lib():
+        st.success("구글 Ads API 환경 준비 완료. 광고주별 Customer ID 등록 후 '구글 테스트'로 확인하세요.")
+    st.divider()
+
     st.subheader("이메일 발송 설정")
     smtp_user = get_secret("SMTP_USER", "")
     if smtp_user:
@@ -1256,7 +1534,7 @@ if _is_admin:
                 }
                 _clients5   = load_clients()
                 _history5   = load_history()
-                _report_fmt5 = st.session_state.get("report_fmt_single", "기존 보고서")
+                _report_fmt5 = "월간보고서 V2"   # V2 표준 단일 (V1 제거됨)
 
                 for _ov in _t5_overdue:
                     _names5 = _ov.get("client_names", [])

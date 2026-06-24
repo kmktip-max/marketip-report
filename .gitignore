@@ -6,3 +6,6 @@ __pycache__/
 .DS_Store
 usage.json
 config.json
+scripts/.refresh_token.txt
+client_secret*.json
+scripts/_gen_refresh_tmp.py

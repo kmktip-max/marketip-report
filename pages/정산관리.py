@@ -612,7 +612,9 @@ def _gen_share_png(fl_name, ym, rows, total_gross, total_tax, total_net):
             _rr(draw, (_mb_x, y+13, _mb_x+_mb_w, y+30), r=8, fill="#E0E7FF")
             draw.text((_mb_x+8, y+14), _med, font=f_med, fill="#3730A3")
 
-        _sub = f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:g}%"
+        # 광고비가 마이너스(실적보정) 행은 정산율 숨김 (담당자 몫)
+        _sub = (f"광고비 {r['광고비 공급가']:,}원" if r['광고비 공급가'] < 0
+                else f"광고비 {r['광고비 공급가']:,}원   정산율 {r['정산율(%)']:g}%")
         draw.text((PAD+14, y+42), _sub, font=f_sub, fill="#6B7280")
 
         _as = f"{r['공제후 실수령액']:,}원"
@@ -683,11 +685,14 @@ def _gen_share_html(fl_name, ym, rows, total_gross, total_rebate, total_tax, tot
     for r in rows:
         media = r["매체사"] if r["매체사"] and r["매체사"] != "—" else ""
         mbadge = (f'<span class="mbadge">{media}</span>') if media else ""
+        # 광고비가 마이너스(실적보정) 행은 정산율 숨김
+        _sub = (f"광고비 {r['광고비 공급가']:,}원" if r['광고비 공급가'] < 0
+                else f"광고비 {r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {r['정산율(%)']:g}%")
         rows_html += f"""
 <div class="acc-row">
   <div class="acc-info">
     <div class="acc-name">{r['업체명']}{mbadge}</div>
-    <div class="acc-sub">광고비 {r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {r['정산율(%)']:g}%</div>
+    <div class="acc-sub">{_sub}</div>
   </div>
   <div class="acc-amt">{r['공제후 실수령액']:,}원</div>
 </div>"""
@@ -1167,6 +1172,7 @@ with t_cl:
             for _, row in df.iterrows():
                 cid   = str(row.get("customer_id","")).strip()
                 ano   = str(row.get("ad_account_no","")).strip()
+                aid   = str(row.get("account_id","")).strip()
                 name  = str(row.get("계정명","")).strip()
                 disp  = str(row.get("display_name", name)).strip()
                 media = _norm_media(row.get("매체사",""))
@@ -1195,6 +1201,8 @@ with t_cl:
                     "disp": disp, "cid": cid, "media": media, "cr_pct": cr_pct,
                     "ad_s": ad_s, "fr": _fr_disp, "rr": rr,
                     "rebate": r["rebate"], "fl_net": r["fl_net"],
+                    "ano": ano, "aid": aid, "name": name, "fl": fl_k,
+                    "is_owner": fl_k == OWNER_FL,
                 })
                 _cl_total_ad  += ad_s
                 _cl_total_pay += r["fl_net"]
@@ -1256,6 +1264,8 @@ with t_cl:
                 )
 
                 with st.expander(_exp_lbl, expanded=(_fl_name == "미분류")):
+                    st.caption("💡 **정산율(%)** 칸을 직접 클릭해 수정한 뒤, 아래 **저장** 버튼을 누르세요. "
+                               "(매체/상품마다 다르게 행별로 조정 가능)")
                     _tbl = []
                     for it in _items:
                         _tbl.append({
@@ -1263,11 +1273,52 @@ with t_cl:
                             "CID":            it["cid"],
                             "매체/상품":      it["media"] or "—",
                             "광고비(원)":     f"{it['ad_s']:,.0f}",
-                            "정산율(%)":      f"{it['fr']:.1f}",
+                            "상위수수료율(%)": f"{it['cr_pct']:.1f}",
+                            "정산율(%)":      float(it["fr"]),
                             "예상 정산액(원)": f"{it['fl_net']:,.0f}",
                             "리베이트":       "O" if it["rebate"] > 0 else "",
                         })
-                    st.dataframe(pd.DataFrame(_tbl), use_container_width=True, hide_index=True)
+                    _ed = st.data_editor(
+                        pd.DataFrame(_tbl), use_container_width=True, hide_index=True,
+                        key=f"cl_ed_{_fl_name}",
+                        disabled=["업체명", "CID", "매체/상품", "광고비(원)",
+                                  "상위수수료율(%)", "예상 정산액(원)", "리베이트"],
+                        column_config={
+                            "정산율(%)": st.column_config.NumberColumn(
+                                "정산율(%)", min_value=0.0, max_value=100.0,
+                                step=0.5, format="%.1f"),
+                        },
+                    )
+                    if st.button(f"💾 {_fl_name} 정산율 저장", key=f"cl_edsv_{_fl_name}",
+                                 type="primary"):
+                        _cnt = 0
+                        for _i, it in enumerate(_items):
+                            try:
+                                _nf = float(_ed.iloc[_i]["정산율(%)"])
+                            except Exception:
+                                continue
+                            if it.get("is_owner"):
+                                continue  # 대표 직접: 매체별 고정율 → 개별수정 비대상
+                            if abs(_nf - float(it["fr"])) < 1e-9:
+                                continue
+                            _ex = get_mapping(it["cid"], it["ano"], it["media"], it["cr_pct"]) or {}
+                            upsert_mapping(
+                                it["cid"], it["ano"], it.get("aid",""), it.get("name",""),
+                                it["disp"], it["media"], it["cr_pct"],
+                                it["fl"], _nf, it["rr"],
+                                _ex.get("is_owner_managed", False),
+                                _ex.get("direct_commission_mode", False),
+                                float(_ex.get("direct_commission_rate", 0)),
+                                _ex.get("locked", True))
+                            _w = _wk(it["cid"], it["ano"], it["media"], it["cr_pct"])
+                            st.session_state.pop(f"fr_{_w}", None)
+                            _cnt += 1
+                        if _cnt:
+                            st.success(f"✅ {_cnt}건 정산율 저장 완료")
+                            st.rerun()
+                        else:
+                            st.info("변경된 정산율이 없습니다. "
+                                    "(대표 직접 운영 건은 매체별 고정율이라 제외)")
 
 # ─── 미분류 탭 ────────────────────────────────────────────────────────────────
 with t_un:
@@ -1398,10 +1449,10 @@ with t_fl:
                 "프리랜서":    d["프리랜서"],
                 "업체명":      d["업체명"],
                 "매체사":      d["매체사"],
-                "상위수수료율": d["상위수수료율"],
                 "광고비 공급가": w(d["광고비 공급가"]),
                 "광고비 합계":   w(d["광고비 합계"]),
                 "수수료 공급가": w(d["수수료 공급가"]),
+                "상위수수료율": d["상위수수료율"],
                 "기본 정산율":   pct(d["기본 정산율(%)"]),
                 "리베이트율":    pct(d["리베이트율(%)"]),
                 "실지급률":      pct(d["실지급률(%)"]),
@@ -1526,6 +1577,11 @@ with t_share:
                                 f'border-radius:100px;margin-left:8px;vertical-align:middle;">'
                                 f'{_r["매체사"]}</span>'
                             ) if _r["매체사"] and _r["매체사"] != "—" else ""
+                            # 광고비가 마이너스(실적보정) 행은 정산율 숨김 (담당자 몫)
+                            _sub_share = (
+                                f"광고비 {_r['광고비 공급가']:,}원" if _r['광고비 공급가'] < 0
+                                else f"광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:g}%"
+                            )
                             _rows_html += f"""
 <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;
             padding:12px 16px;margin-bottom:8px;
@@ -1535,7 +1591,7 @@ with t_share:
       {_r['업체명']}{_media_badge}
     </div>
     <div style="font-size:12px;color:#6B7280;">
-      광고비 {_r['광고비 공급가']:,}원 &nbsp;|&nbsp; 정산율 {_r['정산율(%)']:g}%
+      {_sub_share}
     </div>
   </div>
   <div style="font-size:15px;font-weight:800;color:#1D4ED8;">
@@ -1643,7 +1699,9 @@ with t_share:
                         for _r in _biz_rows_map_share[_biz_nm]:
                             _lines.append(f"\n- {_r['업체명']} [{_r['매체사']}]")
                             _lines.append(f"  광고비: {_r['광고비 공급가']:,}원")
-                            _lines.append(f"  정산율: {_r['정산율(%)']:g}%")
+                            # 마이너스(실적보정) 행은 정산율 숨김 (담당자 몫)
+                            if _r['광고비 공급가'] >= 0:
+                                _lines.append(f"  정산율: {_r['정산율(%)']:g}%")
                             _lines.append(f"  공제후 실수령액: {_r['공제후 실수령액']:,}원")
                     _lines += [
                         "",
@@ -1851,6 +1909,25 @@ with t_pnl:
                 f'</div>'
             )
 
+        # ── 월별 입력값 영속화 (입력 즉시 자동 저장 + 저장값으로 위젯 초기화) ──────
+        def _pnl_persist(ym):
+            set_extra(ym,
+                      int(st.session_state.get(f"pnl_pr_{ym}") or 0),
+                      int(st.session_state.get(f"pnl_pc_{ym}") or 0),
+                      int(st.session_state.get(f"pnl_br_{ym}") or 0),
+                      int(st.session_state.get(f"pnl_bc_{ym}") or 0),
+                      st.session_state.get(f"pnl_memo_{ym}", "") or "")
+
+        # 저장된 값을 세션에 시드(월별 키) → 위젯이 항상 저장값에서 시작, 리셋 방지
+        for _wk_key, _ex_key in [("pnl_pr", "place_revenue"), ("pnl_pc", "place_cost"),
+                                 ("pnl_br", "blog_revenue"),  ("pnl_bc", "blog_cost")]:
+            _sk = f"{_wk_key}_{sel_ym}"
+            if _sk not in st.session_state:
+                st.session_state[_sk] = int(extra.get(_ex_key) or 0)
+        _msk = f"pnl_memo_{sel_ym}"
+        if _msk not in st.session_state:
+            st.session_state[_msk] = extra.get("memo", "") or ""
+
         _inp_col, _memo_col = st.columns([3, 1])
         with _inp_col:
             # ── 플레이스 ──────────────────────────────────────────────────────
@@ -1859,13 +1936,13 @@ with t_pnl:
             pc1, pc2, pc3 = st.columns(3)
             with pc1:
                 place_rev = st.number_input(
-                    "플레이스 매출(원)", value=int(extra.get("place_revenue") or 0),
-                    min_value=0, step=1000, format="%d", key=f"pnl_pr_{sel_ym}",
+                    "플레이스 매출(원)", min_value=0, step=1000, format="%d",
+                    key=f"pnl_pr_{sel_ym}", on_change=_pnl_persist, args=(sel_ym,),
                 )
             with pc2:
                 place_cost = st.number_input(
-                    "플레이스 매입비용(원)", value=int(extra.get("place_cost") or 0),
-                    min_value=0, step=1000, format="%d", key=f"pnl_pc_{sel_ym}",
+                    "플레이스 매입비용(원)", min_value=0, step=1000, format="%d",
+                    key=f"pnl_pc_{sel_ym}", on_change=_pnl_persist, args=(sel_ym,),
                 )
             with pc3:
                 place_profit = place_rev - place_cost
@@ -1880,13 +1957,13 @@ with t_pnl:
             bc1, bc2, bc3 = st.columns(3)
             with bc1:
                 blog_rev = st.number_input(
-                    "블로그 매출(원)", value=int(extra.get("blog_revenue") or 0),
-                    min_value=0, step=1000, format="%d", key=f"pnl_br_{sel_ym}",
+                    "블로그 매출(원)", min_value=0, step=1000, format="%d",
+                    key=f"pnl_br_{sel_ym}", on_change=_pnl_persist, args=(sel_ym,),
                 )
             with bc2:
                 blog_cost = st.number_input(
-                    "블로그 매입비용(원)", value=int(extra.get("blog_cost") or 0),
-                    min_value=0, step=1000, format="%d", key=f"pnl_bc_{sel_ym}",
+                    "블로그 매입비용(원)", min_value=0, step=1000, format="%d",
+                    key=f"pnl_bc_{sel_ym}", on_change=_pnl_persist, args=(sel_ym,),
                 )
             with bc3:
                 blog_profit = blog_rev - blog_cost
@@ -1919,14 +1996,14 @@ with t_pnl:
         with _memo_col:
             st.markdown('<div style="font-size:14px;font-weight:700;color:#374151;'
                         'margin-bottom:6px;">📋 메모</div>', unsafe_allow_html=True)
-            xm = st.text_area("메모", extra.get("memo", ""), height=200,
-                              key=f"pnl_memo_{sel_ym}", label_visibility="collapsed")
-            if st.button("💾 저장", key=f"pnl_save_{sel_ym}", type="primary",
+            xm = st.text_area("메모", height=200,
+                              key=f"pnl_memo_{sel_ym}", label_visibility="collapsed",
+                              on_change=_pnl_persist, args=(sel_ym,))
+            st.caption("✅ 입력하면 자동 저장됩니다 (월별로 따로 보관).")
+            if st.button("💾 저장 확인", key=f"pnl_save_{sel_ym}", type="primary",
                          use_container_width=True):
-                set_extra(sel_ym,
-                          int(place_rev), int(place_cost),
-                          int(blog_rev),  int(blog_cost), xm)
-                st.rerun()
+                _pnl_persist(sel_ym)
+                st.success(f"✅ {sel_ym} 플레이스/블로그 입력값 저장 완료")
 
         # ── 월 손익 계산 (플레이스/블로그는 순수익 기준) ────────────────────
         search_total_profit          = search_owner_profit + search_freelancer_profit
