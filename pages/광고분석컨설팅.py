@@ -248,8 +248,25 @@ st.markdown("""
         border-radius: 12px;
         padding: 0.9rem 1.1rem;
     }
-    [data-testid="metric-container"] label { color: #6c757d !important; font-size: 0.82rem !important; font-weight: 600 !important; }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] { color: #0D47A1 !important; font-size: 1.3rem !important; font-weight: 800 !important; }
+    /* 라벨 (구버전 metric-container + 신버전 stMetricLabel 모두 대응) */
+    [data-testid="metric-container"] label,
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {
+        color: #6c757d !important; font-size: 0.8rem !important; font-weight: 600 !important;
+    }
+    /* 값 — 선택자를 버전 무관하게 단독 testid로 지정해야 실제로 적용됨 */
+    [data-testid="metric-container"] [data-testid="stMetricValue"],
+    [data-testid="stMetricValue"], [data-testid="stMetricValue"] * {
+        color: #0D47A1 !important; font-size: 0.95rem !important; font-weight: 800 !important;
+        line-height: 1.25 !important;
+    }
+    /* 긴 숫자(₩12,700,000 등)가 5열 카드에서 잘리지 않도록 말줄임 해제 + 강제 줄바꿈 */
+    [data-testid="stMetricValue"], [data-testid="stMetricValue"] * {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
+    }
 
     /* ── 데이터프레임 ── */
     .stDataFrame { border-radius: 10px; overflow: hidden; border: 1.5px solid #e9ecef; }
@@ -360,12 +377,14 @@ st.markdown("""
             margin: 0.5rem auto !important;
         }
 
-        /* 메트릭 카드 글자 크기 */
-        [data-testid="metric-container"] label {
-            font-size: 0.7rem !important;
+        /* 메트릭 카드 글자 크기 (모바일) */
+        [data-testid="metric-container"] label,
+        [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {
+            font-size: 0.68rem !important;
         }
-        [data-testid="metric-container"] [data-testid="stMetricValue"] {
-            font-size: 1rem !important;
+        [data-testid="metric-container"] [data-testid="stMetricValue"],
+        [data-testid="stMetricValue"], [data-testid="stMetricValue"] * {
+            font-size: 0.85rem !important;
         }
 
         /* 채팅 메시지 */
