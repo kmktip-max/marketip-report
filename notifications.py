@@ -46,17 +46,18 @@ def _secret(key, default=""):
                     _d = tomllib.load(_f)
                 val = _d.get(key)
                 if val is not None:
-                    return str(val)
+                    return str(val).strip()
     except Exception:
         pass
     # 2. st.secrets (Streamlit Cloud)
     try:
         import streamlit as st
         if hasattr(st, "secrets") and key in st.secrets:
-            return str(st.secrets[key])
+            return str(st.secrets[key]).strip()
     except Exception:
         pass
-    return os.getenv(key, default)
+    # 끝의 개행/캐리지리턴(\r\n)·공백 제거 — 인증 헤더 깨짐 방어
+    return (os.getenv(key, default) or "").strip()
 
 
 # ── JSON 설정 파일 (admin_phone 등) ─────────────────────────────────────────

@@ -44,13 +44,15 @@ _ALERT_FIELDS = (
 
 # ── 시크릿 로더 ───────────────────────────────────────────────────────────────
 def _secret(key: str, default: str = "") -> str:
+    # 값 끝의 개행/캐리지리턴(\r\n)·공백 제거 — GitHub Secret 등에 줄바꿈이 섞여도
+    # 인증 헤더(HMAC-SHA256 apiKey=...)가 깨지지 않도록 방어.
     try:
         import streamlit as st
         if hasattr(st, "secrets") and key in st.secrets:
-            return str(st.secrets[key])
+            return str(st.secrets[key]).strip()
     except Exception:
         pass
-    return os.getenv(key, default)
+    return (os.getenv(key, default) or "").strip()
 
 
 # ── JSON 폴백 저장소 ──────────────────────────────────────────────────────────
