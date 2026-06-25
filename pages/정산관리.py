@@ -480,6 +480,23 @@ def _owner_share_rate(media: str, display_name: str = "") -> float:
     return 14.5  # 미분류도 기본 14.5%
 
 
+def _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm=False, dr=0.0):
+    """권혁우(대표) 정산 계산.
+    - 광고주 직접 수수료 구조(dm=True, 구글 등): (광고주 직접수수료 − 리베이트)를 정산액으로.
+    - 그 외: 매체별 기본율(_owner_share_rate)로 계산.
+    반환: (표시용 정산율, _owner_calc 형식 dict).
+    """
+    if dm:
+        rebate      = round(ad_t * rr / 100)
+        direct_comm = round(ad_s * dr / 100)
+        net         = direct_comm - rebate
+        return dr, {"eff_pct": dr, "fl_gross": direct_comm, "fl_tax": 0,
+                    "fl_net": net, "rebate": rebate, "owner": net,
+                    "direct_comm": direct_comm, "warn": net < 0, "direct": True}
+    fr = _owner_share_rate(media, disp)
+    return fr, _owner_calc(ad_s, ad_t, fr, rr)
+
+
 # ── 정산 계산 ─────────────────────────────────────────────────────────────────
 def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
          direct_mode=False, direct_rate_pct=0.0):
@@ -1191,8 +1208,7 @@ with t_cl:
 
                 # 권혁우(대표): 매체별 기본율, 3.3% 공제 없음
                 if fl_k == OWNER_FL:
-                    _fr_disp = _owner_share_rate(media, disp)
-                    r = _owner_calc(ad_s, ad_t, _fr_disp, rr)
+                    _fr_disp, r = _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm, dr)
                 else:
                     _fr_disp = fr
                     r = calc(ad_s, ad_t, cm_s, fr, rr, is_o, dm, dr)
@@ -1511,10 +1527,10 @@ with t_share:
                 _ad_s  = float(_row.get("ad_supply", 0))
                 _ad_t  = float(_row.get("ad_total", 0))
                 _cm_s  = float(_row.get("comm_supply", 0))
-                # 대표(권혁우): 매체별 기본율 적용, 3.3% 공제 없음
+                # 대표(권혁우): 직접수수료 구조면 직접수수료 반영, 아니면 매체별 기본율
                 if _sel_fl == OWNER_FL:
-                    _fr = _owner_share_rate(_media, str(_row.get("display_name", "")))
-                    _r  = _owner_calc(_ad_s, _ad_t, _fr, _rr)
+                    _fr, _r = _owner_settlement(_media, str(_row.get("display_name", "")),
+                                                _ad_s, _ad_t, _cm_s, _rr, _dm, _dr)
                 else:
                     _r  = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
                 _fl_rows.append({
