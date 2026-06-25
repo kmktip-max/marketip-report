@@ -1,0 +1,35 @@
+name: Keep Actions Alive (weekly commit)
+
+# 목적: GitHub는 레포에 60일간 활동(커밋)이 없으면 schedule 워크플로우를
+# 자동 정지시킨다. 주 1회 타임스탬프 파일을 커밋해 레포 활동을 유지 →
+# 비즈머니 알림/월간보고서 스케줄러가 절대 멈추지 않게 한다.
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"   # 매주 월요일 00:00 UTC (= 한국시간 월요일 09:00)
+  workflow_dispatch:       # 수동 실행 버튼
+
+permissions:
+  contents: write          # 커밋/푸시 권한
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 타임스탬프 갱신 후 커밋
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p .github
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keepalive.txt
+          git add .github/keepalive.txt
+          if git diff --cached --quiet; then
+            echo "변경 없음 — 커밋 생략"
+          else
+            git commit -m "chore: keepalive $(date -u +%Y-%m-%d)"
+            git push
+            echo "keepalive 커밋 푸시 완료"
+          fi
