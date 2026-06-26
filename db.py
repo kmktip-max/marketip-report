@@ -16,14 +16,20 @@ def _get_supabase():
         return _sb_client
     _sb_checked = True
     try:
-        import streamlit as st
+        # streamlit이 설치된 환경(앱)에서는 st.secrets 우선, 아니면 환경변수.
+        # ⚠️ import streamlit 실패가 전체 자격증명 로딩을 막지 않도록 분리한다
+        #    (GitHub Actions 클라우드엔 streamlit 미설치 → env 폴백 필수).
+        url = key = ""
         try:
-            url = st.secrets["SUPABASE_URL"]
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                url = str(st.secrets.get("SUPABASE_URL", "") or "")
+                key = str(st.secrets.get("SUPABASE_KEY", "") or "")
         except Exception:
+            pass
+        if not url:
             url = os.getenv("SUPABASE_URL", "")
-        try:
-            key = st.secrets["SUPABASE_KEY"]
-        except Exception:
+        if not key:
             key = os.getenv("SUPABASE_KEY", "")
         if not url or not key:
             _sb_error = f"SUPABASE_URL 또는 SUPABASE_KEY 누락 (url={bool(url)}, key={bool(key)})"
