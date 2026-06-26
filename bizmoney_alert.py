@@ -36,7 +36,7 @@ os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
 _ALERT_FIELDS = (
     "customer_id", "alert_enabled",
     "first_alert_amount", "second_alert_amount",
-    "first_alert_sent", "second_alert_sent",
+    "first_alert_sent", "second_alert_sent", "depleted_sent_count",
     "advertiser_phone", "manager_name", "manager_phone",
     "last_bizmoney_balance", "last_checked_at", "memo",
 )
@@ -133,6 +133,7 @@ def _default_alert(customer_id: str = "") -> dict:
         "second_alert_amount":   0,
         "first_alert_sent":      False,
         "second_alert_sent":     False,
+        "depleted_sent_count":   0,
         "advertiser_phone":      "",
         "manager_name":          "",
         "manager_phone":         "",
@@ -172,6 +173,7 @@ def get_merged_settings() -> list[dict]:
             "second_alert_amount":    alert.get("second_alert_amount",   0),
             "first_alert_sent":       alert.get("first_alert_sent",      False),
             "second_alert_sent":      alert.get("second_alert_sent",     False),
+            "depleted_sent_count":    alert.get("depleted_sent_count",   0),
             # 광고주 연락처는 월간보고서(clients.json)의 phone 을 기본값으로 자동 사용
             "advertiser_phone":       alert.get("advertiser_phone") or c.get("phone", "") or "",
             "manager_name":           alert.get("manager_name",          ""),
@@ -517,6 +519,8 @@ def _already_sent_today(history: list[dict],
 
 # 2차(소진) 알림 재발송 주기(일). 충전 안 하면 이 간격으로 다시 알림.
 RESEND_DAYS = 7
+# 2차(소진) 알림 최대 발송 횟수(최초+재발송 합산). 광고 멈춘 계정 무한 발송 방지.
+MAX_DEPLETED_SENDS = 3
 
 
 def _last_success_sent_at(history: list[dict],
@@ -563,17 +567,20 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
 
     # 잔액 충전 감지 → 플래그 리셋
     if balance > first_amt:
-        if s.get("first_alert_sent") or s.get("second_alert_sent"):
-            s["first_alert_sent"]  = False
-            s["second_alert_sent"] = False
-            actions.append({"type": "reset", "detail": "잔액 충전 감지 → 알림 플래그 리셋"})
+        if (s.get("first_alert_sent") or s.get("second_alert_sent")
+                or s.get("depleted_sent_count")):
+            s["first_alert_sent"]    = False
+            s["second_alert_sent"]   = False
+            s["depleted_sent_count"] = 0   # 충전되면 재발송 횟수도 리셋
+            actions.append({"type": "reset", "detail": "잔액 충전 감지 → 알림 플래그·횟수 리셋"})
 
     phones = list(dict.fromkeys(filter(None, [
         s.get("advertiser_phone"), s.get("manager_phone")
     ])))
     admin_phone = _secret("ADMIN_NOTIFY_PHONE", "010-2797-3164")
 
-    def _send(alert_type: str, template_code: str, threshold: int):
+    def _send(alert_type: str, template_code: str, threshold: int) -> bool:
+        """실제로 발송했으면 True, (새벽차단·당일중복으로) 건너뛰면 False."""
         # ── 심야/새벽 발송 차단 — KST 09:00~21:00 에만 발송 ──
         # 새벽에 잔액이 낮아도 보내지 않고, 다음 발송 가능 시각(오전 9시 이후)에
         # 재체크해서 보낸다. (이 시점에 발송 기록을 남기지 않으므로 9시에 정상 발송됨)
@@ -584,12 +591,12 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
             if not (9 <= _hour < 21):
                 actions.append({"type": alert_type, "status": "skipped",
                                  "detail": f"발송 보류({_hour}시 — 오전 9시 이후에만 발송, 새벽 차단)"})
-                return
+                return False
         # 중복 체크는 광고주 단위 1일 1회 (수신자별로 중복 적용하지 않음 — 담당자 스킵 버그 수정)
         if _already_sent_today(history, cid, alert_type):
             actions.append({"type": alert_type, "status": "skipped",
                              "detail": "오늘 이미 발송됨"})
-            return
+            return False
         # 광고주 + 담당자 알림톡
         for phone in phones:
             r = send_kakao_alerttalk(
@@ -609,6 +616,7 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
             )
             actions.append({"type": "admin_copy", "status": ar.get("status"),
                              "detail": ar.get("error", f"관리자({admin_phone}) 알림톡 사본")})
+        return True
 
     # notification_config.json 에서 실제 Kakao 템플릿 ID 로드
     try:
@@ -621,17 +629,25 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
         tmpl_depleted = TEMPLATE_CODE_DEPLETED
 
     if balance <= second_amt:
-        # 2차(소진): 최초 1회 + 이후 충전 안 하면 RESEND_DAYS(1주) 간격으로 재발송.
-        _last_dep = _last_success_sent_at(history, cid, "depleted")
+        # 2차(소진): 최초 1회 + 충전 안 하면 RESEND_DAYS(1주) 간격 재발송, 단 최대 MAX_DEPLETED_SENDS회.
+        # (광고 멈춘 계정에 무한 발송하지 않도록 횟수 제한)
+        _sent_cnt   = int(s.get("depleted_sent_count", 0) or 0)
+        _last_dep   = _last_success_sent_at(history, cid, "depleted")
         _resend_due = (_last_dep is None
                        or (datetime.now(KST) - _last_dep).days >= RESEND_DAYS)
-        if (not s.get("second_alert_sent")) or _resend_due:
-            _send("depleted", tmpl_depleted, second_amt)
-            s["second_alert_sent"] = True
-            s["first_alert_sent"]  = True
+        _need = ((not s.get("second_alert_sent")) or _resend_due)
+        if _need and _sent_cnt < MAX_DEPLETED_SENDS:
+            # 실제 발송됐을 때만 횟수 증가/플래그 설정 (새벽차단·당일중복이면 다음에 재시도)
+            if _send("depleted", tmpl_depleted, second_amt):
+                s["second_alert_sent"]   = True
+                s["first_alert_sent"]    = True
+                s["depleted_sent_count"] = _sent_cnt + 1
+        elif _need and _sent_cnt >= MAX_DEPLETED_SENDS:
+            actions.append({"type": "depleted", "status": "skipped",
+                             "detail": f"재발송 상한({MAX_DEPLETED_SENDS}회) 도달 — 발송 중단(광고 중단 추정)"})
     elif balance <= first_amt and not s.get("first_alert_sent"):
-        _send("first", tmpl_first, first_amt)
-        s["first_alert_sent"] = True
+        if _send("first", tmpl_first, first_amt):
+            s["first_alert_sent"] = True
 
     s["last_bizmoney_balance"] = balance
     s["last_checked_at"]       = result["checked_at"]
