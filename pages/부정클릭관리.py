@@ -176,7 +176,7 @@ with TAB_INTRO:
   <div style="font-size:15px;font-weight:700;color:#92400E;margin-bottom:10px;">신청 조건</div>
   <div style="font-size:15px;color:#92400E;line-height:2;">
     ✅ 마케팁 페이백(수수료 환급) 계정 연동 완료<br>
-    ✅ 전월 네이버 광고비 300만원 이상 소진
+    ✅ 전월 네이버 광고비 500만원 이상 소진
   </div>
   <div style="font-size:14px;color:#B45309;margin-top:10px;line-height:1.8;">
     두 조건 모두 충족하면 <b>서비스 신청 탭</b>이 자동으로 열립니다.<br>
@@ -277,7 +277,7 @@ with TAB_APPLY:
                  f"가입 {months_elapsed}개월 (충족)" if cond_age else f"가입 {months_elapsed}개월",
                  "충족" if cond_age else "가입 2개월 후 자동 충족"),
                 (cc3, cond_smartlog,
-                 "광고비 조건 충족" if cond_smartlog else "전월 광고비 300만원 이상",
+                 "광고비 조건 충족" if cond_smartlog else "전월 광고비 500만원 이상",
                  "충족" if cond_smartlog else "전월 소진액 기준 자동 확인"),
             ]
             for col, ok, label, sub in cond_items:
