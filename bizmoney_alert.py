@@ -515,6 +515,29 @@ def _already_sent_today(history: list[dict],
     return False
 
 
+# 2차(소진) 알림 재발송 주기(일). 충전 안 하면 이 간격으로 다시 알림.
+RESEND_DAYS = 7
+
+
+def _last_success_sent_at(history: list[dict],
+                          customer_id: str, alert_type: str):
+    """해당 광고주·종류의 마지막 성공 발송 시각(datetime) 반환, 없으면 None."""
+    latest = None
+    for h in history:
+        if (h.get("customer_id") == customer_id
+                and h.get("alert_type") == alert_type
+                and h.get("status") == "success"):
+            try:
+                dt = datetime.fromisoformat(h.get("sent_at", ""))
+                if dt.tzinfo is None:        # 과거 이력에 타임존 없으면 KST로 간주
+                    dt = dt.replace(tzinfo=KST)
+            except Exception:
+                continue
+            if latest is None or dt > latest:
+                latest = dt
+    return latest
+
+
 # ── 단일 광고주 처리 ──────────────────────────────────────────────────────────
 def process_one(s: dict, dry_run: bool = False) -> dict:
     """잔액 조회 → 알림 조건 판단 → 발송. s 는 get_merged_settings() 의 항목."""
@@ -597,10 +620,15 @@ def process_one(s: dict, dry_run: bool = False) -> dict:
         tmpl_first    = TEMPLATE_CODE_FIRST
         tmpl_depleted = TEMPLATE_CODE_DEPLETED
 
-    if balance <= second_amt and not s.get("second_alert_sent"):
-        _send("depleted", tmpl_depleted, second_amt)
-        s["second_alert_sent"] = True
-        s["first_alert_sent"]  = True
+    if balance <= second_amt:
+        # 2차(소진): 최초 1회 + 이후 충전 안 하면 RESEND_DAYS(1주) 간격으로 재발송.
+        _last_dep = _last_success_sent_at(history, cid, "depleted")
+        _resend_due = (_last_dep is None
+                       or (datetime.now(KST) - _last_dep).days >= RESEND_DAYS)
+        if (not s.get("second_alert_sent")) or _resend_due:
+            _send("depleted", tmpl_depleted, second_amt)
+            s["second_alert_sent"] = True
+            s["first_alert_sent"]  = True
     elif balance <= first_amt and not s.get("first_alert_sent"):
         _send("first", tmpl_first, first_amt)
         s["first_alert_sent"] = True
