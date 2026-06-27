@@ -524,6 +524,14 @@ def calc(ad_supply, ad_total, comm_supply, fr_pct, rr_pct, is_own,
                 "direct_comm": direct_comm, "warn": (fr - rr) < 0, "direct": True}
     else:
         if is_own:
+            # 수동 정산율(fr>0)이 있으면 그 율로 대표 수익 계산
+            # (구글/모비데이즈 등 수수료 공급가에 안 잡히는 상위대행사 수수료 보정).
+            # 없으면 실제 수수료 공급가 기준.
+            if fr_pct and fr_pct > 0:
+                _own_gross = round(ad_supply * fr)
+                return {"eff_pct": fr_pct, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
+                        "rebate": rebate, "owner": _own_gross - rebate,
+                        "direct_comm": 0, "warn": False, "direct": False}
             return {"eff_pct": 0.0, "fl_gross": 0, "fl_tax": 0, "fl_net": 0,
                     "rebate": rebate, "owner": round(comm_supply - rebate),
                     "direct_comm": 0, "warn": False, "direct": False}
