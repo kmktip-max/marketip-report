@@ -480,9 +480,10 @@ def _owner_share_rate(media: str, display_name: str = "") -> float:
     return 14.5  # 미분류도 기본 14.5%
 
 
-def _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm=False, dr=0.0):
+def _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm=False, dr=0.0, manual_fr=0.0):
     """권혁우(대표) 정산 계산.
     - 광고주 직접 수수료 구조(dm=True, 구글 등): (광고주 직접수수료 − 리베이트)를 정산액으로.
+    - 수동 정산율(manual_fr>0)이 있으면 그 값으로 계산 (구글/모비데이즈 등 매체기본율 0% 보정).
     - 그 외: 매체별 기본율(_owner_share_rate)로 계산.
     반환: (표시용 정산율, _owner_calc 형식 dict).
     """
@@ -493,7 +494,8 @@ def _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm=False, dr=0.0):
         return dr, {"eff_pct": dr, "fl_gross": direct_comm, "fl_tax": 0,
                     "fl_net": net, "rebate": rebate, "owner": net,
                     "direct_comm": direct_comm, "warn": net < 0, "direct": True}
-    fr = _owner_share_rate(media, disp)
+    # 수동 정산율 우선 → 없으면 매체별 기본율
+    fr = manual_fr if (manual_fr and manual_fr > 0) else _owner_share_rate(media, disp)
     return fr, _owner_calc(ad_s, ad_t, fr, rr)
 
 
@@ -1208,7 +1210,7 @@ with t_cl:
 
                 # 권혁우(대표): 매체별 기본율, 3.3% 공제 없음
                 if fl_k == OWNER_FL:
-                    _fr_disp, r = _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm, dr)
+                    _fr_disp, r = _owner_settlement(media, disp, ad_s, ad_t, cm_s, rr, dm, dr, fr)
                 else:
                     _fr_disp = fr
                     r = calc(ad_s, ad_t, cm_s, fr, rr, is_o, dm, dr)
@@ -1313,8 +1315,6 @@ with t_cl:
                                 _nf = float(_ed.iloc[_i]["정산율(%)"])
                             except Exception:
                                 continue
-                            if it.get("is_owner"):
-                                continue  # 대표 직접: 매체별 고정율 → 개별수정 비대상
                             if abs(_nf - float(it["fr"])) < 1e-9:
                                 continue
                             _ex = get_mapping(it["cid"], it["ano"], it["media"], it["cr_pct"]) or {}
@@ -1333,8 +1333,7 @@ with t_cl:
                             st.success(f"✅ {_cnt}건 정산율 저장 완료")
                             st.rerun()
                         else:
-                            st.info("변경된 정산율이 없습니다. "
-                                    "(대표 직접 운영 건은 매체별 고정율이라 제외)")
+                            st.info("변경된 정산율이 없습니다.")
 
 # ─── 미분류 탭 ────────────────────────────────────────────────────────────────
 with t_un:
@@ -1530,7 +1529,7 @@ with t_share:
                 # 대표(권혁우): 직접수수료 구조면 직접수수료 반영, 아니면 매체별 기본율
                 if _sel_fl == OWNER_FL:
                     _fr, _r = _owner_settlement(_media, str(_row.get("display_name", "")),
-                                                _ad_s, _ad_t, _cm_s, _rr, _dm, _dr)
+                                                _ad_s, _ad_t, _cm_s, _rr, _dm, _dr, _fr)
                 else:
                     _r  = calc(_ad_s, _ad_t, _cm_s, _fr, _rr, _is_o, _dm, _dr)
                 _fl_rows.append({
