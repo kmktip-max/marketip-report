@@ -518,7 +518,7 @@ def _already_sent_today(history: list[dict],
 
 
 # 2차(소진) 알림 재발송 주기(일). 충전 안 하면 이 간격으로 다시 알림.
-RESEND_DAYS = 7
+RESEND_DAYS = 3
 # 2차(소진) 알림 최대 발송 횟수(최초+재발송 합산). 광고 멈춘 계정 무한 발송 방지.
 MAX_DEPLETED_SENDS = 3
 
