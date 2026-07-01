@@ -351,11 +351,13 @@ def run_scheduled_reports():
         if c.get("id"):    cmap[c["id"]]   = c
         if c.get("name"):  cmap[c["name"]] = c
 
+    # ⚠️ .strip() 필수 — GitHub Secret 등에 줄바꿈(\r)이 섞이면 호스트가 "smtp.naver.com\r"
+    #    이 되어 "Name or service not known"(DNS 실패)로 발송이 안 됨.
     smtp = {
-        "smtp_user":     os.getenv("SMTP_USER", ""),
-        "smtp_password": os.getenv("SMTP_PASSWORD", ""),
-        "smtp_host":     os.getenv("SMTP_HOST", "smtp.naver.com"),
-        "smtp_port":     int(os.getenv("SMTP_PORT", "465")),
+        "smtp_user":     os.getenv("SMTP_USER", "").strip(),
+        "smtp_password": os.getenv("SMTP_PASSWORD", "").strip(),
+        "smtp_host":     (os.getenv("SMTP_HOST", "").strip() or "smtp.naver.com"),
+        "smtp_port":     int(os.getenv("SMTP_PORT", "").strip() or "465"),
     }
     now     = now_kst()
     changed = False

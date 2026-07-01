@@ -20,7 +20,8 @@ jobs:
       - name: Python 설정
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # 3.12+ 필요 — 리포트 V2가 중첩 f-string(PEP 701) 사용 (3.11이면 import 실패→V1 폴백)
+          python-version: '3.12'
 
       - name: 패키지 설치
         run: pip install requests python-dotenv supabase

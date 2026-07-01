@@ -8,10 +8,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.naver.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+# .strip() — 시크릿에 줄바꿈(\r)이 섞여도 호스트/인증이 깨지지 않도록 방어
+SMTP_HOST = (os.getenv("SMTP_HOST", "").strip() or "smtp.naver.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "").strip() or "465")
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 
 
 def send_report(to_email, client_name, period, since, until, html_body,
